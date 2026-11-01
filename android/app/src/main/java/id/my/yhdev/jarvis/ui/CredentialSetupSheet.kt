@@ -40,7 +40,6 @@ class CredentialSetupSheet(
         val content = LayoutInflater.from(dialog.context).inflate(R.layout.sheet_credential_setup, null)
         val input = content.findViewById<TextInputEditText>(R.id.setupToken)
         val field = content.findViewById<TextInputLayout>(R.id.setupTokenLayout)
-        field.errorMaxLines = Int.MAX_VALUE
         val trust = content.findViewById<CheckBox>(R.id.setupTrustOrigin)
         val save = content.findViewById<MaterialButton>(R.id.setupSave)
         val help = content.findViewById<TextView>(R.id.setupHelpBody)
