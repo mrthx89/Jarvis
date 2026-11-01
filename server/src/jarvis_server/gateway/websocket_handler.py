@@ -52,10 +52,17 @@ class ApplianceSession:
         """Send a Pydantic model serialized as JSON text frame."""
         await self.websocket.send_text(model.model_dump_json())
 
-    async def send_state(self, state: JarvisState, message: Optional[str] = None):
-        """Transition and broadcast state change to client."""
+    async def send_state(
+        self,
+        state: JarvisState,
+        message: Optional[str] = None,
+        expression: Optional[str] = None,
+    ):
+        """Transition and broadcast state change with mascot expression to client."""
         self.state = state
-        await self.send_json_message(StateChange(state=state, message=message))
+        await self.send_json_message(
+            StateChange(state=state, message=message, expression=expression)
+        )
 
     async def handle_text_frame(self, data_str: str):
         """Handle incoming control JSON frames."""
@@ -82,7 +89,7 @@ class ApplianceSession:
             logger.info("Voice start signal received from client.")
             self.is_recording = True
             self.audio_buffer.clear()
-            await self.send_state(JarvisState.LISTENING)
+            await self.send_state(JarvisState.LISTENING, expression="terkejut")
 
         elif msg_type == "voice_end":
             logger.info(f"Voice end signal. Total audio buffer: {len(self.audio_buffer)} bytes.")
@@ -121,7 +128,7 @@ class ApplianceSession:
         self.audio_buffer.clear()
 
         # Step 1: Thinking / Transcribing
-        await self.send_state(JarvisState.THINKING)
+        await self.send_state(JarvisState.THINKING, expression="bingung")
         transcription = await self.stt.transcribe(captured_pcm)
         logger.info(f"Transcription: {transcription}")
 
@@ -138,14 +145,24 @@ class ApplianceSession:
             TranscriptionMessage(role="assistant", text=agent_reply, is_final=True)
         )
 
-        # Step 3: Speaking / Streaming TTS
-        await self.send_state(JarvisState.SPEAKING)
+        # Step 3: Speaking / Streaming TTS with appropriate emotional expression
+        reply_lower = agent_reply.lower()
+        if any(w in reply_lower for w in ["haha", "lucu", "wkwk"]):
+            speech_expr = "tertawa"
+        elif any(w in reply_lower for w in ["luar biasa", "selamat", "berhasil", "hebat"]):
+            speech_expr = "sangat_senang"
+        elif any(w in reply_lower for w in ["siap", "tentu", "aman"]):
+            speech_expr = "keren"
+        elif any(w in reply_lower for w in ["maaf", "kendala", "gagal"]):
+            speech_expr = "sedih"
+        else:
+            speech_expr = "senang"
+
+        await self.send_state(JarvisState.SPEAKING, expression=speech_expr)
         await self.send_json_message(TTSStart())
 
         async for chunk in self.tts.synthesize_stream(agent_reply):
-            # Send audio binary chunk
             await self.websocket.send_bytes(chunk)
-            # Send simulated audio telemetry
             amp = self.vad.get_normalized_amplitude(chunk)
             await self.send_json_message(
                 VisualTelemetry(
@@ -155,4 +172,4 @@ class ApplianceSession:
             )
 
         await self.send_json_message(TTSEnd())
-        await self.send_state(JarvisState.IDLE)
+        await self.send_state(JarvisState.IDLE, expression="netral")

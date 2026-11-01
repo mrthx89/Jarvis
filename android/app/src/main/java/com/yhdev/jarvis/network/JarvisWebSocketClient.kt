@@ -29,7 +29,7 @@ class JarvisWebSocketClient(
     interface WebSocketEventListener {
         fun onConnected()
         fun onDisconnected()
-        fun onStateChanged(state: JarvisState, message: String?)
+        fun onStateChanged(state: JarvisState, message: String?, expression: String?)
         fun onTelemetryReceived(amplitude: Float, bands: List<Float>?)
         fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean)
         fun onAudioChunkReceived(audioData: ByteArray)
@@ -90,8 +90,9 @@ class JarvisWebSocketClient(
                 "state_change" -> {
                     val stateStr = json.get("state")?.asString ?: "IDLE"
                     val msg = json.get("message")?.asString
+                    val expr = json.get("expression")?.asString
                     val state = runCatching { JarvisState.valueOf(stateStr) }.getOrDefault(JarvisState.IDLE)
-                    listener.onStateChanged(state, msg)
+                    listener.onStateChanged(state, msg, expr)
                 }
                 "visual_telemetry" -> {
                     val amp = json.get("amplitude")?.asFloat ?: 0f

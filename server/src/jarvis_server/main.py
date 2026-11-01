@@ -79,7 +79,7 @@ async def websocket_appliance_endpoint(websocket: WebSocket):
                 await session.handle_text_frame(message["text"])
             elif "bytes" in message and message["bytes"]:
                 await session.handle_binary_frame(message["bytes"])
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         logger.info(f"Client disconnected: {session_id}")
     except Exception as e:
         logger.error(f"Error in session {session_id}: {e}", exc_info=True)
@@ -93,6 +93,8 @@ def run():
         host=config.server.host,
         port=config.server.port,
         log_level="info",
+        proxy_headers=True,
+        forwarded_allow_ips="*",
     )
 
 

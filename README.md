@@ -79,6 +79,7 @@ Jarvis/
 - [System Architecture & Audio Engineering](docs/ARCHITECTURE.md)
 - [WebSocket Communication Protocol](docs/PROTOCOL.md)
 - [Hardware & Kiosk Deployment Guide](docs/HARDWARE_SETUP.md)
+- [Firebase Remote Config Dynamic Server URL Guide](docs/REMOTE_CONFIG_SETUP.md)
 
 ---
 
