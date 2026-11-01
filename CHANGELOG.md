@@ -6,7 +6,7 @@ Perubahan produk dicatat di sini. Format bagian mengikuti Added / Changed / Fixe
 
 ### Added
 
-- Perintah ekspresi singkat berbahasa Indonesia yang dikenali gateway, seperti “Jarvis tersenyum”, “coba tertawa”, dan “kembali normal”, dengan acknowledgement tetap tanpa panggilan penalaran Hermes.
+- Perintah ekspresi singkat berbahasa Indonesia yang dikenali gateway, seperti “Nexo tersenyum”, “coba tertawa”, dan “kembali normal”, dengan acknowledgement tetap tanpa panggilan penalaran Hermes.
 - Pemilihan ekspresi percakapan berdasarkan frasa konteks terbatas, dengan fallback netral.
 - Penahanan ekspresi singkat setelah playback selesai dan perlindungan agar event TTS tidak menimpa ekspresi yang dipilih.
 - README dengan identitas maskot, screenshot pemakaian, integrasi Hermes Agent, tautan dukungan pengembangan, serta panduan instalasi/versioning.

@@ -31,7 +31,7 @@ class MascotExpression(str, Enum):
 # Filler may occur before/after one wakeword; the entire string must match.
 _FILLER = r"(?:tolong|mohon|coba)\s+"
 _COMMAND = re.compile(
-    rf"(?:{_FILLER})?(?:(?:nexo|jarvis)[,]?\s+)?(?:{_FILLER})?"
+    rf"(?:{_FILLER})?(?:(?:nexo|nexo)[,]?\s+)?(?:{_FILLER})?"
     r"(?P<body>.+?)(?:\s+(?:dong|ya))?[.!]?"
 )
 _TARGET = re.compile(

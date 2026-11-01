@@ -15,7 +15,7 @@ from ..models.messages import (
     TTSStart,
     TTSEnd,
     PongMessage,
-    JarvisState,
+    NexoState,
 )
 from ..pipeline.vad import EnergyVAD
 from ..pipeline.stt import BaseSTT
@@ -62,7 +62,7 @@ class ApplianceSession:
         self.hermes = hermes
         self.hub = session_hub
         self.vad = EnergyVAD()
-        self.state = JarvisState.IDLE
+        self.state = NexoState.IDLE
         self.audio_buffer = bytearray()
         self.is_recording = False
         self._silence_bytes = 0
@@ -125,7 +125,7 @@ class ApplianceSession:
 
     async def send_state(
         self,
-        state: JarvisState,
+        state: NexoState,
         message: Optional[str] = None,
         expression: Optional[str] = None,
     ):
@@ -149,7 +149,7 @@ class ApplianceSession:
             return False
 
         speech_expr = expression or "senang"
-        await self.send_state(JarvisState.SPEAKING, expression=speech_expr)
+        await self.send_state(NexoState.SPEAKING, expression=speech_expr)
         await self.send_json_message(TTSStart())
         self._tts_started = True
 
@@ -174,7 +174,7 @@ class ApplianceSession:
                 self._tts_started = False
             self._cooldown_until = max(time.monotonic(), self._playback_until) + 0.6
             try:
-                await self.send_state(JarvisState.IDLE, expression="netral")
+                await self.send_state(NexoState.IDLE, expression="netral")
             except Exception:
                 pass
 
@@ -211,7 +211,7 @@ class ApplianceSession:
             await self.send_json_message(
                 ServerHello(
                     session_id=self.session_id,
-                    agent_name="Jarvis",
+                    agent_name="Nexo",
                     status=self.state,
                 )
             )
@@ -224,7 +224,7 @@ class ApplianceSession:
             self.audio_buffer.clear()
             self._preroll.clear()
             self._arm_gap_timeout()
-            await self.send_state(JarvisState.LISTENING, expression="terkejut")
+            await self.send_state(NexoState.LISTENING, expression="terkejut")
 
         elif msg_type == "voice_end":
             await self._finish_recording()
@@ -259,7 +259,7 @@ class ApplianceSession:
             self.audio_buffer.clear()
             self.audio_buffer.extend(self._preroll)
             self._preroll.clear()
-            await self.send_state(JarvisState.LISTENING)
+            await self.send_state(NexoState.LISTENING)
 
         if self.is_recording:
             self._arm_gap_timeout()
@@ -288,7 +288,7 @@ class ApplianceSession:
             if not self._closed:
                 try:
                     await self.send_state(
-                        JarvisState.ERROR,
+                        NexoState.ERROR,
                         message="Pemrosesan suara gagal atau melebihi batas waktu. Silakan coba lagi.",
                         expression="sedih",
                     )
@@ -303,7 +303,7 @@ class ApplianceSession:
                     if self._tts_started:
                         await self.send_json_message(TTSEnd())
                         self._tts_started = False
-                    await self.send_state(JarvisState.IDLE, expression="netral")
+                    await self.send_state(NexoState.IDLE, expression="netral")
                 except Exception:
                     logger.debug("Unable to send idle state")
 
@@ -311,7 +311,7 @@ class ApplianceSession:
         """Process STT -> local mascot command or Hermes -> TTS."""
 
         # Step 1: Thinking / Transcribing
-        await self.send_state(JarvisState.THINKING, expression="bingung")
+        await self.send_state(NexoState.THINKING, expression="bingung")
         transcription = (await self.stt.transcribe(captured_pcm)).strip()
         if not transcription:
             logger.info("No speech transcribed for %s", self.session_id)
@@ -351,12 +351,12 @@ class ApplianceSession:
                 "role": "assistant",
                 "text": agent_reply,
                 "expression": speech_expr,
-                "source": "jarvis_hermes",
+                "source": "nexo_hermes",
             })
 
         # Step 3: Speaking / Streaming TTS with bounded expression heuristics
 
-        await self.send_state(JarvisState.SPEAKING, expression=speech_expr)
+        await self.send_state(NexoState.SPEAKING, expression=speech_expr)
         await self.send_json_message(TTSStart())
         self._tts_started = True
 

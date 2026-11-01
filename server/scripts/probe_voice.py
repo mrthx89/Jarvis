@@ -1,6 +1,6 @@
 """Opt-in real providers probe; never substitutes mock data on failure.
 Run from server/: PYTHONPATH=src .venv/bin/python scripts/probe_voice.py
-Artifacts go to --output (default $TMPDIR/jarvis-voice-probe).
+Artifacts go to --output (default $TMPDIR/nexo-voice-probe).
 """
 import argparse
 import asyncio
@@ -13,11 +13,11 @@ import wave
 import av
 import numpy as np
 
-from jarvis_server.config import load_config
-from jarvis_server.pipeline.stt import create_stt_engine
-from jarvis_server.pipeline.tts import create_tts_engine
-from jarvis_server.hermes.agent_bridge import HermesBridge
-from jarvis_server.gateway.websocket_handler import ApplianceSession
+from nexo_server.config import load_config
+from nexo_server.pipeline.stt import create_stt_engine
+from nexo_server.pipeline.tts import create_tts_engine
+from nexo_server.hermes.agent_bridge import HermesBridge
+from nexo_server.gateway.websocket_handler import ApplianceSession
 
 
 class CaptureSocket:
@@ -62,7 +62,7 @@ async def main(output):
         wav(output / "input-16k.wav", pcm16, 16000)
         stt = create_stt_engine(cfg.stt.provider, cfg.stt.model)
         result["stt_text"] = await asyncio.wait_for(stt.transcribe(pcm16), 120)
-        bridge = HermesBridge(hermes_binary=cfg.hermes.hermes_binary, session_name="jarvis-voice-probe", timeout=60)
+        bridge = HermesBridge(hermes_binary=cfg.hermes.hermes_binary, session_name="nexo-voice-probe", timeout=60)
         # Full session including endpoint detection, real STT, CLI and reply TTS.
         socket = CaptureSocket()
         # In-process provider harness, NOT a gateway authentication test.
@@ -96,6 +96,6 @@ async def main(output):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, default=Path(os.environ.get("TMPDIR", ".")) / "jarvis-voice-probe")
+    parser.add_argument("--output", type=Path, default=Path(os.environ.get("TMPDIR", ".")) / "nexo-voice-probe")
     args = parser.parse_args()
     asyncio.run(main(args.output))

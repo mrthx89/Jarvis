@@ -12,7 +12,7 @@ Official checksum sources:
 https://services.gradle.org/distributions/gradle-8.7-wrapper.jar.sha256
 https://services.gradle.org/distributions/gradle-8.7-bin.zip.sha256
 
-Ensure `app/google-services.json` contains a Firebase client for `id.my.yhdev.nexo` (and optionally `id.my.yhdev.jarvis` for dual compatibility). It is client configuration, not a Firebase administrator service-account credential. If missing, obtain it from the owner's Firebase console (see [docs/FIREBASE_SETUP.md](FIREBASE_SETUP.md)). `local.properties` may set the local Android SDK path; do not commit it.
+Ensure `app/google-services.json` contains a Firebase client for `id.my.yhdev.nexo` (and optionally `id.my.yhdev.nexo` for dual compatibility). It is client configuration, not a Firebase administrator service-account credential. If missing, obtain it from the owner's Firebase console (see [docs/FIREBASE_SETUP.md](FIREBASE_SETUP.md)). `local.properties` may set the local Android SDK path; do not commit it.
 
 ## Owner test build
 
@@ -33,7 +33,7 @@ Windows:
     NEXO_KEY_ALIAS           signing alias (fallback: JARVIS_KEY_ALIAS)
     NEXO_KEY_PASSWORD        key password (fallback: JARVIS_KEY_PASSWORD)
 
-Then run `./gradlew assembleRelease`. Never commit credentials, paste them into public logs, or put them on command-line arguments. Partial configuration fails explicitly. The previously tracked `android/Jarvis.jks`, its historical extensionless alias `android/Jarvis`, and real Firebase client configuration were removed from published branch history by a coordinated rewrite. Local physical credential files were preserved. This does not erase copies in existing clones, forks or server caches and does not rotate any key. If it was a production signing key, evaluate exposure and plan rotation/update compatibility. See [history cleanup](HISTORY_CLEANUP.md) before syncing an older clone.
+Then run `./gradlew assembleRelease`. Never commit credentials, paste them into public logs, or put them on command-line arguments. Partial configuration fails explicitly. The previously tracked `android/Nexo.jks`, its historical extensionless alias `android/Nexo`, and real Firebase client configuration were removed from published branch history by a coordinated rewrite. Local physical credential files were preserved. This does not erase copies in existing clones, forks or server caches and does not rotate any key. If it was a production signing key, evaluate exposure and plan rotation/update compatibility. See [history cleanup](HISTORY_CLEANUP.md) before syncing an older clone.
 
 ## CI
 

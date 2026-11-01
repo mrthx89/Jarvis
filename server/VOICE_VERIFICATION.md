@@ -62,12 +62,12 @@ STT/TTS/Hermes success. The probe below is that evidence.
 
 ```sh
 PYTHONPATH=src .venv/bin/python scripts/probe_voice.py \
-  --output "$TMPDIR/jarvis-voice-probe-final"
+  --output "$TMPDIR/nexo-voice-probe-final"
 ```
 
 Executed against the configured Edge Indonesian `id-ID-ArdiNeural`, local
 faster-whisper `base` on CPU, and the real `/root/.local/bin/hermes` CLI in the
-isolated benign session `jarvis-voice-probe`, not the appliance session. No mock
+isolated benign session `nexo-voice-probe`, not the appliance session. No mock
 provider was used. The probe generates audio, writes WAVs, resamples to 16 kHz,
 transcribes directly, and feeds 20 ms PCM frames followed by silence through the
 actual session endpointing + STT + Hermes + reply-TTS path using an in-process
@@ -82,7 +82,7 @@ Final observed result:
 - Reply audio: 230,400 PCM bytes at 24 kHz (4.8 seconds).
 - States: LISTENING -> THINKING -> SPEAKING -> IDLE; exactly one `tts_end`.
 - Probe `passed: true`; elapsed 15.26 seconds.
-- Artifacts: `$TMPDIR/jarvis-voice-probe-final/{result.json,input-24k.wav,input-16k.wav,reply-24k.wav}`.
+- Artifacts: `$TMPDIR/nexo-voice-probe-final/{result.json,input-24k.wav,input-16k.wav,reply-24k.wav}`.
 
 An earlier longer Indonesian input also completed the real path, but local
 Whisper base heard `Apa kabar` as `Apakah bar`, and the 800 ms endpoint split its

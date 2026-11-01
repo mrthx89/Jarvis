@@ -1,6 +1,6 @@
 # Appliance session and model
 
-The current bridge (`server/src/jarvis_server/hermes/agent_bridge.py`) runs:
+The current bridge (`server/src/nexo_server/hermes/agent_bridge.py`) runs:
 
     hermes chat -c appliance --create-if-missing -q <transcription> -Q
 

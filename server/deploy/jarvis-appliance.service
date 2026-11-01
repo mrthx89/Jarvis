@@ -1,14 +1,14 @@
 [Unit]
-Description=Jarvis Dedicated Appliance - Audio Gateway & Hermes Bridge
+Description=Nexo Dedicated Appliance - Audio Gateway & Hermes Bridge
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/data/home/Jarvis/server
-Environment=PYTHONPATH=/data/home/Jarvis/server/src
+WorkingDirectory=/data/home/Nexo/server
+Environment=PYTHONPATH=/data/home/Nexo/server/src
 Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=HOME=/root
-ExecStart=/data/home/Jarvis/server/.venv/bin/python -m jarvis_server.main
+ExecStart=/data/home/Nexo/server/.venv/bin/python -m nexo_server.main
 Restart=always
 RestartSec=3
 

@@ -28,9 +28,9 @@ def _get_session_link_path() -> Path:
     nexo_dir = Path(os.getenv("NEXO_CONFIG_DIR") or "/root/.config/nexo-auth")
     if nexo_dir.exists():
         return nexo_dir / "session_link.json"
-    jarvis_dir = Path(os.getenv("JARVIS_CONFIG_DIR") or "/root/.config/jarvis-auth")
-    if jarvis_dir.exists():
-        return jarvis_dir / "session_link.json"
+    nexo_dir = Path(os.getenv("JARVIS_CONFIG_DIR") or "/root/.config/nexo-auth")
+    if nexo_dir.exists():
+        return nexo_dir / "session_link.json"
     return nexo_dir / "session_link.json"
 
 
@@ -47,7 +47,7 @@ def get_persisted_session(default: str = "nexo") -> str:
                 return val.strip()
         except Exception:
             pass
-    peer_path = Path("/root/.config/jarvis-auth/session_link.json")
+    peer_path = Path("/root/.config/nexo-auth/session_link.json")
     if peer_path.exists() and peer_path != link_path:
         try:
             data = json.loads(peer_path.read_text(encoding="utf-8"))
@@ -593,4 +593,4 @@ class NexoSessionClient:
 
 
 # Dual-compatibility alias
-JarvisSessionClient = NexoSessionClient
+NexoSessionClient = NexoSessionClient

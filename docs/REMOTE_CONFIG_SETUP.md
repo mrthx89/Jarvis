@@ -1,5 +1,5 @@
 # Panduan Konfigurasi Firebase Remote Config
-## Project: Nexo Dedicated Appliance (sebelumnya Jarvis)
+## Project: Nexo Dedicated Appliance (sebelumnya Nexo)
 **Tujuan**: Mengubah alamat IP / URL server WebSocket Nexo secara dinamis dari cloud tanpa perlu kompilasi ulang (re-build) atau instalasi ulang file APK pada monitor/tablet.
 
 ---
@@ -20,7 +20,7 @@
 
 2. **Daftarkan Aplikasi Android**:
    - Tambahkan aplikasi Android dengan Package Name:
-     `id.my.yhdev.nexo` (dan pertahankan `id.my.yhdev.jarvis` jika transisi bertahap).
+     `id.my.yhdev.nexo` (dan pertahankan `id.my.yhdev.nexo` jika transisi bertahap).
    - Unduh file `google-services.json`. Lihat panduan detail di [docs/FIREBASE_SETUP.md](FIREBASE_SETUP.md).
    - Letakkan file tersebut di dalam folder repositori:
      `android/app/google-services.json`

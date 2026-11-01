@@ -23,7 +23,7 @@ def _handle(raw_args, *, source=None, platform=None):
         env = os.environ.copy()
         env['PYTHONPATH'] = settings['server_src']
         result = subprocess.run(
-            [settings['backend_python'], '-m', 'jarvis_server.telegram_command',
+            [settings['backend_python'], '-m', 'nexo_server.telegram_command',
              '--settings', str(settings_path)],
             input=json.dumps({'args': raw_args, 'source': metadata}),
             text=True, capture_output=True, timeout=40, env=env,
@@ -43,9 +43,9 @@ def register(ctx):
     ctx.register_command('nexo_token', handler=_handle,
                          description='Kelola token perangkat Nexo (pemilik, chat privat).',
                          args_hint='DEVICE_ID | deliver DEVICE_ID | rotate DEVICE_ID | revoke DEVICE_ID')
-    ctx.register_command('jarvis-token', handler=_handle,
-                         description='Kelola token perangkat Jarvis (pemilik, chat privat).',
+    ctx.register_command('nexo-token', handler=_handle,
+                         description='Kelola token perangkat Nexo (pemilik, chat privat).',
                          args_hint='DEVICE_ID | deliver DEVICE_ID | rotate DEVICE_ID | revoke DEVICE_ID')
-    ctx.register_command('jarvis_token', handler=_handle,
-                         description='Kelola token perangkat Jarvis (pemilik, chat privat).',
+    ctx.register_command('nexo_token', handler=_handle,
+                         description='Kelola token perangkat Nexo (pemilik, chat privat).',
                          args_hint='DEVICE_ID | deliver DEVICE_ID | rotate DEVICE_ID | revoke DEVICE_ID')

@@ -22,7 +22,7 @@ ss -tulpn | grep 8765
 curl -fsS http://127.0.0.1:8765/health
 
 # 5. Uji status appliance via CLI Nexo
-/data/home/Jarvis/scripts/nexo status
+/data/home/Nexo/scripts/nexo status
 ```
 
 ---
@@ -50,7 +50,7 @@ curl -fsS http://127.0.0.1:8765/health
    ```
 4. Terbitkan ulang token untuk perangkat tersebut:
    ```bash
-   cd /data/home/Jarvis/server
+   cd /data/home/Nexo/server
    PYTHONPATH=src .venv/bin/python -m nexo_server.auth provision \
      --registry ~/.config/nexo-auth/devices.json \
      --device-id "<DEVICE_ID>" \
@@ -97,7 +97,7 @@ curl -fsS http://127.0.0.1:8765/health
 **Langkah Perbaikan:**
 1. Pra-unduh model secara mandiri:
    ```bash
-   cd /data/home/Jarvis/server
+   cd /data/home/Nexo/server
    .venv/bin/python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')"
    ```
 2. Jika memori RAM terbatas (< 2 GB), gunakan model `tiny`:
@@ -108,7 +108,7 @@ curl -fsS http://127.0.0.1:8765/health
    ```
 3. Pantau log transkripsi saat berbicara:
    ```bash
-   /data/home/Jarvis/scripts/nexo watch
+   /data/home/Nexo/scripts/nexo watch
    ```
 
 ---
@@ -122,7 +122,7 @@ curl -fsS http://127.0.0.1:8765/health
 **Langkah Perbaikan:**
 1. Uji sintesis audio sederhana via Python:
    ```bash
-   cd /data/home/Jarvis/server
+   cd /data/home/Nexo/server
    .venv/bin/python -c "import asyncio, edge_tts; asyncio.run(edge_tts.Communicate('Halo', 'id-ID-ArdiNeural').save('/tmp/test.mp3'))"
    ```
 2. Periksa apakah berkas `/tmp/test.mp3` terbuat dengan ukuran > 0 byte.

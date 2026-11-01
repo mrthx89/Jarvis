@@ -287,7 +287,7 @@ def test_cli_writer_and_telegram_share_lock_and_registry(config, owner):
 
 
 def test_telegram_provision_dual_compatibility():
-    """Verify legacy jarvis_server telegram provision imports match nexo_server."""
-    import jarvis_server.telegram_provision as legacy_provision
+    """Verify legacy nexo_server telegram provision imports match nexo_server."""
+    import nexo_server.telegram_provision as legacy_provision
     assert callable(legacy_provision.handle_command)
 

@@ -36,6 +36,6 @@ jobs:
         run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleInternal
       - uses: actions/upload-artifact@v4
         with:
-          name: jarvis-internal-debug-signed
+          name: nexo-internal-debug-signed
           path: android/app/build/outputs/apk/internal/*.apk
           if-no-files-found: error

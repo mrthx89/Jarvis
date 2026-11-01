@@ -45,6 +45,6 @@ async def test_cancellation_reaps_real_child(tmp_path):
 
 
 def test_dual_compatibility_hermes_bridge():
-    """Verify legacy jarvis_server hermes bridge imports match nexo_server."""
-    from jarvis_server.hermes.agent_bridge import HermesBridge as LegacyBridge
+    """Verify legacy nexo_server hermes bridge imports match nexo_server."""
+    from nexo_server.hermes.agent_bridge import HermesBridge as LegacyBridge
     assert LegacyBridge is not None

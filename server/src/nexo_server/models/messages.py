@@ -15,7 +15,7 @@ class NexoState(str, Enum):
 
 
 # Dual-compatibility alias
-JarvisState = NexoState
+NexoState = NexoState
 
 
 class AudioSpec(BaseModel):

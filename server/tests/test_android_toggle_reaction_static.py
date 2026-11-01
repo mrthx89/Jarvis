@@ -75,28 +75,28 @@ def test_conversation_expression_lingers_then_yields_to_listening_error_or_off()
     view = view_file.read_text()
     assert 'private var conversationExpression: MascotExpression? = null' in view
     assert 'val previousState = currentState' in view
-    assert ('previousState == NexoState.SPEAKING' in view or 'previousState == JarvisState.SPEAKING' in view)
+    assert ('previousState == NexoState.SPEAKING' in view or 'previousState == NexoState.SPEAKING' in view)
     assert 'conversationExpressionUntil = now + 6000L' in view
     assert (
         '(currentState == NexoState.IDLE || currentState == NexoState.LISTENING)' in view or
-        '(currentState == JarvisState.IDLE || currentState == JarvisState.LISTENING)' in view
+        '(currentState == NexoState.IDLE || currentState == NexoState.LISTENING)' in view
     )
     assert 'now < conversationExpressionUntil' in view
     assert (
         'NexoState.LISTENING -> MascotExpression.NETRAL' in view or
-        'JarvisState.LISTENING -> MascotExpression.NETRAL' in view
+        'NexoState.LISTENING -> MascotExpression.NETRAL' in view
     )
     assert (
         'state != NexoState.IDLE && state != NexoState.LISTENING' in view or
-        'state != JarvisState.IDLE && state != JarvisState.LISTENING' in view
+        'state != NexoState.IDLE && state != NexoState.LISTENING' in view
     )
     assert 'conversationExpression = null' in view
     assert (
         'if (state == NexoState.IDLE && previousState != NexoState.IDLE)' in view or
-        'if (state == JarvisState.IDLE && previousState != JarvisState.IDLE)' in view
+        'if (state == NexoState.IDLE && previousState != NexoState.IDLE)' in view
     )
     # Repainting cached status must not extend a response emotion forever.
-    assert ('previousState != NexoState.IDLE' in view or 'previousState != JarvisState.IDLE' in view)
+    assert ('previousState != NexoState.IDLE' in view or 'previousState != NexoState.IDLE' in view)
 
 
 def test_paused_mascot_cries_and_optimistic_reaction_expires_without_audio_side_effects():

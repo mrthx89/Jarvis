@@ -65,7 +65,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             contentResolver, android.provider.Settings.Secure.ANDROID_ID)
         // Persist a random fallback; never share a hard-coded ID across devices.
         val identityPrefs = getSharedPreferences("device_identity", Context.MODE_PRIVATE)
-        val legacyId = identityPrefs.getString("jarvis_device_id", null)
+        val legacyId = identityPrefs.getString("nexo_device_id", null)
             ?: identityPrefs.getString("id", null)
         val localId = androidId?.takeIf { it.isNotBlank() } ?: legacyId
             ?: java.util.UUID.randomUUID().toString().also { identityPrefs.edit().putString("id", it).apply() }

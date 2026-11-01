@@ -1,4 +1,4 @@
-"""Main entrypoint for Jarvis Appliance Server."""
+"""Main entrypoint for Nexo Appliance Server."""
 
 from contextlib import asynccontextmanager
 import asyncio
@@ -24,7 +24,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("jarvis_server")
+logger = logging.getLogger("nexo_server")
 
 config = load_config()
 stt_engine = create_stt_engine(provider=config.stt.provider, model=config.stt.model)
@@ -36,7 +36,7 @@ hermes_bridge = create_hermes_bridge(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Initializing Jarvis Dedicated Appliance Server...")
+    logger.info("Initializing Nexo Dedicated Appliance Server...")
     logger.info(f"STT Provider: {config.stt.provider} | TTS Provider: {config.tts.provider}")
     logger.info(f"Hermes Mode: {config.hermes.bridge_mode}")
     hub.set_hermes_bridge(hermes_bridge)
@@ -44,11 +44,11 @@ async def lifespan(app: FastAPI):
     hub.set_stt_engine(stt_engine)
     hub.set_session_thread(getattr(config.hermes, "session_name", "appliance"))
     yield
-    logger.info("Shutting down Jarvis Server...")
+    logger.info("Shutting down Nexo Server...")
 
 
 app = FastAPI(
-    title="Jarvis Appliance Gateway",
+    title="Nexo Appliance Gateway",
     version="0.1.0",
     description="Dedicated Ambient AI Appliance Gateway for YH Dev",
     lifespan=lifespan,
@@ -76,9 +76,9 @@ async def health_check():
     return JSONResponse(
         {
             "status": "healthy",
-            "appliance": "Jarvis Dedicated Appliance",
+            "appliance": "Nexo Dedicated Appliance",
             "version": "0.1.0",
-            "agent": "Jarvis",
+            "agent": "Nexo",
             "ethos": "berkarya dengan hati @ 2026",
         }
     )

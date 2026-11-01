@@ -1,5 +1,5 @@
 # Hardware Setup & Appliance Deployment Guide
-## Project: Nexo Dedicated Appliance (formerly Jarvis)
+## Project: Nexo Dedicated Appliance (formerly Nexo)
 **Target**: Hands-free Dedicated Desktop Experience (No PC)
 
 ---
@@ -45,7 +45,7 @@ Agar perangkat stabil berjalan terus-menerus tanpa gangguan:
 2. **Battery Protection (Perlindungan Baterai)**:
    - Jika menggunakan tablet dengan baterai, aktifkan fitur *Protect Battery* (membatasi pengisian hingga 80-85%) untuk menjaga keawetan sel baterai saat dicolokkan terus-menerus ke adaptor.
 3. **Kiosk Lock Task Mode**:
-   - Jadikan aplikasi Jarvis sebagai Device Owner (opsional untuk lingkungan produksi) atau gunakan fitur *App Pinning* / *Lock Task Mode* agar aplikasi tidak dapat keluar tanpa kata sandi.
+   - Jadikan aplikasi Nexo sebagai Device Owner (opsional untuk lingkungan produksi) atau gunakan fitur *App Pinning* / *Lock Task Mode* agar aplikasi tidak dapat keluar tanpa kata sandi.
 4. **Izin Aplikasi (App Permissions)**:
    - Berikan izin `RECORD_AUDIO` secara permanen (*Allow all the time*).
-   - Matikan *Battery Optimization* untuk aplikasi Jarvis (*Unrestricted*).
+   - Matikan *Battery Optimization* untuk aplikasi Nexo (*Unrestricted*).

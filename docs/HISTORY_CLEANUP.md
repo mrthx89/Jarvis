@@ -3,10 +3,10 @@
 History branch `main` ditulis ulang untuk menghapus file Google/Firebase asli dan keystore yang pernah dikomit. Remote saat operasi hanya memiliki satu branch (`main`) dan tidak memiliki tag yang diiklankan. Semua versi blob yang ditemukan untuk file berikut dihapus dari history yang dapat dijangkau:
 
 - `android/app/google-services.json`
-- `android/Jarvis.jks`
-- `android/Jarvis` — salinan keystore historis tanpa ekstensi, ditemukan lewat identitas blob.
+- `android/Nexo.jks`
+- `android/Nexo` — salinan keystore historis tanpa ekstensi, ditemukan lewat identitas blob.
 
-Lima versi blob sensitif tidak lagi dapat dijangkau dari refs yang diverifikasi. Tree source terbaru sebelum/sesudah rewrite identik. File fisik `android/Jarvis.jks` dan `android/app/google-services.json` pada working directory server dipertahankan dan SHA-256-nya dibandingkan sebelum/sesudah tanpa mencetak isinya. File contoh `google-services.json.example` tetap tersedia.
+Lima versi blob sensitif tidak lagi dapat dijangkau dari refs yang diverifikasi. Tree source terbaru sebelum/sesudah rewrite identik. File fisik `android/Nexo.jks` dan `android/app/google-services.json` pada working directory server dipertahankan dan SHA-256-nya dibandingkan sebelum/sesudah tanpa mencetak isinya. File contoh `google-services.json.example` tetap tersedia.
 
 ## Clone yang sudah ada
 

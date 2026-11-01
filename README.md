@@ -14,7 +14,7 @@
   Yanto Hariyono · YH Dev
 </p>
 
-Nexo (sebelumnya Jarvis) menghadirkan interaksi suara melalui tablet atau layar pintar berbasis Android: berbicara, melihat respons maskot, dan mendengarkan jawaban tanpa mengetik. Tidak perlu PC konvensional di meja; komputasi penalaran dan pemrosesan suara tetap berjalan pada server terpisah. Monitor biasa memerlukan perangkat komputasi pendamping.
+Nexo (sebelumnya Nexo) menghadirkan interaksi suara melalui tablet atau layar pintar berbasis Android: berbicara, melihat respons maskot, dan mendengarkan jawaban tanpa mengetik. Tidak perlu PC konvensional di meja; komputasi penalaran dan pemrosesan suara tetap berjalan pada server terpisah. Monitor biasa memerlukan perangkat komputasi pendamping.
 
 ## Tampilan aplikasi
 
@@ -51,7 +51,7 @@ Saat mikrofon ON dan siap, ucapkan perintah pendek yang berdiri sendiri:
 
 | Perintah | Reaksi |
 | --- | --- |
-| “Nexo, tersenyum” (atau “Jarvis, tersenyum”) | Senang |
+| “Nexo, tersenyum” (atau “Nexo, tersenyum”) | Senang |
 | “Coba tertawa” | Tertawa |
 | “Tunjukkan wajah bingung” | Bingung |
 | “Berkedip” | Mengedip |
@@ -111,8 +111,8 @@ Panduan teknis lengkap, systemd, provisioning, penggunaan sehari-hari dan troubl
 Prasyarat: Python 3.11+, runtime Hermes Agent, dan konfigurasi layanan suara. Dari root repository:
 
 ```bash
-git clone https://github.com/mrthx89/Jarvis.git
-cd Jarvis
+git clone https://github.com/mrthx89/Nexo.git
+cd Nexo
 python3 -m venv server/.venv
 source server/.venv/bin/activate
 pip install -r server/requirements.txt
@@ -133,7 +133,7 @@ Health endpoint: `http://127.0.0.1:8765/health`. Koneksi klien: `wss://<domain-a
 ### Android
 
 1. Buka `android/` di Android Studio dengan full JDK 17 dan Android SDK 34.
-2. Sediakan konfigurasi Firebase lokal untuk paket `id.my.yhdev.nexo` (atau `id.my.yhdev.jarvis`) dan atur endpoint WSS sesuai [panduan Remote Config](docs/REMOTE_CONFIG_SETUP.md).
+2. Sediakan konfigurasi Firebase lokal untuk paket `id.my.yhdev.nexo` (atau `id.my.yhdev.nexo`) dan atur endpoint WSS sesuai [panduan Remote Config](docs/REMOTE_CONFIG_SETUP.md).
 3. Ikuti [panduan build dan signing](docs/BUILDING.md). Build dilakukan pada komputer pengembang; tidak perlu membuild Android di server gateway.
 4. Jalankan aplikasi, izinkan mikrofon, lalu tekan lama status untuk membuka pengaturan kredensial perangkat.
 5. Tekan **Mulai mikrofon** dan tunggu status kesiapan sebelum berbicara. Tekan **Berhenti** untuk menghentikan audio/koneksi. Ketuk status untuk melihat detail gangguan.
@@ -180,13 +180,13 @@ Metadata source saat ini: **Android 1.0.0 (versionCode 1)**, **server 0.1.0**, d
 
 Gunakan Semantic Versioning, kenaikan versionCode setiap distribusi APK, tag komponen, checksum artifact dan catatan migrasi sesuai [VERSIONING](docs/VERSIONING.md). Lihat [CHANGELOG](CHANGELOG.md) sebelum upgrade. Finalisasi tampilan tidak menghapus kebutuhan build dan uji perangkat.
 
-## Dukung pengembangan Jarvis
+## Dukung pengembangan Nexo
 
-Jarvis dikembangkan dengan hati agar menjadi asisten yang berguna dan terus membaik. Jika proyek ini membantu, dukungan Anda membantu menyediakan waktu pengembangan, pengujian perangkat, dan pemeliharaan.
+Nexo dikembangkan dengan hati agar menjadi asisten yang berguna dan terus membaik. Jika proyek ini membantu, dukungan Anda membantu menyediakan waktu pengembangan, pengujian perangkat, dan pemeliharaan.
 
-<a href="https://yapp.ink/jarvisyhdev"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-Support%20Jarvis-FFDD00?style=for-the-badge&amp;logo=buymeacoffee&amp;logoColor=black" alt="Buy me a coffee — dukung pengembangan Jarvis" /></a>
+<a href="https://yapp.ink/nexoyhdev"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-Support%20Nexo-FFDD00?style=for-the-badge&amp;logo=buymeacoffee&amp;logoColor=black" alt="Buy me a coffee — dukung pengembangan Nexo" /></a>
 
-[Buy me a coffee](https://yapp.ink/jarvisyhdev) · [Laporkan masalah atau usulkan fitur](https://github.com/mrthx89/Jarvis/issues)
+[Buy me a coffee](https://yapp.ink/nexoyhdev) · [Laporkan masalah atau usulkan fitur](https://github.com/mrthx89/Nexo/issues)
 
 Dukungan bersifat sukarela. Anda juga dapat membantu melalui laporan bug yang jelas, pengujian, dokumentasi dan kontribusi kode—tanpa membagikan token, keystore, atau data percakapan privat.
 

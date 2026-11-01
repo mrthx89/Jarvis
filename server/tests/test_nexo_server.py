@@ -23,8 +23,8 @@ def test_nexo_server_imports():
     assert nexo_server.__version__ == "0.1.0"
 
 
-def test_nexo_and_jarvis_mascot_commands():
-    """Mascot parser must recognize 'nexo' wake-word while maintaining 'jarvis' fallback."""
+def test_nexo_and_nexo_mascot_commands():
+    """Mascot parser must recognize 'nexo' wake-word while maintaining 'nexo' fallback."""
     from nexo_server.mascot import MascotExpression, parse_expression_command
 
     # Nexo commands
@@ -34,10 +34,10 @@ def test_nexo_and_jarvis_mascot_commands():
     assert parse_expression_command("tolong nexo, tersenyum dong") == MascotExpression.SENANG
     assert parse_expression_command("nexo tolong tampilkan ekspresi sangat senang ya") == MascotExpression.SANGAT_SENANG
 
-    # Jarvis fallback commands
-    assert parse_expression_command("jarvis, tersenyum") == MascotExpression.SENANG
-    assert parse_expression_command("jarvis, tertawa") == MascotExpression.TERTAWA
-    assert parse_expression_command("Jarvis tersenyum") == MascotExpression.SENANG
+    # Nexo fallback commands
+    assert parse_expression_command("nexo, tersenyum") == MascotExpression.SENANG
+    assert parse_expression_command("nexo, tertawa") == MascotExpression.TERTAWA
+    assert parse_expression_command("Nexo tersenyum") == MascotExpression.SENANG
 
     # Generic commands
     assert parse_expression_command("tersenyum") == MascotExpression.SENANG
@@ -45,12 +45,12 @@ def test_nexo_and_jarvis_mascot_commands():
 
     # Non-commands fall through
     assert parse_expression_command("nexo") is None
-    assert parse_expression_command("jarvis") is None
+    assert parse_expression_command("nexo") is None
     assert parse_expression_command("nexo nexo tersenyum") is None
 
 
-def test_nexo_auth_fallback_to_jarvis_auth():
-    """Registry path resolver must support /root/.config/nexo-auth/ with fallback to jarvis-auth."""
+def test_nexo_auth_fallback_to_nexo_auth():
+    """Registry path resolver must support /root/.config/nexo-auth/ with fallback to nexo-auth."""
     from nexo_server.auth import resolve_registry_path, JARVIS_DEFAULT_REGISTRY, NEXO_DEFAULT_REGISTRY
 
     if NEXO_DEFAULT_REGISTRY.exists():
@@ -65,20 +65,20 @@ def test_nexo_auth_fallback_to_jarvis_auth():
 
 
 def test_nexo_auth_fallback_custom_dirs(tmp_path):
-    """Registry path resolver must fallback from nexo-auth to peer jarvis-auth."""
+    """Registry path resolver must fallback from nexo-auth to peer nexo-auth."""
     from nexo_server.auth import resolve_registry_path
 
     base = tmp_path / "auth_test"
     nexo_dir = base / "nexo-auth"
-    jarvis_dir = base / "jarvis-auth"
-    jarvis_dir.mkdir(parents=True, mode=0o700)
-    jarvis_file = jarvis_dir / "devices.json"
-    jarvis_file.write_text('{"version":1,"devices":{}}')
+    nexo_dir = base / "nexo-auth"
+    nexo_dir.mkdir(parents=True, mode=0o700)
+    nexo_file = nexo_dir / "devices.json"
+    nexo_file.write_text('{"version":1,"devices":{}}')
 
-    # Target under nexo-auth should resolve to peer jarvis-auth when nexo devices.json doesn't exist
+    # Target under nexo-auth should resolve to peer nexo-auth when nexo devices.json doesn't exist
     target = nexo_dir / "devices.json"
     resolved = resolve_registry_path(target)
-    assert resolved == jarvis_file
+    assert resolved == nexo_file
 
     # Once nexo devices.json exists, it should resolve to nexo
     nexo_dir.mkdir(parents=True, mode=0o700)
@@ -92,15 +92,15 @@ def test_systemd_nexo_service_unit():
     service_path = Path(__file__).resolve().parents[1] / "deploy/nexo-appliance.service"
     assert service_path.exists(), "nexo-appliance.service not found"
     content = service_path.read_text()
-    assert "ExecStart=/data/home/Jarvis/server/.venv/bin/python -m nexo_server.main" in content
-    assert "Environment=PYTHONPATH=/data/home/Jarvis/server/src" in content
-    assert "WorkingDirectory=/data/home/Jarvis/server" in content
+    assert "ExecStart=/data/home/Nexo/server/.venv/bin/python -m nexo_server.main" in content
+    assert "Environment=PYTHONPATH=/data/home/Nexo/server/src" in content
+    assert "WorkingDirectory=/data/home/Nexo/server" in content
 
 
 def test_nexo_server_config_and_constants():
     """Verify Nexo server configuration defaults and protocol constants."""
     from nexo_server.config import ServerSettings, HermesSettings, STTSettings, TTSSettings
-    from nexo_server.models.messages import ServerHello, NexoState, JarvisState
+    from nexo_server.models.messages import ServerHello, NexoState, NexoState
 
     srv = ServerSettings()
     assert srv.ws_path == "/ws/appliance"
@@ -118,7 +118,7 @@ def test_nexo_server_config_and_constants():
     hello = ServerHello(session_id="nexo_test_01")
     assert hello.agent_name == "Nexo"
     assert hello.status == NexoState.IDLE
-    assert JarvisState is NexoState
+    assert NexoState is NexoState
 
 
 def test_nexo_pyproject_toml():
@@ -132,20 +132,20 @@ def test_nexo_pyproject_toml():
 
 
 def test_nexo_dual_compatibility_all_modules():
-    """Verify all legacy jarvis_server modules and nexo_server modules can be imported and are functional."""
-    import jarvis_server
-    import jarvis_server.config
-    import jarvis_server.auth
-    import jarvis_server.mascot
-    import jarvis_server.models.messages
-    import jarvis_server.pipeline.vad
-    import jarvis_server.pipeline.stt
-    import jarvis_server.pipeline.tts
-    import jarvis_server.hermes.agent_bridge
-    import jarvis_server.gateway.websocket_handler
-    import jarvis_server.telegram_command
-    import jarvis_server.telegram_provision
-    import jarvis_server.main
+    """Verify all legacy nexo_server modules and nexo_server modules can be imported and are functional."""
+    import nexo_server
+    import nexo_server.config
+    import nexo_server.auth
+    import nexo_server.mascot
+    import nexo_server.models.messages
+    import nexo_server.pipeline.vad
+    import nexo_server.pipeline.stt
+    import nexo_server.pipeline.tts
+    import nexo_server.hermes.agent_bridge
+    import nexo_server.gateway.websocket_handler
+    import nexo_server.telegram_command
+    import nexo_server.telegram_provision
+    import nexo_server.main
 
     import nexo_server
     import nexo_server.config
@@ -161,16 +161,16 @@ def test_nexo_dual_compatibility_all_modules():
     import nexo_server.telegram_provision
     import nexo_server.main
 
-    assert jarvis_server.__version__ == nexo_server.__version__
-    assert hasattr(jarvis_server.config, "AppConfig")
-    assert hasattr(jarvis_server.auth, "DeviceRegistry")
-    assert hasattr(jarvis_server.mascot, "MascotExpression")
-    assert hasattr(jarvis_server.models.messages, "ClientHello")
-    assert hasattr(jarvis_server.pipeline.vad, "EnergyVAD")
-    assert hasattr(jarvis_server.pipeline.stt, "FasterWhisperSTT")
-    assert hasattr(jarvis_server.pipeline.tts, "EdgeTTS")
-    assert hasattr(jarvis_server.hermes.agent_bridge, "HermesBridge")
-    assert hasattr(jarvis_server.gateway.websocket_handler, "ApplianceSession")
-    assert hasattr(jarvis_server.telegram_command, "read_settings")
-    assert hasattr(jarvis_server.telegram_provision, "handle_command")
-    assert hasattr(jarvis_server.main, "app")
+    assert nexo_server.__version__ == nexo_server.__version__
+    assert hasattr(nexo_server.config, "AppConfig")
+    assert hasattr(nexo_server.auth, "DeviceRegistry")
+    assert hasattr(nexo_server.mascot, "MascotExpression")
+    assert hasattr(nexo_server.models.messages, "ClientHello")
+    assert hasattr(nexo_server.pipeline.vad, "EnergyVAD")
+    assert hasattr(nexo_server.pipeline.stt, "FasterWhisperSTT")
+    assert hasattr(nexo_server.pipeline.tts, "EdgeTTS")
+    assert hasattr(nexo_server.hermes.agent_bridge, "HermesBridge")
+    assert hasattr(nexo_server.gateway.websocket_handler, "ApplianceSession")
+    assert hasattr(nexo_server.telegram_command, "read_settings")
+    assert hasattr(nexo_server.telegram_provision, "handle_command")
+    assert hasattr(nexo_server.main, "app")

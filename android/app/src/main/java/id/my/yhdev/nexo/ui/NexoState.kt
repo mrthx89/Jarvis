@@ -9,4 +9,4 @@ enum class NexoState {
     DISCONNECTED
 }
 
-typealias JarvisState = NexoState
+typealias NexoState = NexoState

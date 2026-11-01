@@ -1,4 +1,4 @@
-name: jarvis-device-access
+name: nexo-device-access
 version: 1.0.0
-description: Owner-only private Telegram provisioning for Jarvis appliance devices.
+description: Owner-only private Telegram provisioning for Nexo appliance devices.
 author: YH Dev

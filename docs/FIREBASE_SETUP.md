@@ -1,16 +1,16 @@
 # Petunjuk Penyesuaian google-services.json untuk Nexo
 
-Dokumen ini berisi panduan resmi penyesuaian file konfigurasi klien Firebase (`google-services.json`) sehubungan dengan migrasi dan rebranding aplikasi Android dari paket `id.my.yhdev.jarvis` ke `id.my.yhdev.nexo`.
+Dokumen ini berisi panduan resmi penyesuaian file konfigurasi klien Firebase (`google-services.json`) sehubungan dengan migrasi dan rebranding aplikasi Android dari paket `id.my.yhdev.nexo` ke `id.my.yhdev.nexo`.
 
 ---
 
 ## 1. Ringkasan Perubahan
 
-| Parameter | Versi Lama (Jarvis) | Versi Baru (Nexo) |
+| Parameter | Versi Lama (Nexo) | Versi Baru (Nexo) |
 |---|---|---|
-| **Application ID / Package** | `id.my.yhdev.jarvis` | `id.my.yhdev.nexo` |
-| **Project Name (Gradle)** | `Jarvis` | `Nexo` |
-| **Default WSS Endpoint** | `wss://jarvis.yhdev.my.id/ws/appliance` | `wss://nexo.yhdev.my.id/ws/appliance` |
+| **Application ID / Package** | `id.my.yhdev.nexo` | `id.my.yhdev.nexo` |
+| **Project Name (Gradle)** | `Nexo` | `Nexo` |
+| **Default WSS Endpoint** | `wss://nexo.yhdev.my.id/ws/appliance` | `wss://nexo.yhdev.my.id/ws/appliance` |
 | **Lokasi File Target** | `android/app/google-services.json` | `android/app/google-services.json` |
 
 ---
@@ -29,7 +29,7 @@ Jika Anda menggunakan proyek Firebase yang sama:
    - **Debug signing certificate SHA-1**: Masukkan jika menggunakan fitur Firebase Auth/Dynamic Links (opsional).
 6. Klik **Register app**.
 7. Unduh file `google-services.json` yang baru dihasilkan.
-   > **Catatan**: Firebase akan menyertakan **seluruh** entri aplikasi Android yang terdaftar dalam proyek tersebut ke dalam satu file `google-services.json`. Dengan demikian, file tersebut secara otomatis berisi konfigurasi untuk `id.my.yhdev.nexo` dan `id.my.yhdev.jarvis` (dual-package compatibility).
+   > **Catatan**: Firebase akan menyertakan **seluruh** entri aplikasi Android yang terdaftar dalam proyek tersebut ke dalam satu file `google-services.json`. Dengan demikian, file tersebut secara otomatis berisi konfigurasi untuk `id.my.yhdev.nexo` dan `id.my.yhdev.nexo` (dual-package compatibility).
 
 ### Opsi B: Proyek Firebase Baru (Nexo Mandiri)
 1. Buat proyek baru di [Firebase Console](https://console.firebase.google.com/) dengan nama misalnya `nexo-appliance`.

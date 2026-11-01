@@ -8,7 +8,7 @@ from nexo_server.models.messages import (
     VisualTelemetry,
     TranscriptionMessage,
     NexoState,
-    JarvisState,
+    NexoState,
 )
 from nexo_server.pipeline.vad import EnergyVAD
 
@@ -28,19 +28,19 @@ class TestNexoServer(unittest.TestCase):
         self.assertEqual(state.state, "LISTENING")
 
         # Test dual-compatibility alias
-        state_jarvis = StateChange(state=JarvisState.LISTENING)
-        self.assertEqual(state_jarvis.state, "LISTENING")
-        self.assertIs(JarvisState, NexoState)
+        state_nexo = StateChange(state=NexoState.LISTENING)
+        self.assertEqual(state_nexo.state, "LISTENING")
+        self.assertIs(NexoState, NexoState)
 
         telemetry = VisualTelemetry(amplitude=0.85, frequency_bands=[0.1, 0.5, 0.9])
         self.assertEqual(telemetry.amplitude, 0.85)
         self.assertEqual(len(telemetry.frequency_bands), 3)
 
     def test_dual_compatibility_imports(self):
-        import jarvis_server.models.messages as legacy_msgs
-        import jarvis_server.pipeline.vad as legacy_vad
+        import nexo_server.models.messages as legacy_msgs
+        import nexo_server.pipeline.vad as legacy_vad
         self.assertTrue(issubclass(legacy_msgs.ClientHello, object))
-        self.assertIsNotNone(legacy_msgs.JarvisState)
+        self.assertIsNotNone(legacy_msgs.NexoState)
         self.assertIsNotNone(legacy_vad.EnergyVAD)
 
     def test_energy_vad_silence_and_signal(self):

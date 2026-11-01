@@ -9,7 +9,7 @@ import re
 def _get_service_file():
     candidates = [
         'android/app/src/main/java/id/my/yhdev/nexo/service/NexoKioskService.kt',
-        'android/app/src/main/java/id/my/yhdev/nexo/service/JarvisKioskService.kt',
+        'android/app/src/main/java/id/my/yhdev/nexo/service/NexoKioskService.kt',
     ]
     for c in candidates:
         p = Path(__file__).resolve().parents[2] / c
@@ -46,7 +46,7 @@ def test_voice_choice_is_private_persisted_default_off_and_public_read_only():
     assert 'if (isVoiceEnabled)' in created
     assert (
         'publish(NexoState.DISCONNECTED, "Menunggu endpoint server...")' in created or
-        'publish(JarvisState.DISCONNECTED, "Menunggu endpoint server...")' in created
+        'publish(NexoState.DISCONNECTED, "Menunggu endpoint server...")' in created
     )
     assert 'fun startVoice()' in text
     assert 'fun stopVoice()' in text
@@ -76,7 +76,7 @@ def test_stopped_endpoint_and_credential_refresh_cannot_read_tokens_or_connect()
 
 def test_stop_persists_before_teardown_fences_callbacks_and_publishes_paused_idle():
     stop = body('fun stopVoice()')
-    publish_idle = 'publish(NexoState.IDLE' if 'publish(NexoState.IDLE' in stop else 'publish(JarvisState.IDLE'
+    publish_idle = 'publish(NexoState.IDLE' if 'publish(NexoState.IDLE' in stop else 'publish(NexoState.IDLE'
     ordered = ['putBoolean("enabled", false).commit()', 'voiceEnabled = false',
                '++generation', '++audioGeneration', 'duplex.disconnected()',
                'audioRecorder.stopRecording()', 'audioPlayer.stop()',
@@ -86,7 +86,7 @@ def test_stop_persists_before_teardown_fences_callbacks_and_publishes_paused_idl
     positions = [stop.index(fragment) for fragment in ordered]
     assert positions == sorted(positions)
     assert 'dijeda' in stop
-    assert 'JarvisState.ERROR' not in stop and 'NexoState.ERROR' not in stop
+    assert 'NexoState.ERROR' not in stop and 'NexoState.ERROR' not in stop
     assert 'menghubungkan ulang' not in stop
     assert 'connectionKey = null' not in stop
 
@@ -141,7 +141,7 @@ def test_playback_events_preserve_speaking_expression_until_audio_drains():
     started = body('override fun onTTSStarted() {')
     assert 'currentExpression)' in started
     text = source()
-    changed_pattern = r'override fun onStateChanged\(state:\s*(?:NexoState|JarvisState),\s*message:\s*String\?,\s*expression:\s*String\?\)\s*\{'
+    changed_pattern = r'override fun onStateChanged\(state:\s*(?:NexoState|NexoState),\s*message:\s*String\?,\s*expression:\s*String\?\)\s*\{'
     match = re.search(changed_pattern, text)
     assert match is not None
     changed = body(match.group())

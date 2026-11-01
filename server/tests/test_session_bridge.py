@@ -272,7 +272,7 @@ def test_session_id_resolution():
     fake_list = (
         "Title                        Workspace          Last Active   ID\n"
         "──────────────────────────────────────────────────────────────────\n"
-        "Implementasi Terminal & Lo   Jarvis             just now      local-f84c8817755ad81acbd8154cb2880ea7b5fbb407ab521771d7ac757fcce4a709\n"
+        "Implementasi Terminal & Lo   Nexo             just now      local-f84c8817755ad81acbd8154cb2880ea7b5fbb407ab521771d7ac757fcce4a709\n"
     )
     mock_proc = MagicMock()
     mock_proc.returncode = 0
@@ -283,15 +283,15 @@ def test_session_id_resolution():
         assert res_id == "local-f84c8817755ad81acbd8154cb2880ea7b5fbb407ab521771d7ac757fcce4a709"
 
 
-def test_jarvis_dual_compatibility_reexports():
-    """Modules under jarvis_server must re-export nexo_server session classes."""
-    import jarvis_server.session as j_sess
-    import jarvis_server.session_hub as j_hub
+def test_nexo_dual_compatibility_reexports():
+    """Modules under nexo_server must re-export nexo_server session classes."""
+    import nexo_server.session as j_sess
+    import nexo_server.session_hub as j_hub
 
     assert hasattr(j_sess, "NexoSessionClient")
-    assert hasattr(j_sess, "JarvisSessionClient")
+    assert hasattr(j_sess, "NexoSessionClient")
     assert j_sess.NexoSessionClient is NexoSessionClient
-    assert j_sess.JarvisSessionClient is NexoSessionClient
+    assert j_sess.NexoSessionClient is NexoSessionClient
 
     assert hasattr(j_hub, "SessionHub")
     assert hasattr(j_hub, "hub")

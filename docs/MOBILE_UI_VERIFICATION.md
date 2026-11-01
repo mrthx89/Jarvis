@@ -18,7 +18,7 @@ Source changes only. No Gradle invocation, APK build, emulator run, or remote bu
 
 ## ON/OFF mascot feedback
 
-OFF selects the existing crying expression with a gentle vertical tremble and the caption “Anda jahat… Jarvis menangis. Mikrofon tetap mati.” ON shows a happy/optimistic expression with a short bounce for two seconds, then returns to the latest conversation expression. Initial state synchronization does not replay the ON celebration. Captions are separate from the reply so copying still retains the last complete assistant answer. These are local visual reactions, not TTS or microphone commands; the compact status remains the source of connection/readiness information. Check rapid ON/OFF, incoming state events during the reaction, and app reattachment on the actual device. Animation smoothness and rendering remain unverified.
+OFF selects the existing crying expression with a gentle vertical tremble and the caption “Anda jahat… Nexo menangis. Mikrofon tetap mati.” ON shows a happy/optimistic expression with a short bounce for two seconds, then returns to the latest conversation expression. Initial state synchronization does not replay the ON celebration. Captions are separate from the reply so copying still retains the last complete assistant answer. These are local visual reactions, not TTS or microphone commands; the compact status remains the source of connection/readiness information. Check rapid ON/OFF, incoming state events during the reaction, and app reattachment on the actual device. Animation smoothness and rendering remain unverified.
 
 ## Quiet readout and transient caption
 
@@ -33,6 +33,6 @@ OFF selects the existing crying expression with a gentle vertical tremble and th
 2. Long-press the status text. Scroll from title to reset action; all labels must remain readable, including ID/server strings.
 3. Open token help, then tap the token field to show the keyboard. Scroll to trust/save/reset without content hiding behind keyboard, navigation bar or cutout. Close/reopen keyboard and sheet repeatedly; padding must not accumulate.
 4. Use invalid input to check wrapped error text. Verify the trust checkbox and reset confirmation remain functional. Do not capture real token screenshots.
-5. Before the first reply, copy must be disabled. Receive a long final Jarvis reply and tap copy; paste into a local editor and compare the entire reply, including lines beyond the visible subtitle area.
-6. Speak another utterance. Copy should still copy the previous Jarvis reply until the next final assistant reply arrives, never the user's utterance or status.
+5. Before the first reply, copy must be disabled. Receive a long final Nexo reply and tap copy; paste into a local editor and compare the entire reply, including lines beyond the visible subtitle area.
+6. Speak another utterance. Copy should still copy the previous Nexo reply until the next final assistant reply arrives, never the user's utterance or status.
 7. Verify normal subtitle scrolling, mascot space, and screen-reader button labels. None of these hardware/layout checks were executed on the server.

@@ -45,10 +45,10 @@ def register(ctx):
     ctx.register_command('nexo_token', handler=_handle,
                          description='Kelola token perangkat Nexo (pemilik, chat privat).',
                          args_hint='DEVICE_ID | deliver DEVICE_ID | rotate DEVICE_ID | revoke DEVICE_ID')
-    # Backward compatibility aliases: /jarvis-token and /jarvis_token
-    ctx.register_command('jarvis-token', handler=_handle,
-                         description='Kelola token perangkat Nexo (alias Jarvis, pemilik, chat privat).',
+    # Backward compatibility aliases: /nexo-token and /nexo_token
+    ctx.register_command('nexo-token', handler=_handle,
+                         description='Kelola token perangkat Nexo (alias Nexo, pemilik, chat privat).',
                          args_hint='DEVICE_ID | deliver DEVICE_ID | rotate DEVICE_ID | revoke DEVICE_ID')
-    ctx.register_command('jarvis_token', handler=_handle,
-                         description='Kelola token perangkat Nexo (alias Jarvis, pemilik, chat privat).',
+    ctx.register_command('nexo_token', handler=_handle,
+                         description='Kelola token perangkat Nexo (alias Nexo, pemilik, chat privat).',
                          args_hint='DEVICE_ID | deliver DEVICE_ID | rotate DEVICE_ID | revoke DEVICE_ID')

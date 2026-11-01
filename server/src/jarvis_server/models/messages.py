@@ -5,7 +5,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
-class JarvisState(str, Enum):
+class NexoState(str, Enum):
     IDLE = "IDLE"
     LISTENING = "LISTENING"
     THINKING = "THINKING"
@@ -15,7 +15,7 @@ class JarvisState(str, Enum):
 
 
 # Dual-compatibility alias
-NexoState = JarvisState
+NexoState = NexoState
 
 
 class AudioSpec(BaseModel):
@@ -35,8 +35,8 @@ class ClientHello(BaseModel):
 class ServerHello(BaseModel):
     type: Literal["server_hello"] = "server_hello"
     session_id: str
-    agent_name: str = "Jarvis"
-    status: JarvisState = JarvisState.IDLE
+    agent_name: str = "Nexo"
+    status: NexoState = NexoState.IDLE
 
 
 class VoiceStart(BaseModel):
@@ -51,7 +51,7 @@ class VoiceEnd(BaseModel):
 
 class StateChange(BaseModel):
     type: Literal["state_change"] = "state_change"
-    state: JarvisState
+    state: NexoState
     message: Optional[str] = None
     expression: Optional[str] = None
 

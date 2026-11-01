@@ -1,5 +1,5 @@
 # Architecture & System Design Document
-## Project: Nexo Dedicated Appliance (formerly Jarvis)
+## Project: Nexo Dedicated Appliance (formerly Nexo)
 **Architect**: Yanto Hariyono (YH Dev)  
 **Version**: 1.0.0  
 
@@ -25,7 +25,7 @@ Arsitektur dirancang dengan prinsip **Separation of Concerns (SoC)** yang tegas:
 |           |                                                         ^         |
 |           v                                                         |         |
 |   +---------------------------------------------------------------+ |         |
-|   |             NexoWebSocketClient / Jarvis (OkHttp)             | |         |
+|   |             NexoWebSocketClient / Nexo (OkHttp)             | |         |
 |   +-------------------------------+-------------------------------+ |         |
 +-----------------------------------|---------------------------------|---------+
                                     | (Full-Duplex WebSocket)         |
@@ -34,7 +34,7 @@ Arsitektur dirancang dengan prinsip **Separation of Concerns (SoC)** yang tegas:
 |                              SERVER LAYER                                     |
 |                                                                               |
 |   +---------------------------------------------------------------+           |
-|   |         FastAPI WebSocket Gateway (nexo_server / jarvis)      |           |
+|   |         FastAPI WebSocket Gateway (nexo_server / nexo)      |           |
 |   +-------------------------------+-------------------------------+           |
 |                                   |                                           |
 |         +-------------------------+-------------------------+                 |
@@ -80,7 +80,7 @@ Klien menerapkan VAD berbasis energi (RMS Amplitude Threshold) atau Silero VAD r
 ### 3. Server: Audio Gateway & Pipeline Pemrosesan
 
 #### 3.1 Concurrency & Asynchronous Design
-- Server dibangun di atas Python `asyncio` dan `FastAPI / websockets` (`nexo_server` dengan kompatibilitas `jarvis_server`).
+- Server dibangun di atas Python `asyncio` dan `FastAPI / websockets` (`nexo_server` dengan kompatibilitas `nexo_server`).
 - Setiap koneksi klien memiliki task loop terpisah:
   1. `inbound_receiver`: Membaca pesan teks JSON dan frame biner audio.
   2. `audio_transcription_worker`: Mengalirkan audio ke model STT.

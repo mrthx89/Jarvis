@@ -4,14 +4,14 @@ After=network.target hermes-gateway.service
 
 [Service]
 Type=simple
-WorkingDirectory=/data/home/Jarvis/server
-Environment=PYTHONPATH=/data/home/Jarvis/server/src
+WorkingDirectory=/data/home/Nexo/server
+Environment=PYTHONPATH=/data/home/Nexo/server/src
 Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=HOME=/root
-ExecStart=/data/home/Jarvis/server/.venv/bin/python -m nexo_server.main
+ExecStart=/data/home/Nexo/server/.venv/bin/python -m nexo_server.main
 Restart=always
 RestartSec=3
 
 [Install]
 WantedBy=default.target
-Alias=jarvis-appliance.service
+Alias=nexo-appliance.service

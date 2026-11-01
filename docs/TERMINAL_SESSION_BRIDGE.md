@@ -38,12 +38,12 @@ Utilitas CLI tersedia melalui executable wrapper `nexo` (atau langsung `scripts/
 
 ### Tambahkan ke PATH (Opsional)
 ```bash
-ln -sf /data/home/Jarvis/scripts/nexo /root/.local/bin/nexo
+ln -sf /data/home/Nexo/scripts/nexo /root/.local/bin/nexo
 ```
 
 Pastikan executable memiliki izin eksekusi:
 ```bash
-chmod +x /data/home/Jarvis/scripts/nexo /data/home/Jarvis/scripts/nexo_session.py
+chmod +x /data/home/Nexo/scripts/nexo /data/home/Nexo/scripts/nexo_session.py
 ```
 
 ---
@@ -104,7 +104,7 @@ nexo link
 nexo link --latest
 
 # Tautkan secara manual ke nama thread spesifik
-nexo link "proyek-jarvis"
+nexo link "proyek-nexo"
 ```
 Tautan ini disimpan secara persisten di `/root/.config/nexo-auth/session_link.json` sehingga perintah berikutnya otomatis menggunakan session thread tersebut.
 

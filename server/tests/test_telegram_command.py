@@ -11,7 +11,7 @@ def _get_plugin_path():
     nexo_plugin = Path(__file__).resolve().parents[1] / 'hermes-plugin/nexo-device-access/__init__.py'
     if nexo_plugin.exists():
         return nexo_plugin
-    return Path(__file__).resolve().parents[1] / 'hermes-plugin/jarvis-device-access/__init__.py'
+    return Path(__file__).resolve().parents[1] / 'hermes-plugin/nexo-device-access/__init__.py'
 
 
 PLUGIN = _get_plugin_path()
@@ -43,7 +43,7 @@ def test_send_delivers_copyable_token_and_does_not_return_token(tmp_path, monkey
         captured.update(json.loads(request.data))
         return Response()
     monkeypatch.setattr('nexo_server.telegram_command.urlopen', fake_send)
-    monkeypatch.setattr('jarvis_server.telegram_command.urlopen', fake_send)
+    monkeypatch.setattr('nexo_server.telegram_command.urlopen', fake_send)
     payload = json.dumps({'device_id': 'tablet_01', 'token': 'test_tok_123', 'origin': 'wss://example.com'})
     assert send_protected(payload, {'telegram_env_file': str(env), 'owner_chat_id': '123'}) is None
     # Must NOT set protect_content so user can select and copy text
@@ -59,7 +59,7 @@ def test_telegram_exception_is_sanitized(tmp_path, monkeypatch):
     env.write_text('TELEGRAM_BOT_TOKEN=test-secret\n')
     def fail(*args, **kwargs): raise RuntimeError('test-secret')
     monkeypatch.setattr('nexo_server.telegram_command.urlopen', fail)
-    monkeypatch.setattr('jarvis_server.telegram_command.urlopen', fail)
+    monkeypatch.setattr('nexo_server.telegram_command.urlopen', fail)
     with pytest.raises(ValueError, match='Private Telegram delivery failed') as exc:
         send_protected('synthetic token', {'telegram_env_file': str(env), 'owner_chat_id': '123'})
     assert 'test-secret' not in str(exc.value)
@@ -77,14 +77,14 @@ def test_plugin_rejects_nontelegram_before_worker(monkeypatch):
 
 
 def test_telegram_command_dual_compatibility():
-    """Verify legacy jarvis_server telegram command functions match nexo_server."""
-    import jarvis_server.telegram_command as legacy_cmd
+    """Verify legacy nexo_server telegram command functions match nexo_server."""
+    import nexo_server.telegram_command as legacy_cmd
     assert callable(legacy_cmd.read_settings)
     assert callable(legacy_cmd.send_protected)
 
 
 def test_plugin_registers_commands():
-    """Verify plugin registers both nexo-token and legacy jarvis-token aliases."""
+    """Verify plugin registers both nexo-token and legacy nexo-token aliases."""
     spec = importlib.util.spec_from_file_location('device_access_plugin', PLUGIN)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -99,7 +99,7 @@ def test_plugin_registers_commands():
     module.register(ctx)
     assert "nexo-token" in commands
     assert "nexo_token" in commands
-    assert "jarvis-token" in commands
-    assert "jarvis_token" in commands
+    assert "nexo-token" in commands
+    assert "nexo_token" in commands
     assert commands["nexo-token"]["handler"] == module._handle
-    assert commands["jarvis-token"]["handler"] == module._handle
+    assert commands["nexo-token"]["handler"] == module._handle

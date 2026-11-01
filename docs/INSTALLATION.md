@@ -1,6 +1,6 @@
 # Instalasi dan penggunaan Nexo Dedicated Appliance
 
-Panduan ini menjelaskan gateway Linux dan klien Android native untuk Nexo (sebelumnya Jarvis). Nexo mengintegrasikan Hermes Agent melalui CLI dan session bridge; bukan plugin resmi Nous Research, bukan pengganti runtime Hermes, dan tidak menjalankan model di Android. Android minimum 8.0/API 26, target/compile SDK 34; build memerlukan full JDK 17. Server memerlukan Python 3.11+.
+Panduan ini menjelaskan gateway Linux dan klien Android native untuk Nexo (sebelumnya Nexo). Nexo mengintegrasikan Hermes Agent melalui CLI dan session bridge; bukan plugin resmi Nous Research, bukan pengganti runtime Hermes, dan tidak menjalankan model di Android. Android minimum 8.0/API 26, target/compile SDK 34; build memerlukan full JDK 17. Server memerlukan Python 3.11+.
 
 ## 1. Siapkan Hermes pada akun layanan
 
@@ -38,13 +38,13 @@ hermes chat -c appliance --create-if-missing -q <transkripsi> -Q
 
 Runtime harus mendukung `chat`, `-c`, `--create-if-missing`, `-q`, dan `-Q`. CLI pada lingkungan pengembangan diperiksa sebagai `v0.22.5+2971.ga938f00`; ini catatan pemeriksaan command, bukan jaminan seluruh versi Hermes. Tidak ada minimum versi upstream yang telah dibuktikan melalui matriks pengujian. Setelah upgrade, periksa help/flag, banner/footer output, timeout, sesi, kemudian uji percakapan nyata. Bridge membersihkan metadata CLI yang dikenal sebelum TTS.
 
-Akun, PATH, HOME/HERMES_HOME dan profil service menentukan konfigurasi yang dipakai. Uji dari akun dan direktori kerja yang sama dengan service. Semua appliance saat ini menggunakan nama sesi `appliance`; ini bukan isolasi per perangkat atau sesi Telegram. Jarvis tidak mengirim override model/provider lewat CLI. Detail: [APPLIANCE_SESSION](APPLIANCE_SESSION.md).
+Akun, PATH, HOME/HERMES_HOME dan profil service menentukan konfigurasi yang dipakai. Uji dari akun dan direktori kerja yang sama dengan service. Semua appliance saat ini menggunakan nama sesi `appliance`; ini bukan isolasi per perangkat atau sesi Telegram. Nexo tidak mengirim override model/provider lewat CLI. Detail: [APPLIANCE_SESSION](APPLIANCE_SESSION.md).
 
 ## 2. Pasang gateway
 
 ```bash
-git clone https://github.com/mrthx89/Jarvis.git
-cd Jarvis
+git clone https://github.com/mrthx89/Nexo.git
+cd Nexo
 python3 -m venv server/.venv
 source server/.venv/bin/activate
 pip install -r server/requirements.txt
@@ -76,11 +76,11 @@ Gateway default hanya bind loopback. Ekspos `/ws/appliance` melalui reverse prox
 
 ## 3. Siapkan klien dan kredensial
 
-1. Buka `android/` di Android Studio. Sediakan SDK 34/full JDK 17 serta `android/app/google-services.json` milik proyek Firebase dengan package `id.my.yhdev.nexo` (atau alias `id.my.yhdev.jarvis`).
+1. Buka `android/` di Android Studio. Sediakan SDK 34/full JDK 17 serta `android/app/google-services.json` milik proyek Firebase dengan package `id.my.yhdev.nexo` (atau alias `id.my.yhdev.nexo`).
 2. Konfigurasikan Remote Config `server_websocket_url` ke `wss://domain-anda/ws/appliance`; ikuti [REMOTE_CONFIG_SETUP](REMOTE_CONFIG_SETUP.md). Kredensial tidak boleh disimpan di Firebase.
 3. Build di komputer pengembang sesuai [BUILDING](BUILDING.md). Jangan membuild di gateway bila storage dibatasi. Paket `internal` memakai debug signing; tidak dapat memperbarui instalasi yang memakai signing berbeda. Jangan uninstall sembarangan karena token/data lokal akan hilang.
 4. Buka aplikasi dan tekan lama status mikrofon. Catat ID perangkat dan verifikasi origin WSS yang ditampilkan.
-5. Provision token per perangkat menggunakan bot Telegram (`/nexo-token` atau `/jarvis-token`) atau CLI offline dalam [DEVICE_AUTH](DEVICE_AUTH.md). Registry berisi hash, file pengiriman privat berisi token sekali terbit. Masukkan token pada field bertopeng, konfirmasi origin, lalu simpan. Jangan kirim token ke chat publik, commit, atau log.
+5. Provision token per perangkat menggunakan bot Telegram (`/nexo-token` atau `/nexo-token`) atau CLI offline dalam [DEVICE_AUTH](DEVICE_AUTH.md). Registry berisi hash, file pengiriman privat berisi token sekali terbit. Masukkan token pada field bertopeng, konfirmasi origin, lalu simpan. Jangan kirim token ke chat publik, commit, atau log.
 6. Koordinasikan aktivasi gateway dan klien yang mendukung autentikasi. Registry kosong/invalid menolak semua koneksi; APK lama tanpa auth ditolak.
 
 ## 4. Jalankan sebagai service
@@ -115,7 +115,7 @@ Aktivasi/restart memutus sesi suara aktif. Lakukan ketika perangkat tidak sedang
 - Tekan **Berhenti** untuk menghentikan audio/koneksi. Maskot menangis dan panel percakapan disembunyikan; tidak ada perintah suara yang dapat membangunkan mikrofon OFF.
 - Saat ON, ucapan senang hilang setelah 15 detik. Ini teks reaksi, bukan status koneksi.
 - Ketuk ikon clipboard di kanan `NEXO // COGNITIVE STREAM` untuk menyalin jawaban final lengkap. Jawaban tersimpan dalam memori Activity dan hilang setelah Activity dibuat ulang.
-- Ucapkan “Nexo tersenyum” (atau “Jarvis tersenyum”), “coba tertawa”, “ekspresi jahil”, atau “kembali normal”. Perintah singkat mengubah ekspresi sementara; tidak mengubah hak akses maupun konfigurasi model. Lihat [MASCOT_EXPRESSIONS](MASCOT_EXPRESSIONS.md).
+- Ucapkan “Nexo tersenyum” (atau “Nexo tersenyum”), “coba tertawa”, “ekspresi jahil”, atau “kembali normal”. Perintah singkat mengubah ekspresi sementara; tidak mengubah hak akses maupun konfigurasi model. Lihat [MASCOT_EXPRESSIONS](MASCOT_EXPRESSIONS.md).
 - Gunakan utilitas sesi terminal `./scripts/nexo` untuk interaksi kognitif langsung dari terminal (`./scripts/nexo status`, `./scripts/nexo send "Halo"`, `./scripts/nexo watch`).
 - Ketuk status untuk detail gangguan; tekan lama untuk pengaturan token. Saat origin berpindah ke host/port lain, verifikasi dan provision ulang, jangan meneruskan token sembarangan.
 

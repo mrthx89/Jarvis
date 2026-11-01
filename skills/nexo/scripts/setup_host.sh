@@ -137,7 +137,7 @@ RestartSec=3
 
 [Install]
 WantedBy=default.target
-Alias=jarvis-appliance.service
+Alias=nexo-appliance.service
 EOF
 
 echo "Memuat ulang daemon systemd user..."

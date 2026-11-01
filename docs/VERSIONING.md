@@ -1,6 +1,6 @@
 # Versioning dan proses rilis
 
-Jarvis memakai Semantic Versioning (`MAJOR.MINOR.PATCH`) sebagai kebijakan rilis. Dokumen ini menetapkan proses; keberadaannya tidak berarti tag, APK, atau release baru sudah diterbitkan. Persetujuan tampilan/finalisasi produk tidak menggantikan pengujian build, perangkat, dan deployment.
+Nexo memakai Semantic Versioning (`MAJOR.MINOR.PATCH`) sebagai kebijakan rilis. Dokumen ini menetapkan proses; keberadaannya tidak berarti tag, APK, atau release baru sudah diterbitkan. Persetujuan tampilan/finalisasi produk tidak menggantikan pengujian build, perangkat, dan deployment.
 
 ## Versi komponen saat dokumentasi ini ditulis
 
@@ -9,7 +9,7 @@ Jarvis memakai Semantic Versioning (`MAJOR.MINOR.PATCH`) sebagai kebijakan rilis
 | Android | `android/app/build.gradle.kts` | `versionName = "1.0.0"`, `versionCode = 1` |
 | Varian internal | Gradle `versionNameSuffix` | `1.0.0-internal` |
 | Paket Python server | `server/pyproject.toml` | `0.1.0` |
-| FastAPI/health server | `server/src/jarvis_server/main.py` | `0.1.0` |
+| FastAPI/health server | `server/src/nexo_server/main.py` | `0.1.0` |
 | Protokol WebSocket | hello klien/server dan `docs/PROTOCOL.md` | `1.0` |
 
 Angka ini adalah metadata source, bukan bukti APK terpasang atau server aktif memakai revisi yang sama. Versi Android dan server sekarang berbeda; jangan menyebut server `1.0.0` hanya karena Android memakai nilai tersebut. Protokol memiliki versi terpisah. Catat commit untuk membedakan revisi yang masih memakai versionName sama.

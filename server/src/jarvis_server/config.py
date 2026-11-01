@@ -1,4 +1,4 @@
-"""Configuration loader for Jarvis Server."""
+"""Configuration loader for Nexo Server."""
 
 from dataclasses import dataclass, field
 import os

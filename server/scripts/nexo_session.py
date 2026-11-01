@@ -1,1 +1,1 @@
-/data/home/Jarvis/scripts/nexo_session.py
+/data/home/Nexo/scripts/nexo_session.py

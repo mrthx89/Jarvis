@@ -120,7 +120,7 @@ hermes --version
 
 Clone repositori dan pasang dependensi backend:
 ```bash
-cd /data/home/Jarvis  # Atau direktori instalasi target
+cd /data/home/Nexo  # Atau direktori instalasi target
 python3 -m venv server/.venv
 source server/.venv/bin/activate
 pip install --upgrade pip
@@ -204,7 +204,7 @@ Salin template unit systemd ke direktori systemd (pilih mode user atau system):
 **Mode User Systemd (Direkomendasikan bila berjalan sebagai akun khusus):**
 ```bash
 mkdir -p ~/.config/systemd/user
-cp /data/home/Jarvis/server/deploy/nexo-appliance.service ~/.config/systemd/user/nexo-appliance.service
+cp /data/home/Nexo/server/deploy/nexo-appliance.service ~/.config/systemd/user/nexo-appliance.service
 
 # Sesuaikan WorkingDirectory dan path python bila berbeda
 systemctl --user daemon-reload
@@ -260,7 +260,7 @@ Nexo menerapkan autentikasi Stage 1 berbasis token bearer 256-bit acak. Server h
 
 #### Cara A: Melalui CLI Offline Server
 ```bash
-cd /data/home/Jarvis/server
+cd /data/home/Nexo/server
 PYTHONPATH=src .venv/bin/python -m nexo_server.auth provision \
   --registry /root/.config/nexo-auth/devices.json \
   --device-id "<DEVICE_ID_DARI_LAYAR_ANDROID>" \
@@ -296,8 +296,8 @@ Utilitas `scripts/nexo` menghubungkan terminal kerja Hermes lokal Anda langsung 
 
 ### Registrasi Executable ke PATH
 ```bash
-ln -sf /data/home/Jarvis/scripts/nexo /root/.local/bin/nexo
-chmod +x /data/home/Jarvis/scripts/nexo /data/home/Jarvis/scripts/nexo_session.py
+ln -sf /data/home/Nexo/scripts/nexo /root/.local/bin/nexo
+chmod +x /data/home/Nexo/scripts/nexo /data/home/Nexo/scripts/nexo_session.py
 ```
 
 ### Panduan Perintah Operasional
@@ -394,11 +394,11 @@ Paket skill ini dilengkapi berkas otomasi dan referensi teknis yang dapat langsu
 
 - **`scripts/setup_host.sh`**: Skrip deployment otomatis satu perintah untuk menyiapkan host Linux baru (membuat venv, memasang requirements, mengunduh model Faster-Whisper, memverifikasi Edge-TTS, mengonfigurasi systemd, dan menautkan CLI `nexo`).
   ```bash
-  /data/home/Jarvis/skills/nexo/scripts/setup_host.sh
+  /data/home/Nexo/skills/nexo/scripts/setup_host.sh
   ```
 - **`scripts/verify_appliance.sh`**: Skrip diagnostik otomatis untuk memvalidasi kesehatan sistem (ketersediaan service, izin file autentikasi, port listening, health endpoint, status CLI, dan kelulusan test suite).
   ```bash
-  /data/home/Jarvis/skills/nexo/scripts/verify_appliance.sh
+  /data/home/Nexo/skills/nexo/scripts/verify_appliance.sh
   ```
 - **`references/architecture.md`**: Spesifikasi mendalam model buffer audio 16kHz PCM16, rincian state machine maskot 60 FPS, dan struktur pesan frame biner/JSON WebSocket `/ws/appliance`.
 - **`references/troubleshooting.md`**: Buku panduan (runbook) langkah-demi-langkah pemecahan masalah dan kode error spesifik (HTTP 401/403/1008, DNS timeout, VAD tuning, dan recovery registry).

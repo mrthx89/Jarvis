@@ -25,14 +25,14 @@ bypass exists; an empty/missing/invalid/insecure registry denies every device.
    ```sh
    # Example only. Adapt paths and device ID; do not run against live files blindly.
    umask 077
-   mkdir -p "$HOME/.config/jarvis-auth"
-   chmod 700 "$HOME/.config/jarvis-auth"
-   cd /path/to/Jarvis/server
-   PYTHONPATH=src .venv/bin/python -m jarvis_server.auth provision \
-     --registry "$HOME/.config/jarvis-auth/devices.json" \
+   mkdir -p "$HOME/.config/nexo-auth"
+   chmod 700 "$HOME/.config/nexo-auth"
+   cd /path/to/Nexo/server
+   PYTHONPATH=src .venv/bin/python -m nexo_server.auth provision \
+     --registry "$HOME/.config/nexo-auth/devices.json" \
      --device-id 'ID-SHOWN-ON-DEVICE' \
      --origin 'wss://your-gateway.example/ws/appliance' \
-     --output "$HOME/.config/jarvis-auth/device-delivery.json"
+     --output "$HOME/.config/nexo-auth/device-delivery.json"
    ```
 
    The CLI creates registry and delivery file with mode 0600; token is never printed.
@@ -82,9 +82,9 @@ Long-press the status text to open the native Material bottom sheet. The dark sh
 ## Revoke and rotate
 
 ```sh
-cd /path/to/Jarvis/server
-PYTHONPATH=src .venv/bin/python -m jarvis_server.auth revoke \
-  --registry "$HOME/.config/jarvis-auth/devices.json" \
+cd /path/to/Nexo/server
+PYTHONPATH=src .venv/bin/python -m nexo_server.auth revoke \
+  --registry "$HOME/.config/nexo-auth/devices.json" \
   --device-id 'ID-SHOWN-ON-DEVICE'
 ```
 
@@ -108,7 +108,7 @@ old delivery copies. Never copy an old hash/token to multiple IDs.
 - Hello deadline defaults to 5 seconds; first frame must be hello. JSON is limited
   to 4096 UTF-8 bytes and must be an object. Identity, protocol `1.0`, and complete
   PCM16/16kHz/mono specification must match before audio/VAD/providers can run.
-- `python -m jarvis_server.main` enforces 64 KB transport frames and queue length 4.
+- `python -m nexo_server.main` enforces 64 KB transport frames and queue length 4.
   If launching `uvicorn module:app` directly, explicitly retain equivalent
   `--ws-max-size 64000 --ws-max-queue 4` settings. Application JSON/PCM limits still
   apply, but a transport cap is needed to bound allocation before application code.

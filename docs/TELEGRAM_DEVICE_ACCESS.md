@@ -6,7 +6,7 @@ The appliance WebSocket requires an existing registered device ID plus its match
 
     /nexo_token DEVICE_ID
 
-Replace DEVICE_ID with the exact ID shown by long-pressing the Android status. Telegram normalizes underscores to the registered `nexo-token` command (with backward-compatible alias `/jarvis-token` / `/jarvis_token`). This is a deterministic native Hermes slash command, not an LLM interpreting arbitrary provisioning instructions. Do not paste raw bearer tokens into normal conversations.
+Replace DEVICE_ID with the exact ID shown by long-pressing the Android status. Telegram normalizes underscores to the registered `nexo-token` command (with backward-compatible alias `/nexo-token` / `/nexo_token`). This is a deterministic native Hermes slash command, not an LLM interpreting arbitrary provisioning instructions. Do not paste raw bearer tokens into normal conversations.
 
 Additional explicit operations:
 
@@ -27,7 +27,7 @@ Creating an already registered ID does not replace its token. Use `deliver` to r
 
 ## Installation on this host / portability
 
-Plugin source is under `server/hermes-plugin/nexo-device-access/` (and backward-compatible `server/hermes-plugin/jarvis-device-access/`). Copy its two files to `$HERMES_HOME/plugins/nexo-device-access/`. Create a mode-0600 `settings.json` beside the installed plugin with owner_user_id, owner_chat_id, registry_path, delivery_dir, origin, backend_python, server_src, telegram_env_file. Numeric owner IDs and absolute paths are deployment settings, never token literals. `telegram_env_file` points to the active Hermes secret environment file; do not duplicate the bot token in settings. Create delivery_dir privately, mode 0700.
+Plugin source is under `server/hermes-plugin/nexo-device-access/` (and backward-compatible `server/hermes-plugin/nexo-device-access/`). Copy its two files to `$HERMES_HOME/plugins/nexo-device-access/`. Create a mode-0600 `settings.json` beside the installed plugin with owner_user_id, owner_chat_id, registry_path, delivery_dir, origin, backend_python, server_src, telegram_env_file. Numeric owner IDs and absolute paths are deployment settings, never token literals. `telegram_env_file` points to the active Hermes secret environment file; do not duplicate the bot token in settings. Create delivery_dir privately, mode 0700.
 
 Enable using `hermes plugins enable nexo-device-access --no-allow-tool-override`. Plugin doctor checks registration; verify the live command separately. The command invokes the existing backend virtualenv through a fixed subprocess argv, sends only trusted source metadata/command args over stdin, and returns sanitized JSON summaries. Production settings and secrets are not tracked. This workflow requires the gateway version supporting plugin command source context; fail closed if missing.
 

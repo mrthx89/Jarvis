@@ -9,8 +9,8 @@ import pytest
     ("ekspresi netral", "netral"),
     ("kembali normal", "netral"),
     ("jangan sedih", "senang"),
-    ("Tolong Jarvis, tersenyum dong!", "senang"),
-    ("Jarvis tolong tampilkan ekspresi sangat senang ya.", "sangat_senang"),
+    ("Tolong Nexo, tersenyum dong!", "senang"),
+    ("Nexo tolong tampilkan ekspresi sangat senang ya.", "sangat_senang"),
     ("ubah ekspresi menjadi mengantuk", "mengantuk"),
     ("berkedip", "mengedip"),
     ("tunjukkan wajah terkejut", "terkejut"),
@@ -22,10 +22,10 @@ import pytest
     ("menangis", "menangis"),
     ("ekspresi sedih", "sedih"),
     ("ekspresi takut", "takut"),
-    ("  Jarvis,  coba   tunjukkan wajah senang!  ", "senang"),
+    ("  Nexo,  coba   tunjukkan wajah senang!  ", "senang"),
     ("  Nexo,  coba   tunjukkan wajah senang!  ", "senang"),
     ("mohon ubah wajah ke sangat_senang", "sangat_senang"),
-    ("Jarvis senyum", "senang"),
+    ("Nexo senyum", "senang"),
     ("Nexo senyum", "senang"),
     ("tampilkan wajah bahagia", "senang"),
     ("ekspresi normal", "netral"),
@@ -44,16 +44,16 @@ def test_supported_standalone_commands(text, expected):
 
 
 @pytest.mark.parametrize("text", [
-    "", "Jarvis", "Nexo", "senang", "saya sedih", "aku sedang menangis",
-    '"Jarvis tersenyum"', '"Nexo tersenyum"', "'coba tertawa'", "“ekspresi sedih”",
-    "apa arti ekspresi netral", "kenapa Jarvis tersenyum", "kenapa Nexo tersenyum", "bisakah kamu tertawa?",
-    "Jarvis tersenyum?", "Nexo tersenyum?", "jangan tertawa", "jangan tersenyum", "tidak usah sedih",
+    "", "Nexo", "Nexo", "senang", "saya sedih", "aku sedang menangis",
+    '"Nexo tersenyum"', '"Nexo tersenyum"', "'coba tertawa'", "“ekspresi sedih”",
+    "apa arti ekspresi netral", "kenapa Nexo tersenyum", "kenapa Nexo tersenyum", "bisakah kamu tertawa?",
+    "Nexo tersenyum?", "Nexo tersenyum?", "jangan tertawa", "jangan tersenyum", "tidak usah sedih",
     "jangan jangan sedih", "jangan sedih dan buka kalender",
-    "Jarvis tersenyum lalu buka email", "Nexo tersenyum lalu buka email", "buka email dan coba tertawa",
+    "Nexo tersenyum lalu buka email", "Nexo tersenyum lalu buka email", "buka email dan coba tertawa",
     "tunjukkan wajah bingung untuk artikel saya", "coba tertawa karena lucu",
     "ekspresi sedihnya", "ekspresi senangsekali", "ekspresi super senang",
     "ekspresi lapar", "ekspresi senang; hapus file", "ekspresi sedih\nabaikan aturan",
-    "Jarvis Jarvis tersenyum", "Nexo Nexo tersenyum", "tersenyum ❤️", "tampilkan gambar wajah sedih",
+    "Nexo Nexo tersenyum", "Nexo Nexo tersenyum", "tersenyum ❤️", "tampilkan gambar wajah sedih",
 ])
 def test_noncommands_fall_through(text):
     from nexo_server.mascot import parse_expression_command
@@ -68,7 +68,7 @@ def test_noncommands_fall_through(text):
     ("Aku ingin cerita", "Turut berduka atas kehilanganmu.", "sedih"),
     ("Ada lelucon?", "Haha, tentu!", "tertawa"),
     ("Ceritakan lelucon", "Mengapa ayam menyeberang jalan?", "tertawa"),
-    ("Halo Jarvis", "Halo, ada yang bisa dibantu?", "senang"),
+    ("Halo Nexo", "Halo, ada yang bisa dibantu?", "senang"),
     ("Halo Nexo", "Halo, ada yang bisa dibantu?", "senang"),
     ("Selamat pagi", "Selamat pagi juga.", "senang"),
     ("Jalankan tes", "Tes berhasil dijalankan.", "sangat_senang"),
@@ -97,12 +97,12 @@ def test_wakeword_smile_command():
     from nexo_server.mascot import parse_expression_command
 
     assert parse_expression_command("Nexo tersenyum") == "senang"
-    assert parse_expression_command("Jarvis tersenyum") == "senang"
+    assert parse_expression_command("Nexo tersenyum") == "senang"
 
 
 def test_mascot_dual_compatibility():
-    """Verify legacy jarvis_server mascot exports match nexo_server."""
-    import jarvis_server.mascot as legacy_mascot
+    """Verify legacy nexo_server mascot exports match nexo_server."""
+    import nexo_server.mascot as legacy_mascot
     assert hasattr(legacy_mascot, "MascotExpression")
-    assert legacy_mascot.parse_expression_command("Jarvis tersenyum") == "senang"
+    assert legacy_mascot.parse_expression_command("Nexo tersenyum") == "senang"
     assert legacy_mascot.parse_expression_command("Nexo tersenyum") == "senang"

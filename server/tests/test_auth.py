@@ -79,14 +79,14 @@ def test_deeply_nested_registry_fails_closed(tmp_path):
     assert not DeviceRegistry(path).authenticate('tablet_01', 'Bearer ' + 'a' * 43)
 
 
-def test_dual_compatibility_jarvis_auth(tmp_path):
-    """Verify legacy jarvis_server.auth module alias and CLI dual compatibility."""
-    import jarvis_server.auth as legacy_auth
+def test_dual_compatibility_nexo_auth(tmp_path):
+    """Verify legacy nexo_server.auth module alias and CLI dual compatibility."""
+    import nexo_server.auth as legacy_auth
     assert hasattr(legacy_auth, "DeviceRegistry")
 
     registry = tmp_path / 'devices_legacy.json'
     issued = tmp_path / 'issued_legacy.json'
-    result = subprocess.run([sys.executable, '-m', 'jarvis_server.auth', 'provision',
+    result = subprocess.run([sys.executable, '-m', 'nexo_server.auth', 'provision',
                              '--registry', str(registry), '--device-id', 'tablet_legacy',
                              '--output', str(issued), '--origin', 'wss://voice.example/ws/appliance'],
                             capture_output=True, text=True)

@@ -53,6 +53,6 @@ async def test_edge_mp3_is_decoded_to_pcm16_mono_24khz(monkeypatch):
 
 
 def test_tts_dual_compatibility():
-    """Verify legacy jarvis_server tts import matches nexo_server."""
-    from jarvis_server.pipeline.tts import EdgeTTS as LegacyTTS
+    """Verify legacy nexo_server tts import matches nexo_server."""
+    from nexo_server.pipeline.tts import EdgeTTS as LegacyTTS
     assert LegacyTTS is not None

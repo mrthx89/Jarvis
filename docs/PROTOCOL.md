@@ -1,5 +1,5 @@
 # WebSocket Communication Protocol Specification
-## Project: Nexo Dedicated Appliance (formerly Jarvis)
+## Project: Nexo Dedicated Appliance (formerly Nexo)
 **Protocol Version**: 1.0.0  
 **Transport**: WebSocket (RFC 6455)  
 **Encoding**: JSON (Control/Telemetry) + Binary (Raw PCM Audio)  

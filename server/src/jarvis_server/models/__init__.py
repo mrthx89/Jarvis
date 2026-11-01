@@ -1,4 +1,4 @@
-"""Protocol models for Jarvis WebSocket communication."""
+"""Protocol models for Nexo WebSocket communication."""
 
 from .messages import (
     AudioSpec,
@@ -11,7 +11,7 @@ from .messages import (
     TTSEnd,
     PingMessage,
     PongMessage,
-    JarvisState,
+    NexoState,
 )
 
 __all__ = [
@@ -25,5 +25,5 @@ __all__ = [
     "TTSEnd",
     "PingMessage",
     "PongMessage",
-    "JarvisState",
+    "NexoState",
 ]

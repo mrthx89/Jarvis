@@ -25,8 +25,8 @@ open class NexoFirebaseMessagingService : FirebaseMessagingService() {
         // Store locally so it can be synced with Nexo server
         val prefs = getSharedPreferences("nexo_fcm", Context.MODE_PRIVATE)
         prefs.edit().putString("fcm_token", token).apply()
-        // Backward compatibility sync with jarvis_fcm
-        val legacyPrefs = getSharedPreferences("jarvis_fcm", Context.MODE_PRIVATE)
+        // Backward compatibility sync with nexo_fcm
+        val legacyPrefs = getSharedPreferences("nexo_fcm", Context.MODE_PRIVATE)
         legacyPrefs.edit().putString("fcm_token", token).apply()
     }
 

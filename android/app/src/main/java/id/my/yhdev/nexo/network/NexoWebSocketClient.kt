@@ -218,4 +218,4 @@ class NexoWebSocketClient(
     }
 }
 
-typealias JarvisWebSocketClient = NexoWebSocketClient
+typealias NexoWebSocketClient = NexoWebSocketClient

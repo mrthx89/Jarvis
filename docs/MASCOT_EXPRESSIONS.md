@@ -4,7 +4,7 @@ Native assets remain local and the voice privacy controls are unchanged. This it
 
 ## Intended interaction
 
-While voice is ON and ready, say a short standalone instruction such as “Nexo, tersenyum” (atau “Jarvis, tersenyum”), “tunjukkan wajah bingung”, “coba tertawa”, or “kembali normal”. Supported standalone commands receive a fixed acknowledgement and bypass the reasoning agent; unsupported wording, questions about expressions, and mixed tasks still follow the normal agent path. No command turns the microphone on. OFF stops the audio/socket path, so spoken commands cannot be heard while OFF.
+While voice is ON and ready, say a short standalone instruction such as “Nexo, tersenyum” (atau “Nexo, tersenyum”), “tunjukkan wajah bingung”, “coba tertawa”, or “kembali normal”. Supported standalone commands receive a fixed acknowledgement and bypass the reasoning agent; unsupported wording, questions about expressions, and mixed tasks still follow the normal agent path. No command turns the microphone on. OFF stops the audio/socket path, so spoken commands cannot be heard while OFF.
 
 Supported examples also include “ekspresi marah”, “ekspresi mengantuk”, “ekspresi cinta”, “berkedip”, “ekspresi jahil”, and “jangan sedih” (smile). The available labels match the 16 bundled Android expressions: netral, senang, sangat senang, tertawa, bingung, mengantuk, mengedip, terkejut, cinta, jahil, keren, malu, marah, menangis, sedih, takut. These are short reactions, not a permanent mood lock. Quoted examples and mixed tasks such as “Nexo tersenyum lalu buka email” are not local face commands and still go to the agent. The local acknowledgement is “Baik, ekspresi wajah sudah diubah.”
 

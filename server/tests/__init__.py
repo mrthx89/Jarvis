@@ -1,1 +1,1 @@
-"""Tests for Jarvis Server Gateway and Models."""
+"""Tests for Nexo Server Gateway and Models."""

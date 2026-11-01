@@ -16,7 +16,7 @@ import javax.crypto.spec.GCMParameterSpec
 class DeviceCredentialStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("device_credentials_v1", Context.MODE_PRIVATE)
     private val alias = "nexo_device_credential_v1"
-    private val legacyAlias = "jarvis_device_credential_v1"
+    private val legacyAlias = "nexo_device_credential_v1"
 
     fun origin(serverUrl: String): String? = runCatching {
         val uri = URI(serverUrl)

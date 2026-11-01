@@ -24,7 +24,7 @@ try:
     )
 except ImportError:
     try:
-        from jarvis_server.session import (
+        from nexo_server.session import (
             DEFAULT_SERVER_URL,
             NexoSessionClient,
             find_latest_hermes_session,

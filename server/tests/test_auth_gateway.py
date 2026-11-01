@@ -183,9 +183,9 @@ async def test_real_starlette_denial_with_old_method_missing():
     assert sent == [{'type': 'websocket.close', 'code': 1008, 'reason': ''}]
 
 
-def test_jarvis_server_gateway_dual_compatibility():
-    """Verify legacy jarvis_server imports route to valid components."""
-    import jarvis_server.main as legacy_main
-    from jarvis_server.gateway.websocket_handler import ApplianceSession as LegacySession
+def test_nexo_server_gateway_dual_compatibility():
+    """Verify legacy nexo_server imports route to valid components."""
+    import nexo_server.main as legacy_main
+    from nexo_server.gateway.websocket_handler import ApplianceSession as LegacySession
     assert LegacySession is not None
     assert hasattr(legacy_main, "websocket_appliance_endpoint")

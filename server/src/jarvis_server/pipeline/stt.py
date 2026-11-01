@@ -17,7 +17,7 @@ class BaseSTT(ABC):
 class MockSTT(BaseSTT):
     """Mock STT for testing and verification without external dependencies."""
 
-    def __init__(self, response_text: str = "Halo Jarvis, apa status sistem saat ini?"):
+    def __init__(self, response_text: str = "Halo Nexo, apa status sistem saat ini?"):
         self.response_text = response_text
 
     async def transcribe(self, pcm_audio: bytes, language: str = "id") -> str:

@@ -119,7 +119,7 @@ def test_enabled_only_callback_renders_cached_status_without_callback_order_depe
     assert 'private fun renderStatus()' in activity
     assert (
         'state == NexoState.ERROR -> R.string.voice_error' in activity or
-        'state == JarvisState.ERROR -> R.string.voice_error' in activity
+        'state == NexoState.ERROR -> R.string.voice_error' in activity
     )
 
 

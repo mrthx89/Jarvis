@@ -12,6 +12,6 @@
     </style>
 
     <!-- Legacy aliases for backward compatibility -->
-    <style name="Theme.JarvisAppliance" parent="Theme.NexoAppliance" />
-    <style name="Theme.JarvisAppliance.Fullscreen" parent="Theme.NexoAppliance.Fullscreen" />
+    <style name="Theme.NexoAppliance" parent="Theme.NexoAppliance" />
+    <style name="Theme.NexoAppliance.Fullscreen" parent="Theme.NexoAppliance.Fullscreen" />
 </resources>

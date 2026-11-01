@@ -33,7 +33,7 @@ def send_protected(text, settings):
             tok = data['token']
             orig = data.get('origin', '')
             formatted_text = (
-                f"🔑 <b>Token Akses Jarvis Appliance</b>\n\n"
+                f"🔑 <b>Token Akses Nexo Appliance</b>\n\n"
                 f"<b>Device ID:</b>\n<code>{dev_id}</code>\n\n"
                 f"<b>Token:</b>\n<code>{tok}</code>\n\n"
                 f"<b>Origin:</b>\n<code>{orig}</code>\n\n"

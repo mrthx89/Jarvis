@@ -1,4 +1,4 @@
-"""Session hub re-export for Jarvis Server dual-compatibility."""
+"""Session hub re-export for Nexo Server dual-compatibility."""
 
 from nexo_server.session_hub import SessionHub, hub
 

@@ -19,8 +19,8 @@ try:
     from nexo_server.pipeline.tts import EdgeTTS
     from nexo_server.auth import credential_origin, DEVICE_ID, TOKEN
 except ImportError:
-    from jarvis_server.pipeline.tts import EdgeTTS
-    from jarvis_server.auth import credential_origin, DEVICE_ID, TOKEN
+    from nexo_server.pipeline.tts import EdgeTTS
+    from nexo_server.auth import credential_origin, DEVICE_ID, TOKEN
 
 class NoRedirectConnect(websockets.connect):
     # Current asyncio client and legacy 12/13 client use different hooks.
@@ -114,10 +114,10 @@ async def run(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--url', default='wss://jarvis.yhdev.my.id/ws/appliance')
+    parser.add_argument('--url', default='wss://nexo.yhdev.my.id/ws/appliance')
     parser.add_argument('--credentials', help='Path to mode-0600 provisioned JSON (or JARVIS_PROBE_CREDENTIAL_FILE)')
     parser.add_argument('--phrase', default='Halo halo.')
-    parser.add_argument('--output', default='/data/home/.hermes/cache/scratch/jarvis-voice-response.wav')
+    parser.add_argument('--output', default='/data/home/.hermes/cache/scratch/nexo-voice-response.wav')
     parser.add_argument('--timeout', type=float, default=130)
     try:
         asyncio.run(run(parser.parse_args()))
