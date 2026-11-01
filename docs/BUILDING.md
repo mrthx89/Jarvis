@@ -33,7 +33,7 @@ Windows:
     JARVIS_KEY_ALIAS           signing alias
     JARVIS_KEY_PASSWORD        key password
 
-Then run `./gradlew assembleRelease`. Never commit credentials, paste them into public logs, or put them on command-line arguments. Partial configuration fails explicitly. The previously tracked `android/Jarvis.jks` is removed from Git tracking only; the local file is preserved, but Git history still contains the old material. If it was a production signing key, the owner must evaluate exposure and plan rotation/update compatibility. This change does not rotate it or rewrite history.
+Then run `./gradlew assembleRelease`. Never commit credentials, paste them into public logs, or put them on command-line arguments. Partial configuration fails explicitly. The previously tracked `android/Jarvis.jks`, its historical extensionless alias `android/Jarvis`, and real Firebase client configuration were removed from published branch history by a coordinated rewrite. Local physical credential files were preserved. This does not erase copies in existing clones, forks or server caches and does not rotate any key. If it was a production signing key, evaluate exposure and plan rotation/update compatibility. See [history cleanup](HISTORY_CLEANUP.md) before syncing an older clone.
 
 ## CI
 

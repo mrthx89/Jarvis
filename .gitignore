@@ -63,6 +63,8 @@ GoogleService-Info.plist
 # Signing secrets (wrapper files are deliberately tracked)
 *.jks
 *.keystore
+# Historical extensionless keystore alias
+/android/Jarvis
 keystore.properties
 .auth/
 *.credentials.json
