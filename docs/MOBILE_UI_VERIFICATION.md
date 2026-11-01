@@ -16,6 +16,10 @@ Source changes only. No Gradle invocation, APK build, emulator run, or remote bu
 - Verify STOP during connection, recording, processing and playback: the Android microphone privacy indicator must turn off, speaker playback must stop, and there must be no reconnect/capture until START. Microphone start still requires permission, valid credentials and server protocol acknowledgement. A bound foreground service/notification may remain; stopping voice is not force-stopping the app.
 - Check the notch grows/shrinks for different labels without exceeding narrow screen bounds and without moving controls over the console. Tap targets remain at least 48dp for the separate voice button.
 
+## ON/OFF mascot feedback
+
+OFF selects the existing crying expression with a gentle vertical tremble and the caption “Anda jahat… Jarvis menangis. Mikrofon tetap mati.” ON shows a happy/optimistic expression with a short bounce for two seconds, then returns to the latest conversation expression. Initial state synchronization does not replay the ON celebration. Captions are separate from the reply so copying still retains the last complete assistant answer. These are local visual reactions, not TTS or microphone commands; the compact status remains the source of connection/readiness information. Check rapid ON/OFF, incoming state events during the reaction, and app reattachment on the actual device. Animation smoothness and rendering remain unverified.
+
 ## Owner device acceptance
 
 1. Check a 320dp-wide phone, a typical 360–412dp portrait phone, and a tablet. Try font scaling 1.0, 1.3 and 2.0.

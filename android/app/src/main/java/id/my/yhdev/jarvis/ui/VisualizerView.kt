@@ -24,6 +24,9 @@ class VisualizerView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
+    private var voiceEnabled = false
+    private var voiceReactionUntil = 0L
+    private var stateExpression = MascotExpression.NETRAL
     private var currentState: JarvisState = JarvisState.IDLE
     private var targetAmplitude: Float = 0f
     private var smoothAmplitude: Float = 0f
@@ -118,13 +121,45 @@ class VisualizerView @JvmOverloads constructor(
             }
         }
 
-        transitionToExpression(targetExpr)
+        stateExpression = targetExpr
+        if (voiceEnabled && SystemClock.uptimeMillis() >= voiceReactionUntil) {
+            transitionToExpression(targetExpr)
+        }
+        updateExpression(SystemClock.uptimeMillis())
         onStatePhysics(state)
         postInvalidateOnAnimation()
     }
 
+    /** Visual feedback only; this view never controls microphone or networking. */
+    fun setVoiceEnabled(enabled: Boolean, animateReaction: Boolean) {
+        val now = SystemClock.uptimeMillis()
+        val wasEnabled = voiceEnabled
+        voiceEnabled = enabled
+        voiceReactionUntil = when {
+            !enabled -> 0L
+            !wasEnabled && animateReaction -> now + 2000L
+            else -> voiceReactionUntil
+        }
+        if (!enabled) setAmplitude(0f)
+        updateExpression(now)
+        postInvalidateOnAnimation()
+    }
+
+    private fun updateExpression(now: Long) {
+        val expression = when {
+            !voiceEnabled -> MascotExpression.MENANGIS
+            now < voiceReactionUntil -> MascotExpression.SANGAT_SENANG
+            currentState == JarvisState.IDLE && now - idleStartTime > 60000L &&
+                stateExpression == MascotExpression.NETRAL -> MascotExpression.MENGANTUK
+            else -> stateExpression
+        }
+        transitionToExpression(expression)
+        if (voiceEnabled && now >= voiceReactionUntil) voiceReactionUntil = 0L
+    }
+
     fun transitionToExpression(newExpr: MascotExpression) {
-        if (currentExpression == newExpr && !isTransitioning) return
+        // Repeated state/frame updates must not restart a cross-fade in progress.
+        if (currentExpression == newExpr) return
         previousExpression = currentExpression
         currentExpression = newExpr
         isTransitioning = true
@@ -169,6 +204,7 @@ class VisualizerView @JvmOverloads constructor(
         super.onDraw(canvas)
 
         val now = SystemClock.uptimeMillis()
+        updateExpression(now)
         val dt = (now - lastFrameTime).coerceIn(1L, 66L) / 1000f
         lastFrameTime = now
 
@@ -178,7 +214,12 @@ class VisualizerView @JvmOverloads constructor(
         // Continuous Organic Breathing Oscillation
         breathPhase += dt * 2.2f
         if (breathPhase > Math.PI * 2) breathPhase -= (Math.PI * 2).toFloat()
-        val breathFloatY = sin(breathPhase.toDouble()).toFloat() * 5f
+        val reactionBob = when {
+            !voiceEnabled -> sin(now / 150.0).toFloat() * 2f
+            now < voiceReactionUntil -> -kotlin.math.abs(sin(now / 180.0)).toFloat() * 8f
+            else -> 0f
+        }
+        val breathFloatY = sin(breathPhase.toDouble()).toFloat() * 5f + reactionBob
         val breathScale = 1.0f + (sin(breathPhase.toDouble()).toFloat() * 0.012f)
 
         // Random Saccade Glances & Head Tilts during IDLE
@@ -206,13 +247,6 @@ class VisualizerView @JvmOverloads constructor(
             } else {
                 isBlinking = false
                 nextBlinkTime = now + Random.nextLong(3500L, 6000L)
-            }
-        }
-
-        // Sleepy dozing after prolonged idle (> 60s)
-        if (currentState == JarvisState.IDLE && (now - idleStartTime > 60000L)) {
-            if (currentExpression == MascotExpression.NETRAL) {
-                transitionToExpression(MascotExpression.MENGANTUK)
             }
         }
 
@@ -362,15 +396,15 @@ class VisualizerView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.action == MotionEvent.ACTION_DOWN) {
             performClick()
+            if (!voiceEnabled || SystemClock.uptimeMillis() < voiceReactionUntil) return true
             // Playful tactile spring squash & random happy expression
-            transitionToExpression(
-                listOf(
-                    MascotExpression.JAHIL,
-                    MascotExpression.SENANG,
-                    MascotExpression.KEREN,
-                    MascotExpression.SANGAT_SENANG
-                ).random()
-            )
+            stateExpression = listOf(
+                MascotExpression.JAHIL,
+                MascotExpression.SENANG,
+                MascotExpression.KEREN,
+                MascotExpression.SANGAT_SENANG
+            ).random()
+            updateExpression(SystemClock.uptimeMillis())
             return true
         }
         return super.onTouchEvent(event)
