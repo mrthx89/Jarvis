@@ -27,6 +27,7 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
     private lateinit var visualizerView: VisualizerView
     private lateinit var tvStatus: TextView
     private lateinit var tvSubtitle: TextView
+    private lateinit var ivStatusLed: android.widget.ImageView
     private lateinit var remoteConfigManager: RemoteConfigManager
 
     private var kioskService: JarvisKioskService? = null
@@ -61,10 +62,13 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         }
     }
 
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
+    private val requestMultiplePermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val audioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: (
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+        if (audioGranted) {
             bindKioskService()
         } else {
             tvStatus.text = "Izin mikrofon diperlukan untuk mendengarkan."
@@ -84,19 +88,34 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         visualizerView = findViewById(R.id.visualizerView)
         tvStatus = findViewById(R.id.tvStatus)
         tvSubtitle = findViewById(R.id.tvSubtitle)
+        ivStatusLed = findViewById(R.id.ivStatusLed)
 
         checkAndRequestAudioPermission()
     }
 
     private fun checkAndRequestAudioPermission() {
+        val permissionsToRequest = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
         if (ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             bindKioskService()
+            if (permissionsToRequest.size > 1) {
+                requestMultiplePermissionsLauncher.launch(permissionsToRequest.toTypedArray())
+            }
         } else {
-            requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            requestMultiplePermissionsLauncher.launch(permissionsToRequest.toTypedArray())
         }
     }
 
@@ -146,6 +165,15 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
                 JarvisState.ERROR -> message ?: "Terjadi kesalahan"
                 JarvisState.DISCONNECTED -> getString(R.string.status_disconnected)
             }
+
+            val ledColor = when (state) {
+                JarvisState.IDLE -> 0xFF00E5FF.toInt()
+                JarvisState.LISTENING -> 0xFF00E676.toInt()
+                JarvisState.THINKING -> 0xFFFFB300.toInt()
+                JarvisState.SPEAKING -> 0xFF2979FF.toInt()
+                JarvisState.ERROR, JarvisState.DISCONNECTED -> 0xFFFF5252.toInt()
+            }
+            ivStatusLed.setColorFilter(ledColor)
         }
     }
 
