@@ -184,9 +184,9 @@ Gunakan Semantic Versioning, kenaikan versionCode setiap distribusi APK, tag kom
 
 Nexo dikembangkan dengan hati agar menjadi asisten yang berguna dan terus membaik. Jika proyek ini membantu, dukungan Anda membantu menyediakan waktu pengembangan, pengujian perangkat, dan pemeliharaan.
 
-<a href="https://yapp.ink/nexoyhdev"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-Support%20Nexo-FFDD00?style=for-the-badge&amp;logo=buymeacoffee&amp;logoColor=black" alt="Buy me a coffee — dukung pengembangan Nexo" /></a>
+<a href="https://yapp.ink/yhdev"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-Support%20Nexo-FFDD00?style=for-the-badge&amp;logo=buymeacoffee&amp;logoColor=black" alt="Buy me a coffee — dukung pengembangan Nexo" /></a>
 
-[Buy me a coffee](https://yapp.ink/nexoyhdev) · [Laporkan masalah atau usulkan fitur](https://github.com/mrthx89/Nexo/issues)
+[Buy me a coffee](https://yapp.ink/yhdev) · [Laporkan masalah atau usulkan fitur](https://github.com/mrthx89/Nexo/issues)
 
 Dukungan bersifat sukarela. Anda juga dapat membantu melalui laporan bug yang jelas, pengujian, dokumentasi dan kontribusi kode—tanpa membagikan token, keystore, atau data percakapan privat.
 
