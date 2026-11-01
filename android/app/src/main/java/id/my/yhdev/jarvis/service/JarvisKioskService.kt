@@ -28,19 +28,26 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
     private lateinit var audioPlayer: AudioPlayerManager
     @Volatile private var webSocketClient: JarvisWebSocketClient? = null
     @Volatile private var generation = 0
+    @Volatile private var audioGeneration = 0
     private var connectionKey: Pair<String, String>? = null
     private val credentialStore by lazy { DeviceCredentialStore(this) }
-    private var currentState = JarvisState.DISCONNECTED
-    private var currentMessage: String? = "Belum terhubung ke server."
+    private val voicePreferences by lazy { getSharedPreferences("voice_control", Context.MODE_PRIVATE) }
+    @Volatile private var voiceEnabled = false
+    val isVoiceEnabled: Boolean
+        get() = voiceEnabled
+    private var currentState = JarvisState.IDLE
+    private var currentMessage: String? = "Suara dijeda • tekan Mulai untuk mendengarkan"
     private var currentExpression: String? = null
 
     var serviceCallback: ServiceCallback? = null
         set(value) {
             field = value
+            value?.onVoiceEnabledChanged(isVoiceEnabled)
             value?.onStateChanged(currentState, currentMessage, currentExpression)
         }
 
     interface ServiceCallback {
+        fun onVoiceEnabledChanged(enabled: Boolean)
         fun onStateChanged(state: JarvisState, message: String?, expression: String?)
         fun onTelemetryReceived(amplitude: Float, bands: List<Float>?)
         fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean)
@@ -57,59 +64,107 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
         currentMessage = message
         currentExpression = expression
         serviceCallback?.onStateChanged(state, message, expression)
+        startForegroundNotification()
     }
 
     private fun publishListening() {
-        if (duplex.canSendAudio) {
+        if (isVoiceEnabled && duplex.canSendAudio) {
             publish(JarvisState.LISTENING, "Mikrofon aktif • silakan bicara", "netral")
         }
     }
 
+    // Called by the visible Activity after microphone permission has been granted.
+    fun startVoice() {
+        if (isVoiceEnabled && webSocketClient != null) return
+        voicePreferences.edit().putBoolean("enabled", true).commit()
+        voiceEnabled = true
+        serviceCallback?.onVoiceEnabledChanged(true)
+        connectionKey?.let { initializeConnection(it.first, it.second, forceReconnect = true) }
+            ?: publish(JarvisState.DISCONNECTED, "Menunggu endpoint server...")
+    }
+
+    fun stopVoice() {
+        voicePreferences.edit().putBoolean("enabled", false).commit()
+        voiceEnabled = false
+        ++generation
+        ++audioGeneration
+        duplex.disconnected()
+        audioRecorder.stopRecording()
+        audioPlayer.stop()
+        webSocketClient?.disconnect()
+        webSocketClient = null
+        serviceCallback?.onVoiceEnabledChanged(false)
+        publish(JarvisState.IDLE, "Suara dijeda • tekan Mulai untuk mendengarkan", "netral")
+        startForegroundNotification()
+    }
+
     override fun onCreate() {
         super.onCreate()
+        voiceEnabled = voicePreferences.getBoolean("enabled", false)
         startForegroundNotification()
+        createAudioSession()
+        if (isVoiceEnabled) publish(JarvisState.DISCONNECTED, "Menunggu endpoint server...")
+    }
+
+    private fun createAudioSession() {
+        // Capture the session token at construction, never when a late error arrives.
+        val audioToken = ++audioGeneration
+        val client = webSocketClient
+        if (::audioRecorder.isInitialized) audioRecorder.stopRecording()
+        if (::audioPlayer.isInitialized) audioPlayer.release()
         audioPlayer = AudioPlayerManager(onError = { message ->
-            val token = generation
             main.post {
-                if (token != generation) return@post
-                // Output failure is terminal for this connection, not a successful drain.
-                duplex.playbackFailed()
-                val reconnect = connectionKey
-                connectionKey = null // bypass same-endpoint initialization guard
-                if (reconnect != null) {
-                    initializeConnection(reconnect.first, reconnect.second)
-                } else {
-                    audioRecorder.stopRecording()
-                    audioPlayer.stop()
-                }
-                publish(JarvisState.ERROR, "$message • menghubungkan ulang")
+                if (!isVoiceEnabled || audioToken != audioGeneration) return@post
+                failAudioSession(message)
             }
         })
         audioRecorder = AudioRecorderManager(onError = { message ->
             main.post {
-                duplex.microphoneReady(false)
-                audioRecorder.stopRecording()
-                publish(JarvisState.ERROR, message)
+                if (!isVoiceEnabled || audioToken != audioGeneration) return@post
+                failAudioSession(message)
             }
         }) { chunk, length ->
             // Continuous PCM for server endpointing. No local voice_end, no barge-in.
-            if (duplex.canSendAudio && webSocketClient?.sendAudioChunk(chunk, length) != true) {
+            // Use this session's socket, never a replacement endpoint's socket.
+            if (isVoiceEnabled && audioToken == audioGeneration && duplex.canSendAudio &&
+                client?.sendAudioChunk(chunk, length) != true) {
                 val token = generation
-                duplex.disconnected()
-                main.post { if (token == generation) onDisconnected() }
+                main.post {
+                    if (isVoiceEnabled && token == generation && audioToken == audioGeneration) {
+                        onDisconnected()
+                    }
+                }
             }
         }
     }
 
+    private fun failAudioSession(message: String) {
+        // Hardware/permission errors require an explicit retry, not a reconnect loop.
+        // Keep the user's enabled choice so the Activity can still offer STOP.
+        ++generation
+        ++audioGeneration
+        duplex.disconnected()
+        audioRecorder.stopRecording()
+        audioPlayer.stop()
+        webSocketClient?.disconnect()
+        webSocketClient = null
+        publish(JarvisState.ERROR, message)
+    }
+
     fun refreshCredentials() {
+        if (!isVoiceEnabled) return
         connectionKey?.let { initializeConnection(it.first, it.second, forceReconnect = true) }
     }
 
     fun initializeConnection(serverUrl: String, deviceId: String, forceReconnect: Boolean = false) {
-        if (!forceReconnect && connectionKey == Pair(serverUrl, deviceId) && webSocketClient != null) return
-        val bearerToken = credentialStore.read(serverUrl, deviceId)
+        val sameEndpoint = connectionKey == Pair(serverUrl, deviceId)
         connectionKey = Pair(serverUrl, deviceId)
+        // Remote Config may change while paused; remember it without opening credentials or audio.
+        if (!isVoiceEnabled) return
+        if (!forceReconnect && sameEndpoint && webSocketClient != null) return
+        val bearerToken = credentialStore.read(serverUrl, deviceId)
         val token = ++generation
+        ++audioGeneration
         duplex.disconnected()
         audioRecorder.stopRecording()
         audioPlayer.stop()
@@ -122,7 +177,7 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
         publish(JarvisState.DISCONNECTED, "Menghubungkan ke server...")
         // Fence callbacks from the old endpoint during Remote Config changes.
         val events = object : JarvisWebSocketClient.WebSocketEventListener {
-            private fun dispatch(action: () -> Unit) { main.post { if (token == generation) action() } }
+            private fun dispatch(action: () -> Unit) { main.post { if (isVoiceEnabled && token == generation) action() } }
             override fun onConnected() = dispatch { this@JarvisKioskService.onConnected() }
             override fun onDisconnected() = dispatch { this@JarvisKioskService.onDisconnected() }
             override fun onStateChanged(state: JarvisState, message: String?, expression: String?) =
@@ -146,9 +201,15 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
             val channel = NotificationChannel(channelId, "Jarvis Appliance Service", NotificationManager.IMPORTANCE_LOW)
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
         }
+        val status = when {
+            !isVoiceEnabled -> "Mikrofon nonaktif • suara dijeda"
+            ::audioRecorder.isInitialized && audioRecorder.isRecording() ->
+                "Mikrofon aktif • lihat layar untuk status percakapan"
+            else -> "Suara diaktifkan • mikrofon belum aktif"
+        }
         val notification: Notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Jarvis Appliance Active")
-            .setContentText("Layanan suara aktif • lihat layar untuk status koneksi")
+            .setContentTitle("Jarvis Appliance")
+            .setContentText(status)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -156,14 +217,19 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
     }
 
     override fun onConnected() {
+        if (!isVoiceEnabled) return
+        // The client's onConnected is server_hello acknowledgement, not raw socket open.
+        createAudioSession()
         duplex.connected()
         val started = audioRecorder.startRecording()
         duplex.microphoneReady(started)
         if (started) publishListening()
-        else publish(JarvisState.ERROR, "Mikrofon gagal dimulai. Periksa izin dan perangkat audio.")
+        else failAudioSession("Mikrofon gagal dimulai. Periksa izin dan perangkat audio.")
     }
 
     override fun onDisconnected() {
+        if (!isVoiceEnabled) return
+        ++audioGeneration
         duplex.disconnected()
         audioRecorder.stopRecording()
         audioPlayer.stop()
@@ -171,6 +237,7 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
     }
 
     override fun onStateChanged(state: JarvisState, message: String?, expression: String?) {
+        if (!isVoiceEnabled) return
         duplex.stateChanged(state)
         if (duplex.playbackPending && (state == JarvisState.IDLE || state == JarvisState.LISTENING)) {
             publish(JarvisState.SPEAKING, "Menyelesaikan pemutaran • mikrofon dijeda", expression)
@@ -187,29 +254,35 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
     }
 
     override fun onTelemetryReceived(amplitude: Float, bands: List<Float>?) {
+        if (!isVoiceEnabled) return
         serviceCallback?.onTelemetryReceived(amplitude, bands)
     }
 
     override fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean) {
+        if (!isVoiceEnabled) return
         serviceCallback?.onTranscriptionReceived(role, text, isFinal)
     }
 
     override fun onAudioChunkReceived(audioData: ByteArray) {
+        if (!isVoiceEnabled) return
         duplex.ttsStarted()
         audioPlayer.writeChunk(audioData)
     }
 
     override fun onTTSStarted() {
+        if (!isVoiceEnabled) return
         duplex.ttsStarted()
         publish(JarvisState.SPEAKING, "Berbicara • mikrofon dijeda")
         audioPlayer.start()
     }
 
     override fun onTTSEnded() {
+        if (!isVoiceEnabled) return
         val token = generation
+        val audioToken = audioGeneration
         audioPlayer.finish {
             main.post {
-                if (token == generation) {
+                if (isVoiceEnabled && token == generation && audioToken == audioGeneration) {
                     duplex.playbackDrained()
                     publishListening()
                 }
@@ -218,7 +291,9 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
     }
 
     override fun onDestroy() {
+        voiceEnabled = false
         ++generation
+        ++audioGeneration
         duplex.disconnected()
         serviceCallback = null
         super.onDestroy()

@@ -3,17 +3,20 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:id="@+id/mainRoot"
     android:background="@color/bg_black"
     android:keepScreenOn="true">
 
     <!-- Top 3D Glassmorphic Status Pill -->
     <LinearLayout
         android:id="@+id/pillStatus"
-        android:layout_width="0dp"
+        android:layout_width="wrap_content"
+        android:layout_gravity="center_horizontal"
+        app:layout_constrainedWidth="true"
         android:layout_height="wrap_content"
         android:layout_marginStart="20dp"
         android:layout_marginEnd="20dp"
-        android:layout_marginTop="28dp"
+        android:layout_marginTop="16dp"
         android:background="@drawable/bg_hud_pill"
         android:gravity="center_vertical"
         android:orientation="horizontal"
@@ -32,16 +35,34 @@
 
         <TextView
             android:id="@+id/tvStatus"
-            android:layout_width="0dp"
-            android:layout_weight="1"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:fontFamily="sans-serif-medium"
-            android:letterSpacing="0.12"
+            android:letterSpacing="0.02"
             android:text="@string/status_connecting"
             android:textColor="@color/text_primary"
-            android:textSize="13sp"
-            android:textAllCaps="true" />
+            android:textSize="12sp"
+            android:textAllCaps="false" />
     </LinearLayout>
+
+    <Button
+        android:id="@+id/toggleVoice"
+        style="@style/Widget.AppCompat.Button.Borderless"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:enabled="false"
+        android:singleLine="false"
+        android:ellipsize="none"
+        android:text="@string/voice_start"
+        android:textAllCaps="false"
+        android:textColor="@color/jarvis_cyan"
+        app:layout_constrainedWidth="true"
+        app:layout_constraintTop_toBottomOf="@id/pillStatus"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
     <!-- Central Living 3D Mascot with Organic Physics & Transitions -->
     <id.my.yhdev.jarvis.ui.VisualizerView
@@ -55,7 +76,7 @@
         app:layout_constraintBottom_toTopOf="@id/consoleCard"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/pillStatus" />
+        app:layout_constraintTop_toBottomOf="@id/toggleVoice" />
 
     <!-- Bottom 3D Cyberdeck Curved Glass Console Readout -->
     <LinearLayout
@@ -74,7 +95,7 @@
 
         <TextView
             android:id="@+id/tvConsoleHeader"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
             android:letterSpacing="0.15"
@@ -97,6 +118,22 @@
             android:text="@string/status_connecting"
             android:textColor="@color/text_primary"
             android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/copyReply"
+            style="@style/Widget.AppCompat.Button.Borderless"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:layout_marginTop="4dp"
+            android:enabled="false"
+            android:singleLine="false"
+            android:ellipsize="none"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="@string/copy_reply"
+            android:textAllCaps="false"
+            android:textColor="@color/jarvis_cyan" />
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

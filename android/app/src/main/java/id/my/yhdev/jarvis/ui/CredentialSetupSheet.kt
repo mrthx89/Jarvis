@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.CheckBox
@@ -39,6 +40,7 @@ class CredentialSetupSheet(
         val content = LayoutInflater.from(dialog.context).inflate(R.layout.sheet_credential_setup, null)
         val input = content.findViewById<TextInputEditText>(R.id.setupToken)
         val field = content.findViewById<TextInputLayout>(R.id.setupTokenLayout)
+        field.errorMaxLines = Int.MAX_VALUE
         val trust = content.findViewById<CheckBox>(R.id.setupTrustOrigin)
         val save = content.findViewById<MaterialButton>(R.id.setupSave)
         val help = content.findViewById<TextView>(R.id.setupHelpBody)
@@ -102,10 +104,20 @@ class CredentialSetupSheet(
                     confirmation.show()
                 }
         }
+        val leftPadding = content.paddingLeft
+        val topPadding = content.paddingTop
+        val rightPadding = content.paddingRight
         val bottomPadding = content.paddingBottom
         ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, bottomPadding + bars.bottom)
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            // Absolute base padding avoids accumulation on keyboard/inset updates.
+            // ADJUST_RESIZE handles the IME; do not add its height again here.
+            view.setPadding(
+                leftPadding + bars.left, topPadding + bars.top,
+                rightPadding + bars.right, bottomPadding + bars.bottom
+            )
             insets
         }
         dialog.setContentView(content)
@@ -114,6 +126,13 @@ class CredentialSetupSheet(
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
         dialog.setOnShowListener {
+            // A bounded viewport lets the form scroll instead of measuring taller
+            // than a phone window. It shrinks with the keyboard via ADJUST_RESIZE.
+            dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.let { sheet ->
+                sheet.layoutParams = sheet.layoutParams.apply {
+                    height = ViewGroup.LayoutParams.MATCH_PARENT
+                }
+            }
             dialog.behavior.apply {
                 skipCollapsed = true
                 state = BottomSheetBehavior.STATE_EXPANDED

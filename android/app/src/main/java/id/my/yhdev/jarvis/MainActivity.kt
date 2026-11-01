@@ -1,6 +1,8 @@
 package id.my.yhdev.jarvis
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -10,10 +12,15 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.view.View
+import android.view.ViewGroup
+import android.transition.ChangeBounds
+import android.transition.TransitionManager
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.TextView
+import android.widget.Button
+import android.widget.Toast
 import id.my.yhdev.jarvis.security.DeviceCredentialStore
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -29,6 +36,10 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
     private lateinit var visualizerView: VisualizerView
     private lateinit var tvStatus: TextView
     private lateinit var tvSubtitle: TextView
+    private lateinit var toggleVoice: Button
+    private var voiceEnabled = false
+    private lateinit var copyReply: Button
+    private var lastAssistantReply = ""
     private lateinit var ivStatusLed: android.widget.ImageView
     private lateinit var remoteConfigManager: RemoteConfigManager
 
@@ -84,6 +95,7 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         override fun onServiceDisconnected(name: ComponentName?) {
             kioskService = null
             isBound = false
+            toggleVoice.isEnabled = false
             bindingRequested = true // Framework retains the binding and can reconnect it.
             onStateChanged(JarvisState.DISCONNECTED, "Layanan suara terputus.", null)
         }
@@ -114,8 +126,23 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         visualizerView = findViewById(R.id.visualizerView)
         tvStatus = findViewById(R.id.tvStatus)
         tvStatus.setOnLongClickListener { showCredentialSetup(); true }
+        toggleVoice = findViewById(R.id.toggleVoice)
+        toggleVoice.setOnClickListener {
+            val service = kioskService ?: return@setOnClickListener
+            if (service.isVoiceEnabled) service.stopVoice() else service.startVoice()
+        }
         tvSubtitle = findViewById(R.id.tvSubtitle)
         tvSubtitle.movementMethod = android.text.method.ScrollingMovementMethod.getInstance()
+        copyReply = findViewById(R.id.copyReply)
+        copyReply.setOnClickListener {
+            if (lastAssistantReply.isNotBlank()) {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(
+                    ClipData.newPlainText(getString(R.string.reply_clip_label), lastAssistantReply)
+                )
+                Toast.makeText(this, R.string.reply_copied, Toast.LENGTH_SHORT).show()
+            }
+        }
         ivStatusLed = findViewById(R.id.ivStatusLed)
 
         onStateChanged(JarvisState.DISCONNECTED, "Memeriksa izin mikrofon...", null)
@@ -212,30 +239,67 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         }
     }
 
+    private var lastState = JarvisState.DISCONNECTED
+    private var lastMessage: String? = null
+    private var lastExpression: String? = null
+
     override fun onStateChanged(state: JarvisState, message: String?, expression: String?) {
         runOnUiThread {
-            visualizerView.setState(state, expression)
-            tvStatus.text = message?.takeIf { it.isNotBlank() } ?: when (state) {
-                JarvisState.IDLE -> getString(R.string.status_idle)
-                JarvisState.LISTENING -> getString(R.string.status_listening)
-                JarvisState.THINKING -> getString(R.string.status_thinking)
-                JarvisState.SPEAKING -> getString(R.string.status_speaking)
-                JarvisState.ERROR -> message ?: "Terjadi kesalahan"
-                JarvisState.DISCONNECTED -> getString(R.string.status_disconnected)
-            }
+            lastState = state
+            lastMessage = message
+            lastExpression = expression
+            renderStatus()
+        }
+    }
 
-            if (!hasTranscription) {
-                tvSubtitle.text = tvStatus.text
+    override fun onVoiceEnabledChanged(enabled: Boolean) {
+        runOnUiThread {
+            voiceEnabled = enabled
+            toggleVoice.isEnabled = true
+            toggleVoice.setText(if (enabled) R.string.voice_stop else R.string.voice_start)
+            renderStatus()
+        }
+    }
+
+    private fun renderStatus() {
+        val state = lastState
+        val message = lastMessage
+        visualizerView.setState(if (voiceEnabled) state else JarvisState.IDLE, lastExpression)
+        val status = getString(when {
+            state == JarvisState.ERROR -> R.string.voice_error
+            !voiceEnabled -> R.string.voice_paused
+            else -> when (state) {
+                JarvisState.IDLE, JarvisState.LISTENING -> R.string.voice_listening
+                JarvisState.THINKING -> R.string.voice_thinking
+                JarvisState.SPEAKING -> R.string.voice_speaking
+                JarvisState.ERROR -> R.string.voice_error
+                JarvisState.DISCONNECTED -> R.string.voice_connecting
             }
-            val ledColor = when (state) {
+        })
+        if (tvStatus.text.toString() != status) {
+            TransitionManager.beginDelayedTransition(
+                findViewById<ViewGroup>(R.id.mainRoot),
+                ChangeBounds().apply { duration = 180; addTarget(R.id.pillStatus) }
+            )
+            tvStatus.text = status
+        }
+        tvStatus.contentDescription = message ?: status
+        // Actionable errors remain visible; copy still retains the full last reply.
+        if (!hasTranscription || state == JarvisState.ERROR) {
+            tvSubtitle.text = message?.takeIf { it.isNotBlank() } ?: status
+        }
+        val ledColor = when {
+            state == JarvisState.ERROR -> 0xFFFF5252.toInt()
+            !voiceEnabled -> 0xFF87909C.toInt()
+            else -> when (state) {
                 JarvisState.IDLE -> 0xFF00E5FF.toInt()
                 JarvisState.LISTENING -> 0xFF00E676.toInt()
                 JarvisState.THINKING -> 0xFFFFB300.toInt()
                 JarvisState.SPEAKING -> 0xFF2979FF.toInt()
                 JarvisState.ERROR, JarvisState.DISCONNECTED -> 0xFFFF5252.toInt()
             }
-            ivStatusLed.setColorFilter(ledColor)
         }
+        ivStatusLed.setColorFilter(ledColor)
     }
 
     override fun onTelemetryReceived(amplitude: Float, bands: List<Float>?) {
@@ -248,6 +312,13 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         runOnUiThread {
             hasTranscription = true
             tvSubtitle.text = text
+            tvSubtitle.scrollTo(0, 0)
+            // Keep the last complete answer even while the next user utterance
+            // or a status is displayed. Nothing is copied automatically.
+            if (role == "assistant" && isFinal) {
+                lastAssistantReply = text
+                copyReply.isEnabled = text.isNotBlank()
+            }
         }
     }
 
