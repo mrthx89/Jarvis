@@ -5,14 +5,17 @@ import android.graphics.*
 import android.os.SystemClock
 import android.util.AttributeSet
 import android.view.View
+import androidx.core.content.ContextCompat
 import kotlin.math.cos
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * Nusa-Inspired Living Mascot Face for Jarvis.
- * Features animated glowing expressive eyes with natural blinking,
- * micro-saccade glances, and state-reactive emotions (listening, thinking, speaking).
+ * Living Mascot View with Smooth Physics-based Transitions.
+ * Features 16 distinct expressions, cross-dissolve morphing,
+ * anticipation squash & stretch, ambient breathing, natural blinking,
+ * head-tilt micro-saccades, and audio-reactive vocal bouncing.
  */
 class VisualizerView @JvmOverloads constructor(
     context: Context,
@@ -24,81 +27,135 @@ class VisualizerView @JvmOverloads constructor(
     private var targetAmplitude: Float = 0f
     private var smoothAmplitude: Float = 0f
 
-    // Pre-allocated graphic objects to prevent GC in animation loop
-    private val leftEyeRect = RectF()
-    private val rightEyeRect = RectF()
-    private val glowRect = RectF()
+    // Expression States
+    private var currentExpression: MascotExpression = MascotExpression.NETRAL
+    private var previousExpression: MascotExpression = MascotExpression.NETRAL
+    private var isTransitioning = false
+    private var transitionStartTime = 0L
+    private val transitionDuration = 280f // ms smooth morph
 
-    private val eyeCorePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = Color.WHITE
-    }
+    // Pre-cached Bitmaps for instantaneous rendering without GC pauses
+    private val bitmapCache = mutableMapOf<MascotExpression, Bitmap>()
 
-    private val eyeGlowInnerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 8f
-    }
-
-    private val eyeGlowOuterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 24f
-    }
-
-    private val particlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    // Paints
+    private val srcPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val dstPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val auraPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
 
-    // Animation Timers & States
+    // Transformation Rects & Matrix
+    private val drawRect = RectF()
+    private val animMatrix = Matrix()
+
+    // Physics Animation Properties
     private var lastFrameTime = SystemClock.uptimeMillis()
-    private var blinkStartTime = 0L
-    private var nextBlinkTime = SystemClock.uptimeMillis() + 3000L
-    private var isBlinking = false
+    private var breathPhase = 0f
 
-    // Gaze Direction (Micro-saccades)
+    // Micro-saccades (Drift & Tilt)
     private var gazeTargetX = 0f
     private var gazeTargetY = 0f
     private var gazeCurrentX = 0f
     private var gazeCurrentY = 0f
-    private var nextGlanceTime = SystemClock.uptimeMillis() + 4000L
+    private var tiltTargetDeg = 0f
+    private var tiltCurrentDeg = 0f
+    private var nextGlanceTime = SystemClock.uptimeMillis() + 3500L
 
-    // Continuous breath phase
-    private var breathPhase = 0f
+    // Natural Blink Timer
+    private var nextBlinkTime = SystemClock.uptimeMillis() + 3000L
+    private var isBlinking = false
+    private var blinkStartTime = 0L
 
-    fun setState(state: JarvisState) {
-        if (this.currentState != state) {
-            this.currentState = state
-            onStateTransition(state)
+    // Idle sleepiness timer
+    private var idleStartTime = SystemClock.uptimeMillis()
+
+    init {
+        // Pre-warm bitmap cache in view layout
+        post {
+            loadBitmaps()
+        }
+    }
+
+    private fun loadBitmaps() {
+        val targetSize = (minOf(width, height) * 0.9f).toInt().coerceAtLeast(256)
+        for (expr in MascotExpression.entries) {
+            try {
+                val drawable = ContextCompat.getDrawable(context, expr.drawableRes) ?: continue
+                val bmp = Bitmap.createBitmap(targetSize, targetSize, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bmp)
+                drawable.setBounds(0, 0, targetSize, targetSize)
+                drawable.draw(canvas)
+                bitmapCache[expr] = bmp
+            } catch (e: Exception) {
+                // Graceful fallback
+            }
         }
         postInvalidateOnAnimation()
+    }
+
+    fun setState(state: JarvisState, expressionName: String? = null) {
+        this.currentState = state
+
+        if (state == JarvisState.IDLE) {
+            idleStartTime = SystemClock.uptimeMillis()
+        }
+
+        val targetExpr = if (expressionName != null) {
+            MascotExpression.fromString(expressionName)
+        } else {
+            when (state) {
+                JarvisState.IDLE -> MascotExpression.NETRAL
+                JarvisState.LISTENING -> MascotExpression.TERKEJUT
+                JarvisState.THINKING -> MascotExpression.BINGUNG
+                JarvisState.SPEAKING -> MascotExpression.SENANG
+                JarvisState.ERROR -> MascotExpression.SEDIH
+                JarvisState.DISCONNECTED -> MascotExpression.MENGANTUK
+            }
+        }
+
+        transitionToExpression(targetExpr)
+        onStatePhysics(state)
+        postInvalidateOnAnimation()
+    }
+
+    fun transitionToExpression(newExpr: MascotExpression) {
+        if (currentExpression == newExpr && !isTransitioning) return
+        previousExpression = currentExpression
+        currentExpression = newExpr
+        isTransitioning = true
+        transitionStartTime = SystemClock.uptimeMillis()
     }
 
     fun setAmplitude(amp: Float) {
         this.targetAmplitude = amp.coerceIn(0f, 1f)
     }
 
-    private fun onStateTransition(state: JarvisState) {
+    private fun onStatePhysics(state: JarvisState) {
         when (state) {
             JarvisState.LISTENING -> {
-                // Look straight and alert
                 gazeTargetX = 0f
-                gazeTargetY = -4f
+                gazeTargetY = -8f
+                tiltTargetDeg = 0f
             }
             JarvisState.THINKING -> {
-                // Glance upward-right (thoughtful look)
-                gazeTargetX = 14f
-                gazeTargetY = -12f
+                gazeTargetX = 16f
+                gazeTargetY = -14f
+                tiltTargetDeg = 3.5f // Inquisitive head tilt
             }
             JarvisState.SPEAKING -> {
                 gazeTargetX = 0f
                 gazeTargetY = 0f
+                tiltTargetDeg = 0f
             }
             JarvisState.IDLE -> {
                 gazeTargetX = 0f
                 gazeTargetY = 0f
+                tiltTargetDeg = 0f
             }
             JarvisState.ERROR, JarvisState.DISCONNECTED -> {
                 gazeTargetX = 0f
-                gazeTargetY = 8f
+                gazeTargetY = 10f
+                tiltTargetDeg = -2.0f
             }
         }
     }
@@ -107,155 +164,188 @@ class VisualizerView @JvmOverloads constructor(
         super.onDraw(canvas)
 
         val now = SystemClock.uptimeMillis()
-        val dt = (now - lastFrameTime).coerceIn(1L, 100L) / 1000f
+        val dt = (now - lastFrameTime).coerceIn(1L, 66L) / 1000f
         lastFrameTime = now
 
-        // Smooth amplitude lerp for organic audio responsiveness
-        smoothAmplitude += (targetAmplitude - smoothAmplitude) * 0.2f
+        // Smooth Audio Amplitude (lerp)
+        smoothAmplitude += (targetAmplitude - smoothAmplitude) * 0.22f
 
-        // Update breath oscillation
-        breathPhase += dt * 2.5f
+        // Continuous Organic Breathing Oscillation
+        breathPhase += dt * 2.2f
         if (breathPhase > Math.PI * 2) breathPhase -= (Math.PI * 2).toFloat()
-        val breathDelta = sin(breathPhase.toDouble()).toFloat()
+        val breathFloatY = sin(breathPhase.toDouble()).toFloat() * 5f
+        val breathScale = 1.0f + (sin(breathPhase.toDouble()).toFloat() * 0.012f)
 
-        // Handle Natural Blinking
+        // Random Saccade Glances & Head Tilts during IDLE
+        if (currentState == JarvisState.IDLE && now >= nextGlanceTime) {
+            gazeTargetX = Random.nextInt(-14, 15).toFloat()
+            gazeTargetY = Random.nextInt(-6, 7).toFloat()
+            tiltTargetDeg = Random.nextFloat() * 4f - 2f
+            nextGlanceTime = now + Random.nextLong(3000L, 6500L)
+        }
+
+        // Automatic Natural Blinking during IDLE & SPEAKING
         if (!isBlinking && now >= nextBlinkTime && currentState != JarvisState.LISTENING) {
             isBlinking = true
             blinkStartTime = now
         }
 
-        var blinkScaleY = 1.0f
+        var blinkSquashY = 1.0f
         if (isBlinking) {
             val blinkElapsed = (now - blinkStartTime).toFloat()
-            val blinkDuration = 160f // ms total blink cycle
+            val blinkDuration = 150f
             if (blinkElapsed < blinkDuration) {
                 val progress = blinkElapsed / blinkDuration
-                // Parabolic curve: 1.0 -> 0.08 -> 1.0
-                blinkScaleY = (4f * (progress - 0.5f) * (progress - 0.5f)).coerceIn(0.08f, 1.0f)
+                // Smooth dip and bounce curve for eye blink
+                blinkSquashY = (4f * (progress - 0.5f) * (progress - 0.5f)).coerceIn(0.12f, 1.0f)
             } else {
                 isBlinking = false
-                nextBlinkTime = now + Random.nextLong(3000L, 5500L)
+                nextBlinkTime = now + Random.nextLong(3500L, 6000L)
             }
         }
 
-        // Handle Saccade Look-around during IDLE
-        if (currentState == JarvisState.IDLE && now >= nextGlanceTime) {
-            gazeTargetX = Random.nextInt(-16, 17).toFloat()
-            gazeTargetY = Random.nextInt(-8, 9).toFloat()
-            nextGlanceTime = now + Random.nextLong(3500L, 6000L)
-        }
-
-        // Smooth gaze interpolation
-        gazeCurrentX += (gazeTargetX - gazeCurrentX) * (dt * 6f)
-        gazeCurrentY += (gazeTargetY - gazeCurrentY) * (dt * 6f)
-
-        // Palette configuration
-        val (coreColor, glowInnerColor, glowOuterColor) = when (currentState) {
-            JarvisState.IDLE -> Triple(
-                0xFFFFFFFF.toInt(),
-                0x9978BEFF.toInt(), // Electric cyan-blue
-                0x44508CFF.toInt()
-            )
-            JarvisState.LISTENING -> Triple(
-                0xFFFFFFFF.toInt(),
-                0xCC00E5FF.toInt(), // Vibrant attentive cyan
-                0x6600E676.toInt()  // Emerald aura
-            )
-            JarvisState.THINKING -> Triple(
-                0xFFFFF8E1.toInt(),
-                0xBBFFB300.toInt(), // Amber / Gold calculation
-                0x44FF8F00.toInt()
-            )
-            JarvisState.SPEAKING -> Triple(
-                0xFFFFFFFF.toInt(),
-                0xDD00E5FF.toInt(),
-                0x772979FF.toInt()
-            )
-            JarvisState.ERROR -> Triple(
-                0xFFFFEBEE.toInt(),
-                0xBBFF5252.toInt(),
-                0x44D50000.toInt()
-            )
-            JarvisState.DISCONNECTED -> Triple(
-                0xFF888888.toInt(),
-                0x44666666.toInt(),
-                0x22333333.toInt()
-            )
-        }
-
-        eyeCorePaint.color = coreColor
-        eyeGlowInnerPaint.color = glowInnerColor
-        eyeGlowOuterPaint.color = glowOuterColor
-
-        // Geometry dimensions scaled to View size
-        val cx = width / 2f + gazeCurrentX
-        val cy = height / 2f + gazeCurrentY + (breathDelta * 2f)
-
-        // Base eye dimensions (capsule / rounded pill)
-        val eyeWidth = width * 0.085f
-        var eyeHeight = width * 0.135f
-        val eyeSpacing = width * 0.12f // distance from center to each eye
-        val cornerRadius = eyeWidth / 2f
-
-        // State dynamic modulations
-        when (currentState) {
-            JarvisState.LISTENING -> {
-                // Wide attentive eyes modulated by user voice energy
-                eyeHeight *= (1.18f + smoothAmplitude * 0.25f)
-            }
-            JarvisState.SPEAKING -> {
-                // Dynamic rhythmic voice bounce
-                val bounce = smoothAmplitude * (eyeHeight * 0.35f)
-                eyeHeight += bounce
-            }
-            JarvisState.DISCONNECTED -> {
-                // Sleepy / drooping eyelids
-                eyeHeight *= 0.65f
-            }
-            else -> {}
-        }
-
-        // Apply Blink Scale
-        val currentEyeHeight = (eyeHeight * blinkScaleY).coerceAtLeast(4f)
-        val halfW = eyeWidth / 2f
-        val halfH = currentEyeHeight / 2f
-
-        // Draw Left Eye
-        val leftCenterX = cx - eyeSpacing
-        leftEyeRect.set(leftCenterX - halfW, cy - halfH, leftCenterX + halfW, cy + halfH)
-        drawLivingEye(canvas, leftEyeRect, cornerRadius)
-
-        // Draw Right Eye
-        val rightCenterX = cx + eyeSpacing
-        rightEyeRect.set(rightCenterX - halfW, cy - halfH, rightCenterX + halfW, cy + halfH)
-        drawLivingEye(canvas, rightEyeRect, cornerRadius)
-
-        // Extra Thinking Orbit Particles
-        if (currentState == JarvisState.THINKING) {
-            particlePaint.color = glowInnerColor
-            val orbitR = eyeSpacing * 2.1f
-            for (i in 0 until 4) {
-                val angle = breathPhase * 3f + (i * Math.PI * 0.5f).toFloat()
-                val px = cx + cos(angle.toDouble()).toFloat() * orbitR
-                val py = cy + sin(angle.toDouble()).toFloat() * (orbitR * 0.45f)
-                canvas.drawCircle(px, py, 4f, particlePaint)
+        // Sleepy dozing after prolonged idle (> 60s)
+        if (currentState == JarvisState.IDLE && (now - idleStartTime > 60000L)) {
+            if (currentExpression == MascotExpression.NETRAL) {
+                transitionToExpression(MascotExpression.MENGANTUK)
             }
         }
 
-        // Keep 60 FPS smooth rendering loop active
+        // Smooth Gaze & Tilt interpolation
+        gazeCurrentX += (gazeTargetX - gazeCurrentX) * (dt * 5f)
+        gazeCurrentY += (gazeTargetY - gazeCurrentY) * (dt * 5f)
+        tiltCurrentDeg += (tiltTargetDeg - tiltCurrentDeg) * (dt * 4f)
+
+        // Transition Progress & Squash/Stretch Physics
+        var transProgress = 1.0f
+        var squashStretchX = 1.0f
+        var squashStretchY = 1.0f
+
+        if (isTransitioning) {
+            val elapsed = (now - transitionStartTime).toFloat()
+            if (elapsed < transitionDuration) {
+                val t = elapsed / transitionDuration
+                transProgress = easeInOutCubic(t)
+
+                // Anticipation Squash & Stretch Curve:
+                // Phase 1 (0..0.4): Dip down (squash)
+                // Phase 2 (0.4..0.8): Pop up into new emotion (stretch)
+                // Phase 3 (0.8..1.0): Settle
+                if (t < 0.4f) {
+                    val p = t / 0.4f
+                    val dip = sin(p * Math.PI).toFloat() * 0.08f
+                    squashStretchY -= dip
+                    squashStretchX += dip * 0.7f
+                } else if (t < 0.8f) {
+                    val p = (t - 0.4f) / 0.4f
+                    val pop = sin(p * Math.PI).toFloat() * 0.09f
+                    squashStretchY += pop
+                    squashStretchX -= pop * 0.6f
+                }
+            } else {
+                isTransitioning = false
+                previousExpression = currentExpression
+                transProgress = 1.0f
+            }
+        }
+
+        // Audio Vocal Bounce during Speaking
+        var speechBounceY = 0f
+        var speechScale = 1.0f
+        if (currentState == JarvisState.SPEAKING) {
+            speechBounceY = -smoothAmplitude * 18f
+            speechScale = 1.0f + (smoothAmplitude * 0.08f)
+        }
+
+        // Attentive lean forward during Listening
+        var listenScale = 1.0f
+        if (currentState == JarvisState.LISTENING) {
+            listenScale = 1.08f + (smoothAmplitude * 0.05f)
+        }
+
+        // Calculate Final Geometry
+        val viewW = width.toFloat()
+        val viewH = height.toFloat()
+        val cx = viewW / 2f + gazeCurrentX
+        val cy = viewH / 2f + gazeCurrentY + breathFloatY + speechBounceY
+
+        val mascotSize = minOf(viewW, viewH) * 0.82f
+        val finalScaleX = breathScale * squashStretchX * speechScale * listenScale
+        val finalScaleY = breathScale * squashStretchY * speechScale * listenScale * blinkSquashY
+
+        // Draw Ambient Lighting Aura behind mascot
+        drawAmbientAura(canvas, cx, cy, mascotSize * 0.65f)
+
+        // Setup Matrix for rotation, scale, and translation
+        animMatrix.reset()
+        animMatrix.postTranslate(-mascotSize / 2f, -mascotSize / 2f)
+        animMatrix.postScale(finalScaleX, finalScaleY)
+        animMatrix.postRotate(tiltCurrentDeg)
+        animMatrix.postTranslate(cx, cy)
+
+        val prevBmp = bitmapCache[previousExpression]
+        val currBmp = bitmapCache[currentExpression]
+
+        if (isTransitioning && prevBmp != null && currBmp != null) {
+            // Smooth Cross-Dissolve Alpha Blending
+            val prevAlpha = ((1f - transProgress) * 255).toInt().coerceIn(0, 255)
+            val currAlpha = (transProgress * 255).toInt().coerceIn(0, 255)
+
+            // Draw Outgoing Expression
+            srcPaint.alpha = prevAlpha
+            canvas.save()
+            canvas.concat(animMatrix)
+            drawRect.set(0f, 0f, mascotSize, mascotSize)
+            canvas.drawBitmap(prevBmp, null, drawRect, srcPaint)
+            canvas.restore()
+
+            // Draw Incoming Expression
+            dstPaint.alpha = currAlpha
+            canvas.save()
+            canvas.concat(animMatrix)
+            canvas.drawBitmap(currBmp, null, drawRect, dstPaint)
+            canvas.restore()
+        } else {
+            // Draw Stable Expression
+            val bmpToDraw = currBmp ?: prevBmp
+            if (bmpToDraw != null) {
+                srcPaint.alpha = 255
+                canvas.save()
+                canvas.concat(animMatrix)
+                drawRect.set(0f, 0f, mascotSize, mascotSize)
+                canvas.drawBitmap(bmpToDraw, null, drawRect, srcPaint)
+                canvas.restore()
+            }
+        }
+
+        // Continuous 60 FPS Frame Loop
         postInvalidateOnAnimation()
     }
 
-    private fun drawLivingEye(canvas: Canvas, rect: RectF, radius: Float) {
-        // Outer ambient glow
-        glowRect.set(rect.left - 16f, rect.top - 16f, rect.right + 16f, rect.bottom + 16f)
-        canvas.drawRoundRect(glowRect, radius + 12f, radius + 12f, eyeGlowOuterPaint)
+    private fun drawAmbientAura(canvas: Canvas, cx: Float, cy: Float, radius: Float) {
+        val auraColor = when (currentState) {
+            JarvisState.IDLE -> 0x33254E98.toInt()
+            JarvisState.LISTENING -> 0x4400E5FF.toInt()
+            JarvisState.THINKING -> 0x44FFB300.toInt()
+            JarvisState.SPEAKING -> 0x5500E5FF.toInt()
+            JarvisState.ERROR -> 0x44FF5252.toInt()
+            JarvisState.DISCONNECTED -> 0x22333333.toInt()
+        }
 
-        // Inner sharp glow
-        glowRect.set(rect.left - 6f, rect.top - 6f, rect.right + 6f, rect.bottom + 6f)
-        canvas.drawRoundRect(glowRect, radius + 4f, radius + 4f, eyeGlowInnerPaint)
+        auraPaint.shader = RadialGradient(
+            cx, cy, radius * 1.3f,
+            intArrayOf(auraColor, 0x00000000),
+            floatArrayOf(0.2f, 1.0f),
+            Shader.TileMode.CLAMP
+        )
+        canvas.drawCircle(cx, cy, radius * 1.3f, auraPaint)
+    }
 
-        // Core bright eye capsule
-        canvas.drawRoundRect(rect, radius, radius, eyeCorePaint)
+    private fun easeInOutCubic(x: Float): Float {
+        return if (x < 0.5f) {
+            4f * x * x * x
+        } else {
+            1f - (-2f * x + 2f).toDouble().pow(3.0).toFloat() / 2f
+        }
     }
 }

@@ -28,7 +28,7 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
     var serviceCallback: ServiceCallback? = null
 
     interface ServiceCallback {
-        fun onStateChanged(state: JarvisState, message: String?)
+        fun onStateChanged(state: JarvisState, message: String?, expression: String?)
         fun onTelemetryReceived(amplitude: Float, bands: List<Float>?)
         fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean)
     }
@@ -80,15 +80,15 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
 
     override fun onConnected() {
         audioRecorder.startRecording()
-        serviceCallback?.onStateChanged(JarvisState.IDLE, null)
+        serviceCallback?.onStateChanged(JarvisState.IDLE, null, "netral")
     }
 
     override fun onDisconnected() {
-        serviceCallback?.onStateChanged(JarvisState.DISCONNECTED, null)
+        serviceCallback?.onStateChanged(JarvisState.DISCONNECTED, null, "sedih")
     }
 
-    override fun onStateChanged(state: JarvisState, message: String?) {
-        serviceCallback?.onStateChanged(state, message)
+    override fun onStateChanged(state: JarvisState, message: String?, expression: String?) {
+        serviceCallback?.onStateChanged(state, message, expression)
     }
 
     override fun onTelemetryReceived(amplitude: Float, bands: List<Float>?) {

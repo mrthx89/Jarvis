@@ -49,6 +49,7 @@ class StateChange(BaseModel):
     type: Literal["state_change"] = "state_change"
     state: JarvisState
     message: Optional[str] = None
+    expression: Optional[str] = None
 
 
 class VisualTelemetry(BaseModel):

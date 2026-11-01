@@ -120,9 +120,9 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         }
     }
 
-    override fun onStateChanged(state: JarvisState, message: String?) {
+    override fun onStateChanged(state: JarvisState, message: String?, expression: String?) {
         runOnUiThread {
-            visualizerView.setState(state)
+            visualizerView.setState(state, expression)
             tvStatus.text = when (state) {
                 JarvisState.IDLE -> getString(R.string.status_idle)
                 JarvisState.LISTENING -> getString(R.string.status_listening)
