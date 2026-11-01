@@ -122,6 +122,13 @@ def test_socket_events_and_playback_completion_are_fenced_while_stopped():
     assert 'audioPlayer.stop()' in disconnected
 
 
+def test_playback_events_preserve_speaking_expression_until_audio_drains():
+    started = body('override fun onTTSStarted() {')
+    assert 'currentExpression)' in started
+    changed = body('override fun onStateChanged(state: JarvisState, message: String?, expression: String?) {')
+    assert 'mikrofon dijeda", currentExpression)' in changed
+
+
 def test_notification_is_truthful_about_paused_and_actual_capture():
     notification = body('private fun startForegroundNotification()')
     assert '!isVoiceEnabled' in notification
