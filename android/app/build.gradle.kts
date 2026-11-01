@@ -5,21 +5,25 @@ plugins {
 }
 
 // Secrets are read from the local environment, never committed.
-val releaseStore = providers.environmentVariable("JARVIS_KEYSTORE_PATH").orNull
-val releaseStorePassword = providers.environmentVariable("JARVIS_KEYSTORE_PASSWORD").orNull
-val releaseAlias = providers.environmentVariable("JARVIS_KEY_ALIAS").orNull
-val releaseKeyPassword = providers.environmentVariable("JARVIS_KEY_PASSWORD").orNull
+val releaseStore = providers.environmentVariable("NEXO_KEYSTORE_PATH").orNull
+    ?: providers.environmentVariable("JARVIS_KEYSTORE_PATH").orNull
+val releaseStorePassword = providers.environmentVariable("NEXO_KEYSTORE_PASSWORD").orNull
+    ?: providers.environmentVariable("JARVIS_KEYSTORE_PASSWORD").orNull
+val releaseAlias = providers.environmentVariable("NEXO_KEY_ALIAS").orNull
+    ?: providers.environmentVariable("JARVIS_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("NEXO_KEY_PASSWORD").orNull
+    ?: providers.environmentVariable("JARVIS_KEY_PASSWORD").orNull
 val signingValues = listOf(releaseStore, releaseStorePassword, releaseAlias, releaseKeyPassword)
 require(signingValues.all { it == null } || signingValues.all { !it.isNullOrBlank() }) {
-    "Set all four JARVIS_KEYSTORE_* / JARVIS_KEY_* signing variables, or none for unsigned release."
+    "Set all four NEXO_KEYSTORE_* / JARVIS_KEYSTORE_* signing variables, or none for unsigned release."
 }
 
 android {
-    namespace = "id.my.yhdev.jarvis"
+    namespace = "id.my.yhdev.nexo"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "id.my.yhdev.jarvis"
+        applicationId = "id.my.yhdev.nexo"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

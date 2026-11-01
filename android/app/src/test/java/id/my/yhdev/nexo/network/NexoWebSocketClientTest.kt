@@ -1,6 +1,6 @@
-package id.my.yhdev.jarvis.network
+package id.my.yhdev.nexo.network
 
-import id.my.yhdev.jarvis.ui.JarvisState
+import id.my.yhdev.nexo.ui.NexoState
 import org.junit.Assert.*
 import org.junit.Test
 import okhttp3.*
@@ -11,16 +11,16 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import okio.ByteString
 
-class JarvisWebSocketClientTest {
-    private class Events : JarvisWebSocketClient.WebSocketEventListener {
-        var state: JarvisState? = null
+class NexoWebSocketClientTest {
+    private class Events : NexoWebSocketClient.WebSocketEventListener {
+        var state: NexoState? = null
         var message: String? = "not delivered"
         var expression: String? = "not delivered"
         val connected = CountDownLatch(1)
         val setup = CountDownLatch(1)
         override fun onConnected() { connected.countDown() }
         override fun onDisconnected() {}
-        override fun onStateChanged(state: JarvisState, message: String?, expression: String?) {
+        override fun onStateChanged(state: NexoState, message: String?, expression: String?) {
             this.state = state
             this.message = message
             this.expression = expression
@@ -46,7 +46,7 @@ class JarvisWebSocketClientTest {
         }))
         server.start()
         val events = Events()
-        val client = JarvisWebSocketClient(server.url("/").toString(), "test", "a".repeat(43), events)
+        val client = NexoWebSocketClient(server.url("/").toString(), "test", "a".repeat(43), events)
         try {
             client.connect()
             val request = server.takeRequest(3, TimeUnit.SECONDS)!!
@@ -74,11 +74,11 @@ class JarvisWebSocketClientTest {
             server.enqueue(MockResponse().setResponseCode(status))
             server.start()
             val events = Events()
-            val client = JarvisWebSocketClient(server.url("/").toString(), "test", "a".repeat(43), events)
+            val client = NexoWebSocketClient(server.url("/").toString(), "test", "a".repeat(43), events)
             try {
                 client.connect()
                 assertTrue(events.setup.await(3, TimeUnit.SECONDS))
-                assertEquals(JarvisState.ERROR, events.state)
+                assertEquals(NexoState.ERROR, events.state)
                 client.connect() // Explicit callers cannot restart a terminal denied client either.
                 Thread.sleep(2200) // Past the first normal backoff window.
                 assertEquals(1, server.requestCount)
@@ -96,7 +96,7 @@ class JarvisWebSocketClientTest {
         }))
         server.start()
         val events = Events()
-        val client = JarvisWebSocketClient(server.url("/").toString(), "test", "a".repeat(43), events)
+        val client = NexoWebSocketClient(server.url("/").toString(), "test", "a".repeat(43), events)
         try {
             client.connect()
             assertTrue(events.setup.await(3, TimeUnit.SECONDS))
@@ -111,20 +111,20 @@ class JarvisWebSocketClientTest {
         for (spec in listOf("\"format\":\"audio/mpeg\",\"sample_rate\":24000,\"channels\":1",
             "\"format\":\"audio/pcm\",\"sample_rate\":16000,\"channels\":1")) {
             val events = Events()
-            val client = JarvisWebSocketClient("ws://localhost/", "test", "a".repeat(43), events)
+            val client = NexoWebSocketClient("ws://localhost/", "test", "a".repeat(43), events)
             try {
                 val parse = client.javaClass.getDeclaredMethod("handleTextMessage", String::class.java)
                 parse.isAccessible = true
                 parse.invoke(client, "{\"type\":\"tts_start\",$spec}")
                 assertEquals(0, events.ttsStarts)
-                assertEquals(JarvisState.ERROR, events.state)
+                assertEquals(NexoState.ERROR, events.state)
             } finally { client.disconnect() }
         }
     }
 
     @Test fun acceptsDeclaredPcm24kMonoTts() {
         val events = Events()
-        val client = JarvisWebSocketClient("ws://localhost/", "test", "a".repeat(43), events)
+        val client = NexoWebSocketClient("ws://localhost/", "test", "a".repeat(43), events)
         try {
             val parse = client.javaClass.getDeclaredMethod("handleTextMessage", String::class.java)
             parse.isAccessible = true
@@ -135,11 +135,11 @@ class JarvisWebSocketClientTest {
 
     @Test fun explicitNullStateFieldsStillDeliverState() {
         val events = Events()
-        val client = JarvisWebSocketClient("ws://localhost/", "test", "a".repeat(43), events)
+        val client = NexoWebSocketClient("ws://localhost/", "test", "a".repeat(43), events)
         val parse = client.javaClass.getDeclaredMethod("handleTextMessage", String::class.java)
         parse.isAccessible = true
         parse.invoke(client, """{"type":"state_change","state":"THINKING","message":null,"expression":null}""")
-        assertEquals(JarvisState.THINKING, events.state)
+        assertEquals(NexoState.THINKING, events.state)
         assertNull(events.message)
         assertNull(events.expression)
         client.disconnect()

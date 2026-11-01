@@ -1,13 +1,17 @@
 <resources>
-    <style name="Theme.JarvisAppliance" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <style name="Theme.NexoAppliance" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/bg_black</item>
         <item name="android:statusBarColor">@color/bg_black</item>
         <item name="android:navigationBarColor">@color/bg_black</item>
     </style>
 
-    <style name="Theme.JarvisAppliance.Fullscreen" parent="Theme.JarvisAppliance">
+    <style name="Theme.NexoAppliance.Fullscreen" parent="Theme.NexoAppliance">
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowContentOverlay">@null</item>
         <item name="android:keepScreenOn">true</item>
     </style>
+
+    <!-- Legacy aliases for backward compatibility -->
+    <style name="Theme.JarvisAppliance" parent="Theme.NexoAppliance" />
+    <style name="Theme.JarvisAppliance.Fullscreen" parent="Theme.NexoAppliance.Fullscreen" />
 </resources>

@@ -1,10 +1,3 @@
 package id.my.yhdev.jarvis.ui
 
-enum class JarvisState {
-    IDLE,
-    LISTENING,
-    THINKING,
-    SPEAKING,
-    ERROR,
-    DISCONNECTED
-}
+typealias JarvisState = id.my.yhdev.nexo.ui.NexoState

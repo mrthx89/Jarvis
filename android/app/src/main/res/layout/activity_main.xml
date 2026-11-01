@@ -58,7 +58,7 @@
         android:ellipsize="none"
         android:text="@string/voice_start"
         android:textAllCaps="false"
-        android:textColor="@color/jarvis_cyan"
+        android:textColor="@color/nexo_cyan"
         app:layout_constrainedWidth="true"
         app:layout_constraintTop_toBottomOf="@id/pillStatus"
         app:layout_constraintStart_toStartOf="parent"
@@ -80,7 +80,7 @@
         app:layout_constraintEnd_toEndOf="parent" />
 
     <!-- Central Living 3D Mascot with Organic Physics & Transitions -->
-    <id.my.yhdev.jarvis.ui.VisualizerView
+    <id.my.yhdev.nexo.ui.VisualizerView
         android:id="@+id/visualizerView"
         android:layout_width="0dp"
         android:layout_height="0dp"
@@ -123,8 +123,8 @@
                 android:layout_weight="1"
                 android:fontFamily="monospace"
                 android:letterSpacing="0.08"
-                android:text="JARVIS // COGNITIVE STREAM"
-                android:textColor="@color/jarvis_cyan"
+                android:text="NEXO // COGNITIVE STREAM"
+                android:textColor="@color/nexo_cyan"
                 android:textSize="11sp"
                 android:textAllCaps="true"
                 android:alpha="0.8" />
@@ -141,7 +141,7 @@
                 android:src="@drawable/ic_clipboard"
                 android:contentDescription="@string/copy_reply"
                 android:tooltipText="@string/copy_reply"
-                app:tint="@color/jarvis_cyan" />
+                app:tint="@color/nexo_cyan" />
         </LinearLayout>
 
         <!-- Subtitle & Live Transcription Readout -->

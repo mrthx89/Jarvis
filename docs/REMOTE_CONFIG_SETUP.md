@@ -1,6 +1,6 @@
 # Panduan Konfigurasi Firebase Remote Config
-## Project: Jarvis Dedicated Appliance
-**Tujuan**: Mengubah alamat IP / URL server WebSocket Jarvis secara dinamis dari cloud tanpa perlu kompilasi ulang (re-build) atau instalasi ulang file APK pada monitor/tablet.
+## Project: Nexo Dedicated Appliance (sebelumnya Jarvis)
+**Tujuan**: Mengubah alamat IP / URL server WebSocket Nexo secara dinamis dari cloud tanpa perlu kompilasi ulang (re-build) atau instalasi ulang file APK pada monitor/tablet.
 
 ---
 
@@ -20,8 +20,8 @@
 
 2. **Daftarkan Aplikasi Android**:
    - Tambahkan aplikasi Android dengan Package Name:
-     `id.my.yhdev.jarvis`
-   - Unduh file `google-services.json`.
+     `id.my.yhdev.nexo` (dan pertahankan `id.my.yhdev.jarvis` jika transisi bertahap).
+   - Unduh file `google-services.json`. Lihat panduan detail di [docs/FIREBASE_SETUP.md](FIREBASE_SETUP.md).
    - Letakkan file tersebut di dalam folder repositori:
      `android/app/google-services.json`
 
@@ -32,8 +32,9 @@
      * **Parameter name**: `server_websocket_url`
      * **Data type**: `String`
      * **Default value**: Masukkan alamat WebSocket server Anda, contoh:
+       - Mode Produksi Domain Nexo: `wss://nexo.yhdev.my.id/ws/appliance`
        - Mode Lokal LAN: `ws://192.168.1.100:8765/ws/appliance`
-       - Mode Domain / Cloudflare: `wss://jarvis.domainanda.com/ws/appliance`
+       - Mode Domain / Cloudflare: `wss://nexo.domainanda.com/ws/appliance`
        - Mode IP Publik: `ws://44.255.96.143:8765/ws/appliance`
    - Klik **Save**, kemudian klik **Publish changes**.
 
@@ -41,7 +42,7 @@
 
 ### 3. Pengujian Perubahan URL Real-Time
 
-1. Jalankan aplikasi Jarvis di tablet / Android.
+1. Jalankan aplikasi Nexo di tablet / Android.
 2. Buka Firebase Console > Remote Config.
 3. Ubah nilai `server_websocket_url` ke alamat baru lalu klik **Publish**.
-4. Perhatikan layar monitor Android Anda: status akan menampilkan *"Mengalihkan ke server baru..."* dan langsung terhubung ke alamat baru secara instan.
+4. Perhatikan layar monitor Android Anda: status akan menampilkan *"Menghubungkan ke Nexo Server..."* dan langsung terhubung ke alamat baru secara instan.

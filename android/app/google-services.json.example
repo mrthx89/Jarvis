@@ -1,10 +1,25 @@
 {
   "project_info": {
     "project_number": "000000000000",
-    "project_id": "jarvis-appliance-example",
-    "storage_bucket": "jarvis-appliance-example.appspot.com"
+    "project_id": "nexo-appliance-example",
+    "storage_bucket": "nexo-appliance-example.appspot.com"
   },
   "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "android_client_info": {
+          "package_name": "id.my.yhdev.nexo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyExampleKeyReplaceWithYourOwnFirebase"
+        }
+      ],
+      "services": {}
+    },
     {
       "client_info": {
         "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",

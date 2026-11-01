@@ -1,8 +1,8 @@
 <resources>
-    <string name="app_name">Jarvis</string>
-    <string name="default_server_url">wss://jarvis.yhdev.my.id/ws/appliance</string>
-    <string name="status_connecting">Menghubungkan ke Jarvis Server...</string>
-    <string name="status_idle">Jarvis Siaga</string>
+    <string name="app_name">Nexo</string>
+    <string name="default_server_url">wss://nexo.yhdev.my.id/ws/appliance</string>
+    <string name="status_connecting">Menghubungkan ke Nexo Server...</string>
+    <string name="status_idle">Nexo Siaga</string>
     <string name="status_listening">Menyimak...</string>
     <string name="status_thinking">Memproses...</string>
     <string name="status_speaking">Berbicara...</string>

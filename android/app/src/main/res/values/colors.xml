@@ -3,12 +3,20 @@
     <color name="bg_black">#000000</color>
     
     <!-- Accent colors: Calm Sci-Fi Cyan/Blue & Warm Amber -->
-    <color name="jarvis_cyan">#00E5FF</color>
-    <color name="jarvis_cyan_glow">#3300E5FF</color>
-    <color name="jarvis_blue">#0077FF</color>
-    <color name="jarvis_amber">#FFB300</color>
-    <color name="jarvis_emerald">#00E676</color>
-    <color name="jarvis_red">#FF5252</color>
+    <color name="nexo_cyan">#00E5FF</color>
+    <color name="nexo_cyan_glow">#3300E5FF</color>
+    <color name="nexo_blue">#0077FF</color>
+    <color name="nexo_amber">#FFB300</color>
+    <color name="nexo_emerald">#00E676</color>
+    <color name="nexo_red">#FF5252</color>
+
+    <!-- Backward compatibility aliases -->
+    <color name="jarvis_cyan">@color/nexo_cyan</color>
+    <color name="jarvis_cyan_glow">@color/nexo_cyan_glow</color>
+    <color name="jarvis_blue">@color/nexo_blue</color>
+    <color name="jarvis_amber">@color/nexo_amber</color>
+    <color name="jarvis_emerald">@color/nexo_emerald</color>
+    <color name="jarvis_red">@color/nexo_red</color>
 
     <!-- Subtitles and typography -->
     <color name="text_primary">#E0E6ED</color>
