@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "000000000000",
-    "project_id": "jarvis-appliance",
-    "storage_bucket": "jarvis-appliance.appspot.com"
+    "project_number": "359181978475",
+    "project_id": "jarvis-3624e",
+    "storage_bucket": "jarvis-3624e.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "mobilesdk_app_id": "1:359181978475:android:1bc9d8ccafadcb77b95a2e",
         "android_client_info": {
           "package_name": "com.yhdev.jarvis"
         }
@@ -15,10 +15,14 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyTemplateKeyPlaceholder123456789"
+          "current_key": "AIzaSyB7ZvLwMOb9WAe1SBldF1_sryAvrVek9Pc"
         }
       ],
-      "services": {}
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
     }
   ],
   "configuration_version": "1"
