@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -51,6 +52,11 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-service:2.7.0")
+
+    // Firebase BoM & Remote Config (for dynamic server URL switching)
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-config-ktx")
+    implementation("com.google.firebase:firebase-analytics-ktx")
 
     // Networking: OkHttp for low-latency WebSocket connection
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

@@ -17,6 +17,7 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.yhdev.jarvis.config.RemoteConfigManager
 import com.yhdev.jarvis.service.JarvisKioskService
 import com.yhdev.jarvis.ui.JarvisState
 import com.yhdev.jarvis.ui.VisualizerView
@@ -26,6 +27,7 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
     private lateinit var visualizerView: VisualizerView
     private lateinit var tvStatus: TextView
     private lateinit var tvSubtitle: TextView
+    private lateinit var remoteConfigManager: RemoteConfigManager
 
     private var kioskService: JarvisKioskService? = null
     private var isBound = false
@@ -37,9 +39,20 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
             kioskService?.serviceCallback = this@MainActivity
             isBound = true
 
-            val serverUrl = getString(R.string.default_server_url)
             val deviceId = "jarvis_appliance_${Build.SERIAL.takeIf { it != "unknown" } ?: "tablet_01"}"
-            kioskService?.initializeConnection(serverUrl, deviceId)
+            
+            // Dynamically resolve server URL via Firebase Remote Config with fallback
+            remoteConfigManager.fetchServerUrl { serverUrl ->
+                kioskService?.initializeConnection(serverUrl, deviceId)
+            }
+
+            // Listen for live URL updates from Firebase Console
+            remoteConfigManager.listenForRealtimeUpdates { newUrl ->
+                runOnUiThread {
+                    tvStatus.text = "Mengalihkan ke server baru..."
+                }
+                kioskService?.initializeConnection(newUrl, deviceId)
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -62,6 +75,8 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        remoteConfigManager = RemoteConfigManager(this)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemUI()
