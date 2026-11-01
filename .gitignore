@@ -77,3 +77,4 @@ keystore.properties
 
 # Merge artifacts
 *.orig
+[Gg]raphify-out/
