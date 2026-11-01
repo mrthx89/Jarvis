@@ -60,7 +60,13 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
 
 
             // Dynamically resolve server URL via Firebase Remote Config with fallback
-            remoteConfigManager.fetchServerUrl { serverUrl ->
+            remoteConfigManager.fetchServerUrl(onUnavailable = {
+                runOnUiThread {
+                    if (!isDestroyed && isBound) {
+                        onStateChanged(JarvisState.ERROR, "Endpoint WSS tidak tersedia. Periksa konfigurasi server.", null)
+                    }
+                }
+            }) { serverUrl ->
                 runOnUiThread {
                     currentServerUrl = serverUrl
                     if (!isDestroyed && isBound) kioskService?.initializeConnection(serverUrl, deviceId)
