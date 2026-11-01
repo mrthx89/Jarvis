@@ -5,7 +5,9 @@ import logging
 import os
 import signal
 
-from typing import Awaitable, Callable, Optional
+from typing import AsyncGenerator, Awaitable, Callable, Optional
+
+from .sentence_chunker import extract_next_sentence, split_into_sentences
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +20,7 @@ class HermesBridge:
         mode: str = "cli",
         hermes_binary: str = "hermes",
         session_name: str = "nexo",
-        timeout: int = 60,
+        timeout: float = 60.0,
     ):
         self.mode = mode
         self.hermes_binary = hermes_binary
@@ -74,6 +76,121 @@ class HermesBridge:
             return reply
         finally:
             self.query_active -= 1
+
+    async def query_stream(
+        self, prompt: str, session_name: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """Stream sentence chunks from Hermes Agent with session continuity."""
+        if session_name is not None:
+            target = session_name.strip() if isinstance(session_name, str) else None
+            if target != "nexo" and (self._session_id is None or target != self._session_id):
+                raise ValueError("Session routing is locked to nexo")
+        active_session = self._session_id or "nexo"
+        self.query_active += 1
+        accumulated_chunks = []
+        try:
+            # Check if _query has been overridden on the instance (e.g. in test mock)
+            if "_query" in self.__dict__:
+                reply = await self._query(prompt, active_session)
+                for sentence in split_into_sentences(reply):
+                    accumulated_chunks.append(sentence)
+                    yield sentence
+            else:
+                async for sentence in self._query_stream(prompt, active_session):
+                    accumulated_chunks.append(sentence)
+                    yield sentence
+
+            full_reply = " ".join(accumulated_chunks).strip()
+            if self.on_reply is not None:
+                try:
+                    await self.on_reply(full_reply)
+                except Exception:
+                    logger.warning("Hermes reply hook failed")
+        finally:
+            self.query_active -= 1
+
+    async def _query_stream(
+        self, prompt: str, active_session: str
+    ) -> AsyncGenerator[str, None]:
+        if self.mode == "mock":
+            await asyncio.sleep(0.3)
+            reply = f"Sistem terhubung. Saya telah menerima instruksi Anda: '{prompt}'. Seluruh modul beroperasi normal."
+            for s in split_into_sentences(reply):
+                yield s
+            return
+
+        proc = None
+        yielded_any = False
+        try:
+            cmd = [
+                self.hermes_binary,
+                "chat",
+                "-c",
+                active_session,
+                *([] if self._session_id is not None else ["--create-if-missing"]),
+                "-q",
+                prompt,
+                "-Q",
+            ]
+
+            env = os.environ.copy()
+            if self.hermes_home:
+                env["HERMES_HOME"] = str(self.hermes_home)
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
+
+            buf = ""
+            async with asyncio.timeout(self.timeout):
+                while proc.stdout and not proc.stdout.at_eof():
+                    chunk = await proc.stdout.read(64)
+                    if not chunk:
+                        break
+                    buf += chunk.decode("utf-8", errors="replace")
+                    while True:
+                        sentence, buf = extract_next_sentence(buf, at_eof=False)
+                        if sentence is None:
+                            break
+                        yielded_any = True
+                        yield sentence
+
+                await proc.wait()
+                while True:
+                    sentence, buf = extract_next_sentence(buf, at_eof=True)
+                    if sentence is None:
+                        break
+                    yielded_any = True
+                    yield sentence
+
+            if proc.returncode != 0 and not yielded_any:
+                err_msg = ""
+                if proc.stderr:
+                    stderr_bytes = await proc.stderr.read()
+                    err_msg = stderr_bytes.decode().strip()
+                logger.error(f"Hermes execution error: {err_msg}")
+                yield "Maaf, terjadi kendala saat memproses instruksi melalui Hermes Agent."
+
+        except asyncio.CancelledError:
+            raise
+        except asyncio.TimeoutError:
+            logger.error("Hermes execution timed out")
+            if not yielded_any:
+                yield "Waktu pemrosesan melebihi batas. Mohon ulangi instruksi Anda."
+        except Exception as e:
+            logger.error(f"Failed to communicate with Hermes: {e}")
+            if not yielded_any:
+                yield "Terjadi kesalahan internal saat menghubungkan ke agen."
+        finally:
+            if proc is not None and proc.returncode is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                await asyncio.shield(proc.communicate())
 
     async def _query(self, prompt: str, active_session: str) -> str:
         if self.mode == "mock":

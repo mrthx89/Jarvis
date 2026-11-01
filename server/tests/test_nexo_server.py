@@ -15,7 +15,10 @@ def test_nexo_server_imports():
     import nexo_server.pipeline.stt
     import nexo_server.pipeline.tts
     import nexo_server.hermes.agent_bridge
+    import nexo_server.hermes.sentence_chunker
     import nexo_server.gateway.websocket_handler
+    import nexo_server.gateway.audio_buffer
+    import nexo_server.gateway.mp3_frame
     import nexo_server.telegram_command
     import nexo_server.telegram_provision
     import nexo_server.main

@@ -22,6 +22,9 @@ from ..pipeline.stt import BaseSTT
 from ..pipeline.tts import BaseTTS
 from ..hermes.agent_bridge import HermesBridge
 from ..mascot import contextual_expression, parse_expression_command
+from .audio_buffer import CircularAudioBuffer, CircularRingBuffer
+from .mp3_frame import parse_audio_duration, parse_mp3_duration
+from ..hermes.sentence_chunker import split_into_sentences
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +79,7 @@ class ApplianceSession:
         self._tts_started = False
         self._external_speech = False
         self._gap_handle = None
-        self._preroll = bytearray()
+        self._preroll = CircularAudioBuffer(capacity=self.PREROLL_BYTES)
         if self.hub:
             self.hub.register_session(self)
 
@@ -185,7 +188,7 @@ class ApplianceSession:
         try:
             async for chunk in self.tts.synthesize_stream(text):
                 await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
-                self._playback_until = max(time.monotonic(), self._playback_until) + len(chunk) / 48000.0
+                self._playback_until = max(time.monotonic(), self._playback_until) + parse_audio_duration(chunk)
                 amp = self.vad.get_normalized_amplitude(chunk)
                 await self.send_json_message(
                     VisualTelemetry(
@@ -280,12 +283,11 @@ class ApplianceSession:
         if not self.is_recording:
             if not speech:
                 self._preroll.extend(data_bytes)
-                del self._preroll[:-self.PREROLL_BYTES]
                 return
             self.is_recording = True
             self._silence_bytes = 0
             self.audio_buffer.clear()
-            self.audio_buffer.extend(self._preroll)
+            self.audio_buffer.extend(self._preroll.get_bytes())
             self._preroll.clear()
             await self.send_state(NexoState.LISTENING)
 
@@ -359,35 +361,116 @@ class ApplianceSession:
         if command_expression is not None:
             agent_reply = "Baik, ekspresi wajah sudah diubah."
             speech_expr = command_expression.value
+            await self.send_json_message(
+                TranscriptionMessage(role="assistant", text=agent_reply, is_final=True)
+            )
+            if self.hub:
+                self.hub.publish_event({
+                    "type": "transcription",
+                    "role": "assistant",
+                    "text": agent_reply,
+                    "expression": speech_expr,
+                    "source": "nexo_hermes",
+                })
+            # Speaking / Streaming TTS
+            await self.send_state(NexoState.SPEAKING, expression=speech_expr)
+            await self.send_json_message(TTSStart())
+            self._tts_started = True
+
+            async for chunk in self.tts.synthesize_stream(agent_reply):
+                await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
+                self._playback_until = max(time.monotonic(), self._playback_until) + parse_audio_duration(chunk)
+                amp = self.vad.get_normalized_amplitude(chunk)
+                await self.send_json_message(
+                    VisualTelemetry(
+                        amplitude=max(0.2, amp),
+                        frequency_bands=[amp * 0.9, amp * 1.1, amp * 0.7],
+                    )
+                )
+            return
+
+        # Step 3: Speaking / Streaming TTS from Hermes
+        if hasattr(self.hermes, "query_stream"):
+            collected_sentences = []
+            speech_expr = None
+            async for sentence in self.hermes.query_stream(transcription):
+                clean_sentence = sentence.strip()
+                if not clean_sentence:
+                    continue
+                collected_sentences.append(clean_sentence)
+
+                if speech_expr is None:
+                    speech_expr = contextual_expression(transcription, clean_sentence).value
+                    await self.send_state(NexoState.SPEAKING, expression=speech_expr)
+                    await self.send_json_message(TTSStart())
+                    self._tts_started = True
+
+                if self.hub:
+                    self.hub.publish_event({
+                        "type": "cognitive",
+                        "stage": "streaming",
+                        "sentence": clean_sentence,
+                        "index": len(collected_sentences) - 1,
+                    })
+
+                async for chunk in self.tts.synthesize_stream(clean_sentence):
+                    await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
+                    self._playback_until = max(time.monotonic(), self._playback_until) + parse_audio_duration(chunk)
+                    amp = self.vad.get_normalized_amplitude(chunk)
+                    await self.send_json_message(
+                        VisualTelemetry(
+                            amplitude=max(0.2, amp),
+                            frequency_bands=[amp * 0.9, amp * 1.1, amp * 0.7],
+                        )
+                    )
+
+            full_reply = " ".join(collected_sentences).strip()
+            if full_reply:
+                logger.info("Agent complete for %s (%d characters)", self.session_id, len(full_reply))
+                await self.send_json_message(
+                    TranscriptionMessage(role="assistant", text=full_reply, is_final=True)
+                )
+                if self.hub:
+                    self.hub.publish_event({
+                        "type": "transcription",
+                        "role": "assistant",
+                        "text": full_reply,
+                        "expression": speech_expr or "netral",
+                        "source": "nexo_hermes",
+                    })
         else:
             agent_reply = await self.hermes.query(transcription)
             logger.info("Agent complete for %s (%d characters)", self.session_id, len(agent_reply))
             speech_expr = contextual_expression(transcription, agent_reply).value
 
-        await self.send_json_message(
-            TranscriptionMessage(role="assistant", text=agent_reply, is_final=True)
-        )
-        if self.hub:
-            self.hub.publish_event({
-                "type": "transcription",
-                "role": "assistant",
-                "text": agent_reply,
-                "expression": speech_expr,
-                "source": "nexo_hermes",
-            })
-
-        # Step 3: Speaking / Streaming TTS
-        await self.send_state(NexoState.SPEAKING, expression=speech_expr)
-        await self.send_json_message(TTSStart())
-        self._tts_started = True
-
-        async for chunk in self.tts.synthesize_stream(agent_reply):
-            await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
-            self._playback_until = max(time.monotonic(), self._playback_until) + len(chunk) / 48000.0
-            amp = self.vad.get_normalized_amplitude(chunk)
             await self.send_json_message(
-                VisualTelemetry(
-                    amplitude=max(0.2, amp),
-                    frequency_bands=[amp * 0.9, amp * 1.1, amp * 0.7],
-                )
+                TranscriptionMessage(role="assistant", text=agent_reply, is_final=True)
             )
+            if self.hub:
+                self.hub.publish_event({
+                    "type": "transcription",
+                    "role": "assistant",
+                    "text": agent_reply,
+                    "expression": speech_expr,
+                    "source": "nexo_hermes",
+                })
+
+            await self.send_state(NexoState.SPEAKING, expression=speech_expr)
+            await self.send_json_message(TTSStart())
+            self._tts_started = True
+
+            sentences = split_into_sentences(agent_reply)
+            if not sentences:
+                sentences = [agent_reply]
+
+            for sentence in sentences:
+                async for chunk in self.tts.synthesize_stream(sentence):
+                    await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
+                    self._playback_until = max(time.monotonic(), self._playback_until) + parse_audio_duration(chunk)
+                    amp = self.vad.get_normalized_amplitude(chunk)
+                    await self.send_json_message(
+                        VisualTelemetry(
+                            amplitude=max(0.2, amp),
+                            frequency_bands=[amp * 0.9, amp * 1.1, amp * 0.7],
+                        )
+                    )
