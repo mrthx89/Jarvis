@@ -51,7 +51,7 @@ class AppConfig:
 def load_config(config_path: str | Path | None = None) -> AppConfig:
     """Load configuration from a YAML file or environment defaults."""
     if config_path is None:
-        env_path = os.getenv("JARVIS_CONFIG_PATH")
+        env_path = os.getenv("NEXO_CONFIG_PATH") or os.getenv("JARVIS_CONFIG_PATH")
         if env_path:
             config_path = Path(env_path)
         else:

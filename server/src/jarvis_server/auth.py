@@ -17,6 +17,39 @@ DEVICE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 TOKEN = re.compile(r"[A-Za-z0-9_-]{43,128}\Z")
 MAX_REGISTRY_BYTES = 1024 * 1024
 
+NEXO_DEFAULT_DIR = Path("/root/.config/nexo-auth")
+NEXO_DEFAULT_REGISTRY = NEXO_DEFAULT_DIR / "devices.json"
+JARVIS_DEFAULT_REGISTRY = Path("/root/.config/jarvis-auth/devices.json")
+
+
+def resolve_registry_path(path: str | Path | None = None) -> Path | None:
+    """Resolve device registry path supporting /root/.config/nexo-auth/ with fallback to jarvis-auth.
+
+    If path is a directory (or ends with slash), devices.json within that directory is targeted.
+    If the targeted file is under nexo-auth and does not exist, falls back to jarvis-auth/devices.json.
+    """
+    if not path:
+        return None
+    p = Path(path)
+    if str(path).endswith("/") or p.is_dir() or (p.suffix == "" and p.name.endswith("-auth")):
+        target = p / "devices.json"
+    else:
+        target = p
+
+    if target.exists():
+        return target
+
+    # Fallback from nexo-auth to jarvis-auth
+    if "nexo-auth" in str(target) or target.name == "devices.json":
+        if target.parent.name == "nexo-auth":
+            peer = target.parent.parent / "jarvis-auth" / target.name
+            if peer.exists():
+                return peer
+        if "nexo-auth" in str(target) and JARVIS_DEFAULT_REGISTRY.exists():
+            return JARVIS_DEFAULT_REGISTRY
+
+    return target
+
 
 def credential_origin(url):
     parts = urlsplit(url)
@@ -31,10 +64,13 @@ def credential_origin(url):
 
 
 class DeviceRegistry:
-    def __init__(self, path):
-        self.path = Path(path) if path else None
+    def __init__(self, path=None):
+        self.raw_path = Path(path) if path else None
+        self.path = resolve_registry_path(path)
 
     def read(self):
+        if self.raw_path is not None:
+            self.path = resolve_registry_path(self.raw_path)
         if self.path is None:
             raise ValueError("Registry is not configured")
         fd = os.open(self.path, os.O_RDONLY | os.O_NOFOLLOW)
@@ -110,8 +146,21 @@ def main():
     if args.action == 'provision' and (args.output is None or args.origin is None):
         parser.error('Provision requires --output and --origin')
     try:
-        with _registry_lock(args.registry):
-            data = DeviceRegistry(args.registry).read() if args.registry.exists() else {'version': 1, 'devices': {}}
+        registry_target = args.registry
+        if str(registry_target).endswith("/") or registry_target.is_dir() or (registry_target.suffix == "" and registry_target.name.endswith("-auth")):
+            registry_target = registry_target / "devices.json"
+
+        with _registry_lock(registry_target):
+            try:
+                data = DeviceRegistry(registry_target).read()
+            except FileNotFoundError:
+                if registry_target.is_symlink():
+                    raise ValueError('Invalid registry')
+                fallback = resolve_registry_path(registry_target)
+                if fallback and fallback.exists() and fallback != registry_target:
+                    data = DeviceRegistry(fallback).read()
+                else:
+                    data = {'version': 1, 'devices': {}}
             if args.action == 'provision':
                 if args.device_id in data['devices']:
                     raise ValueError('Device exists; revoke before replacing')
@@ -122,7 +171,7 @@ def main():
                 data['devices'][args.device_id] = {'token_sha256': hashlib.sha256(token.encode()).hexdigest()}
             else:
                 data['devices'].pop(args.device_id, None)
-            _write_private(args.registry, data)
+            _write_private(registry_target, data)
     except (OSError, ValueError):
         # Avoid printing paths/payloads/tokens from exceptions.
         parser.exit(1, 'Credential operation failed; check private paths, permissions and device state.\n')

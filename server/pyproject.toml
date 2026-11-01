@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "jarvis-server"
+name = "nexo-server"
 version = "0.1.0"
-description = "Jarvis Dedicated Appliance - Audio Gateway and Hermes Agent Bridge"
+description = "Nexo Dedicated Appliance - Audio Gateway and Hermes Agent Bridge"
 authors = [
     { name = "Yanto Hariyono (YH Dev)", email = "mrthx.89@gmail.com" }
 ]

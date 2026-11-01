@@ -14,6 +14,10 @@ class JarvisState(str, Enum):
     DISCONNECTED = "DISCONNECTED"
 
 
+# Dual-compatibility alias
+NexoState = JarvisState
+
+
 class AudioSpec(BaseModel):
     format: str = "audio/pcm"
     sample_rate: int = 16000
