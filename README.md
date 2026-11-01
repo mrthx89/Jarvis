@@ -87,7 +87,7 @@ Jarvis/
 
 ### Persyaratan Awal:
 1. **Android Studio**: Ladybug / Hedgehog atau yang lebih baru dengan Android SDK 34 (Java 17+).
-2. **Python**: Versi 3.10 atau lebih baru untuk menjalankan server gateway.
+2. **Python**: Versi 3.11 atau lebih baru (pipeline memakai `asyncio.timeout`) untuk menjalankan server gateway.
 3. **Hermes Agent Runtime**: Terpasang di lingkungan server.
 
 ### Menjalankan Server Gateway:

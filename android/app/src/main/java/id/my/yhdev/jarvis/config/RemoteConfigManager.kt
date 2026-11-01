@@ -5,6 +5,7 @@ import android.util.Log
 import com.google.firebase.FirebaseApp
 import com.google.firebase.remoteconfig.ConfigUpdate
 import com.google.firebase.remoteconfig.ConfigUpdateListener
+import com.google.firebase.remoteconfig.ConfigUpdateListenerRegistration
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigException
 import com.google.firebase.remoteconfig.ktx.remoteConfigSettings
@@ -16,6 +17,8 @@ class RemoteConfigManager(private val context: Context) {
     val KEY_SERVER_URL = "server_websocket_url"
 
     private var remoteConfig: FirebaseRemoteConfig? = null
+    private var registration: ConfigUpdateListenerRegistration? = null
+    private var closed = false
 
     init {
         try {
@@ -59,6 +62,7 @@ class RemoteConfigManager(private val context: Context) {
         // Asynchronously fetch latest values from Firebase
         config.fetchAndActivate()
             .addOnCompleteListener { task ->
+                if (closed) return@addOnCompleteListener
                 if (task.isSuccessful) {
                     val latestUrl = config.getString(KEY_SERVER_URL)
                     if (latestUrl.isNotBlank() && latestUrl != cachedUrl) {
@@ -77,10 +81,12 @@ class RemoteConfigManager(private val context: Context) {
     fun listenForRealtimeUpdates(onUrlChanged: (String) -> Unit) {
         val config = remoteConfig ?: return
 
-        config.addOnConfigUpdateListener(object : ConfigUpdateListener {
+        registration?.remove()
+        registration = config.addOnConfigUpdateListener(object : ConfigUpdateListener {
             override fun onUpdate(configUpdate: ConfigUpdate) {
                 if (configUpdate.updatedKeys.contains(KEY_SERVER_URL)) {
                     config.activate().addOnCompleteListener {
+                        if (closed) return@addOnCompleteListener
                         val newUrl = config.getString(KEY_SERVER_URL)
                         if (newUrl.isNotBlank()) {
                             Log.i(TAG, "Realtime Remote Config update received: $newUrl")
@@ -94,5 +100,11 @@ class RemoteConfigManager(private val context: Context) {
                 Log.w(TAG, "ConfigUpdateListener error: ${error.message}")
             }
         })
+    }
+
+    fun close() {
+        closed = true
+        registration?.remove()
+        registration = null
     }
 }

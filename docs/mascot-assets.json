@@ -1,0 +1,98 @@
+[
+  {
+    "source": "resource/imoticon/svg/bingung.svg",
+    "target": "android/app/src/main/res/drawable/mascot_bingung.png",
+    "source_sha256": "736d47f0e0e733903ee017fab12a7d3f464010d802d10d892827b2ddbdbdc3c4",
+    "target_sha256": "30ce9806ca36eda9bfddc100446af2e9f64faceeb6cd8a33dbc76f0f1ed12f23"
+  },
+  {
+    "source": "resource/imoticon/svg/cinta.svg",
+    "target": "android/app/src/main/res/drawable/mascot_cinta.png",
+    "source_sha256": "6eee4b74a63576e6931e3cab9ec885ec5d105df7256a7af7af5cde92416cefbc",
+    "target_sha256": "51259aa9edaff69fecc3cf73b44c83e37c853a1a603a8d92e27405da7b74e10c"
+  },
+  {
+    "source": "resource/imoticon/svg/jahil.svg",
+    "target": "android/app/src/main/res/drawable/mascot_jahil.png",
+    "source_sha256": "b5e3aff7b4374e3eea68171c496848a50b38ca4b3f158bcffe63d938057b21b4",
+    "target_sha256": "94ce0335ac685014155940590202d3638ea412d8e09e3ee6be29e8b42f9bcd39"
+  },
+  {
+    "source": "resource/imoticon/svg/keren.svg",
+    "target": "android/app/src/main/res/drawable/mascot_keren.png",
+    "source_sha256": "4700ceb8ac33fa0770a2bbf15479a32dcff307138d58391176ff496ac6da6f8e",
+    "target_sha256": "b18648febbab7bd89167fbda449c122d585265c0bb57f622503f64293b2aa143"
+  },
+  {
+    "source": "resource/imoticon/svg/malu.svg",
+    "target": "android/app/src/main/res/drawable/mascot_malu.png",
+    "source_sha256": "2d85724f3204e50e1ef915fbd2a1795c763baa7c53c2a257d7c1b286865872f7",
+    "target_sha256": "800f2c64531385c95ce046e35a99f08dde6633652cdad5e64413ce6b6a8de2de"
+  },
+  {
+    "source": "resource/imoticon/svg/marah.svg",
+    "target": "android/app/src/main/res/drawable/mascot_marah.png",
+    "source_sha256": "d791d6b1178604403a87745d789f2cd40a889661e1956abe086d9c88e6c39984",
+    "target_sha256": "cad26b5107891a577b0fbe20c2114a18622923a2448f78fae3b177c5c11ab97d"
+  },
+  {
+    "source": "resource/imoticon/svg/menangis.svg",
+    "target": "android/app/src/main/res/drawable/mascot_menangis.png",
+    "source_sha256": "cf99d8f9d10a7e39e93b905fdac25d3441d5812ad7fa43d8d7fd95d5f7e062e6",
+    "target_sha256": "30360e84363bf4257b33d532b44343e4e4c87364fcf961e28204b980f03ca2b4"
+  },
+  {
+    "source": "resource/imoticon/svg/mengantuk.svg",
+    "target": "android/app/src/main/res/drawable/mascot_mengantuk.png",
+    "source_sha256": "608300b0b02cce0bd8585ac80e22afb1cf2c5eddc460b8716fcbeefb01bc1f23",
+    "target_sha256": "fd4ec8215e636eae03056834762063e6a5fe14e6f1577c6888a12a70c1d2be30"
+  },
+  {
+    "source": "resource/imoticon/svg/mengedip.svg",
+    "target": "android/app/src/main/res/drawable/mascot_mengedip.png",
+    "source_sha256": "8e2bb9e672ef4f1c05248d546cd7fbe19f627de869b35ae90f6c9a724ce8b17a",
+    "target_sha256": "bc43cca6435ea83d838600840dedc8bc78a9f1836dc6ca236ce556a79c65487f"
+  },
+  {
+    "source": "resource/imoticon/svg/netral.svg",
+    "target": "android/app/src/main/res/drawable/mascot_netral.png",
+    "source_sha256": "499958aa7b78bda977cc9487d395586e6edef65395598aada9f2b1b2cca490b3",
+    "target_sha256": "611e9e8b41ee233f27b38dbed4653b15b20b85c0a48b32862f1813671bb0e140"
+  },
+  {
+    "source": "resource/imoticon/svg/sangat-senang.svg",
+    "target": "android/app/src/main/res/drawable/mascot_sangat_senang.png",
+    "source_sha256": "891badacca026dc63c97ac11c744a5d9ff42d596971a02e1ee416c4a60908874",
+    "target_sha256": "c491326379c81a5bb8d46107ab421cb50bd525b95df988812e2b41e42109eb95"
+  },
+  {
+    "source": "resource/imoticon/svg/sedih.svg",
+    "target": "android/app/src/main/res/drawable/mascot_sedih.png",
+    "source_sha256": "79b21b517e9374944126d6c44e9e50f1daca200c50259dddc671d38897c3c50b",
+    "target_sha256": "61933bd69c14c580362c3c4d0efd741787fc7122c08f3eb9c8114ef5deec1616"
+  },
+  {
+    "source": "resource/imoticon/svg/senang.svg",
+    "target": "android/app/src/main/res/drawable/mascot_senang.png",
+    "source_sha256": "98548988c48bc6c09e5714cd65fe8012ce4f31f1aac77774a78ae79454ff2c50",
+    "target_sha256": "fbf409c2128726a111c3cc5b398cd2aeea223d0e1fd11a0162696b9ed2de3096"
+  },
+  {
+    "source": "resource/imoticon/svg/takut.svg",
+    "target": "android/app/src/main/res/drawable/mascot_takut.png",
+    "source_sha256": "3c1f8eeb7775f31d1ecb38bee3a84e572ef58a6803ea2f85556c7678085aaa01",
+    "target_sha256": "fc09d29a79ccc8aa64af25a2b53ffddbb868218d7bfceb599b1179a0e4495171"
+  },
+  {
+    "source": "resource/imoticon/svg/terkejut.svg",
+    "target": "android/app/src/main/res/drawable/mascot_terkejut.png",
+    "source_sha256": "4f1d3b1fea01864eb91bd388a71c636b1bdec836682a249daaeba5091cf2484b",
+    "target_sha256": "499796c0b76b7370515b724471bcdf753eadf76c0c62d11a1e9cb1896e2da935"
+  },
+  {
+    "source": "resource/imoticon/svg/tertawa.svg",
+    "target": "android/app/src/main/res/drawable/mascot_tertawa.png",
+    "source_sha256": "ce406f0b471fb5d887c61fa1eca78d0df687bb92333eab145df27b6c6a0467e7",
+    "target_sha256": "8573dfa4b0f6ce2a4911ca92e5ce7fe0273f5f1b35a1558a8e3737a39d093a98"
+  }
+]

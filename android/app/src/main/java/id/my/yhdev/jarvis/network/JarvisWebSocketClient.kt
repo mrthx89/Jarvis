@@ -22,9 +22,13 @@ class JarvisWebSocketClient(
         .pingInterval(15, TimeUnit.SECONDS)
         .build()
 
-    private var webSocket: WebSocket? = null
+    @Volatile private var webSocket: WebSocket? = null
     private val isConnected = AtomicBoolean(false)
     private val shouldRun = AtomicBoolean(true)
+    private val protocolReady = AtomicBoolean(false)
+    private val acceptingPlayback = AtomicBoolean(false)
+    private val connecting = AtomicBoolean(false)
+    private val reconnectPending = AtomicBoolean(false)
     private var reconnectAttempt = 0
 
     interface WebSocketEventListener {
@@ -39,46 +43,67 @@ class JarvisWebSocketClient(
     }
 
     fun connect() {
-        if (!shouldRun.get()) return
+        if (!shouldRun.get() || isConnected.get() || !connecting.compareAndSet(false, true)) return
         Log.i(TAG, "Connecting to $serverUrl (attempt: $reconnectAttempt)...")
 
-        val request = Request.Builder().url(serverUrl).build()
+        val request = try {
+            Request.Builder().url(serverUrl).build()
+        } catch (e: IllegalArgumentException) {
+            connecting.set(false)
+            listener.onStateChanged(JarvisState.ERROR, "URL server tidak valid: ${e.message}", null)
+            return
+        }
+        val ended = AtomicBoolean(false)
         this.webSocket = client.newWebSocket(request, object : WebSocketListener() {
+            private fun disconnected() {
+                if (!ended.compareAndSet(false, true)) return
+                connecting.set(false)
+                isConnected.set(false)
+                protocolReady.set(false)
+                acceptingPlayback.set(false)
+                if (shouldRun.get()) listener.onDisconnected()
+            }
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "WebSocket connected successfully.")
+                if (!shouldRun.get()) { webSocket.cancel(); return }
+                this@JarvisWebSocketClient.webSocket = webSocket
+                connecting.set(false)
                 isConnected.set(true)
-                reconnectAttempt = 0
-                listener.onConnected()
-
-                // Send ClientHello handshake
-                val hello = ClientHello(deviceId = deviceId)
-                sendJson(hello)
+                // Socket open is not protocol ready: no PCM until server_hello.
+                webSocket.send(gson.toJson(ClientHello(deviceId = deviceId)))
+                Thread({
+                    try {
+                        Thread.sleep(10_000)
+                        if (shouldRun.get() && !ended.get() && !protocolReady.get()) webSocket.cancel()
+                    } catch (_: InterruptedException) {}
+                }, "Jarvis-Handshake-Timeout").apply { isDaemon = true; start() }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                handleTextMessage(text)
+                if (shouldRun.get() && !ended.get()) handleTextMessage(text)
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                listener.onAudioChunkReceived(bytes.toByteArray())
+                if (shouldRun.get() && protocolReady.get() && acceptingPlayback.get() && !ended.get()) {
+                    listener.onAudioChunkReceived(bytes.toByteArray())
+                }
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 Log.w(TAG, "WebSocket closing: $code / $reason")
-                isConnected.set(false)
+                disconnected()
+                webSocket.close(code, reason)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.w(TAG, "WebSocket closed: $code / $reason")
-                isConnected.set(false)
-                listener.onDisconnected()
+                disconnected()
                 scheduleReconnect()
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket failure: ${t.message}")
-                isConnected.set(false)
-                listener.onDisconnected()
+                disconnected()
                 scheduleReconnect()
             }
         })
@@ -87,12 +112,18 @@ class JarvisWebSocketClient(
     private fun handleTextMessage(jsonString: String) {
         try {
             val json = gson.fromJson(jsonString, JsonObject::class.java)
-            when (json.get("type")?.asString) {
+            when (json.get("type")?.takeUnless { it.isJsonNull }?.asString) {
+                "server_hello" -> {
+                    if (isConnected.get() && protocolReady.compareAndSet(false, true)) {
+                        reconnectAttempt = 0
+                        listener.onConnected()
+                    }
+                }
                 "state_change" -> {
-                    val stateStr = json.get("state")?.asString ?: "IDLE"
-                    val msg = json.get("message")?.asString
-                    val expr = json.get("expression")?.asString
-                    val state = runCatching { JarvisState.valueOf(stateStr) }.getOrDefault(JarvisState.IDLE)
+                    val stateStr = json.get("state")?.takeUnless { it.isJsonNull }?.asString ?: "ERROR"
+                    val msg = json.get("message")?.takeUnless { it.isJsonNull }?.asString
+                    val expr = json.get("expression")?.takeUnless { it.isJsonNull }?.asString
+                    val state = runCatching { JarvisState.valueOf(stateStr) }.getOrDefault(JarvisState.ERROR)
                     listener.onStateChanged(state, msg, expr)
                 }
                 "visual_telemetry" -> {
@@ -105,8 +136,19 @@ class JarvisWebSocketClient(
                     val isFinal = json.get("is_final")?.asBoolean ?: true
                     listener.onTranscriptionReceived(role, text, isFinal)
                 }
-                "tts_start" -> listener.onTTSStarted()
-                "tts_end" -> listener.onTTSEnded()
+                "tts_start" -> {
+                    val valid = json.get("format")?.takeUnless { it.isJsonNull }?.asString == "audio/pcm" &&
+                        json.get("sample_rate")?.takeUnless { it.isJsonNull }?.asInt == 24000 &&
+                        json.get("channels")?.takeUnless { it.isJsonNull }?.asInt == 1 &&
+                        (json.get("bit_depth") == null || json.get("bit_depth")?.takeUnless { it.isJsonNull }?.asInt == 16)
+                    acceptingPlayback.set(valid)
+                    if (valid) listener.onTTSStarted()
+                    else {
+                        listener.onStateChanged(JarvisState.ERROR, "Format audio server tidak didukung (perlu PCM16 24 kHz mono).", null)
+                        webSocket?.cancel()
+                    }
+                }
+                "tts_end" -> if (acceptingPlayback.getAndSet(false)) listener.onTTSEnded()
                 "ping" -> {
                     val ts = json.get("timestamp")?.asLong ?: System.currentTimeMillis()
                     sendJson(PongMessage(type = "pong", timestamp = ts))
@@ -123,20 +165,25 @@ class JarvisWebSocketClient(
         webSocket?.send(json)
     }
 
-    fun sendAudioChunk(chunk: ByteArray, length: Int) {
-        if (!isConnected.get()) return
-        val byteString = chunk.toByteString(0, length)
-        webSocket?.send(byteString)
+    fun sendAudioChunk(chunk: ByteArray, length: Int): Boolean {
+        if (!isConnected.get() || !protocolReady.get() || !shouldRun.get()) return false
+        val sent = webSocket?.send(chunk.toByteString(0, length)) == true
+        if (!sent) {
+            protocolReady.set(false)
+            webSocket?.cancel()
+        }
+        return sent
     }
 
     private fun scheduleReconnect() {
-        if (!shouldRun.get()) return
+        if (!shouldRun.get() || !reconnectPending.compareAndSet(false, true)) return
         reconnectAttempt++
         val delaySec = minOf(30, (1 shl minOf(reconnectAttempt, 5)))
         Log.i(TAG, "Scheduling reconnect in $delaySec seconds...")
         Thread({
             try {
                 Thread.sleep(delaySec * 1000L)
+                reconnectPending.set(false)
                 if (shouldRun.get() && !isConnected.get()) {
                     connect()
                 }
@@ -147,6 +194,8 @@ class JarvisWebSocketClient(
     fun disconnect() {
         shouldRun.set(false)
         isConnected.set(false)
+        protocolReady.set(false)
+        webSocket?.cancel()
         webSocket?.close(1000, "App closing")
         client.dispatcher.executorService.shutdown()
     }

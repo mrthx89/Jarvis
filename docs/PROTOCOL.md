@@ -10,7 +10,7 @@
 
 Satu koneksi WebSocket full-duplex melayani dua jenis data:
 1. **Text Frames (JSON)**: Digunakan untuk negosiasi handshake, perubahan status sistem, telemetri amplitudo/visual, dan transkripsi teks.
-2. **Binary Frames (Raw PCM / Opus Chunks)**: Digunakan untuk streaming audio pengguna dari Android ke Server, serta streaming audio balasan dari Server ke Android.
+2. **Binary Frames (Raw PCM16 little-endian)**: Digunakan untuk streaming audio pengguna dari Android ke Server, serta streaming audio balasan dari Server ke Android.
 
 ---
 
@@ -47,8 +47,15 @@ Setelah koneksi WebSocket terbentuk di endpoint `/ws/appliance`, klien mengirimk
 
 ### 3. Kendali Aliran Audio (Streaming Control)
 
-#### 3.1 Deteksi Suara Pengguna Dimulai (Client -> Server)
-Ketika VAD lokal mendeteksi suara manusia:
+#### 3.1 Jalur utama: PCM kontinu dan deteksi akhir ucapan di server
+
+Setelah `server_hello`, Android mengaktifkan `AudioRecord` dan mengirim PCM16 little-endian, 16 kHz mono (3200 byte = 100 ms). Server mendeteksi awal suara, menyimpan pre-roll terbatas, dan menutup ucapan setelah hening atau durasi maksimum. Klien tidak wajib mengirim `voice_start`/`voice_end`.
+
+Percakapan saat ini **half-duplex**, bukan barge-in: masukan ditahan selama THINKING dan SPEAKING, dan baru dilanjutkan setelah buffer speaker selesai. Tujuannya mencegah jawaban speaker direkam sebagai pertanyaan berikutnya. Ini belum wake-word; pembicaraan di sekitar perangkat dapat memicu pengiriman ucapan.
+
+#### 3.2 Jalur kompatibilitas: kendali eksplisit
+Jika klien memiliki VAD lokal, pesan berikut tetap didukung:
+
 ```json
 {
   "type": "voice_start",

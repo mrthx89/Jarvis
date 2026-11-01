@@ -32,6 +32,8 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
 
     private var kioskService: JarvisKioskService? = null
     private var isBound = false
+    private var bindingRequested = false
+    private var hasTranscription = false
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -39,6 +41,7 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
             kioskService = binder.getService()
             kioskService?.serviceCallback = this@MainActivity
             isBound = true
+            bindingRequested = false
 
             val androidId = android.provider.Settings.Secure.getString(
                 contentResolver,
@@ -48,21 +51,22 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
             
             // Dynamically resolve server URL via Firebase Remote Config with fallback
             remoteConfigManager.fetchServerUrl { serverUrl ->
-                kioskService?.initializeConnection(serverUrl, deviceId)
+                if (!isDestroyed && isBound) kioskService?.initializeConnection(serverUrl, deviceId)
             }
 
             // Listen for live URL updates from Firebase Console
             remoteConfigManager.listenForRealtimeUpdates { newUrl ->
                 runOnUiThread {
-                    tvStatus.text = "Mengalihkan ke server baru..."
+                    if (!isDestroyed && isBound) kioskService?.initializeConnection(newUrl, deviceId)
                 }
-                kioskService?.initializeConnection(newUrl, deviceId)
             }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             kioskService = null
             isBound = false
+            bindingRequested = true // Framework retains the binding and can reconnect it.
+            onStateChanged(JarvisState.DISCONNECTED, "Layanan suara terputus.", null)
         }
     }
 
@@ -75,8 +79,7 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         if (audioGranted) {
             bindKioskService()
         } else {
-            tvStatus.text = "Izin mikrofon diperlukan untuk mendengarkan."
-            visualizerView.setState(JarvisState.ERROR)
+            onStateChanged(JarvisState.ERROR, "Izin mikrofon diperlukan untuk mendengarkan.", null)
         }
     }
 
@@ -95,11 +98,15 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         tvSubtitle.movementMethod = android.text.method.ScrollingMovementMethod.getInstance()
         ivStatusLed = findViewById(R.id.ivStatusLed)
 
+        onStateChanged(JarvisState.DISCONNECTED, "Memeriksa izin mikrofon...", null)
         checkAndRequestAudioPermission()
     }
 
     private fun checkAndRequestAudioPermission() {
-        val permissionsToRequest = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        val permissionsToRequest = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
                     this,
@@ -110,28 +117,27 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
             }
         }
 
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.RECORD_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
+        if (permissionsToRequest.isEmpty()) {
             bindKioskService()
-            if (permissionsToRequest.size > 1) {
-                requestMultiplePermissionsLauncher.launch(permissionsToRequest.toTypedArray())
-            }
         } else {
             requestMultiplePermissionsLauncher.launch(permissionsToRequest.toTypedArray())
         }
     }
 
     private fun bindKioskService() {
+        if (isBound || bindingRequested || isDestroyed) return
+        bindingRequested = true
+        onStateChanged(JarvisState.DISCONNECTED, "Memulai layanan suara...", null)
         val serviceIntent = Intent(this, JarvisKioskService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)
         } else {
             startService(serviceIntent)
         }
-        bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+        if (!bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)) {
+            bindingRequested = false
+            onStateChanged(JarvisState.ERROR, "Layanan suara gagal dihubungkan.", null)
+        }
     }
 
     override fun onResume() {
@@ -162,7 +168,7 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
     override fun onStateChanged(state: JarvisState, message: String?, expression: String?) {
         runOnUiThread {
             visualizerView.setState(state, expression)
-            tvStatus.text = when (state) {
+            tvStatus.text = message?.takeIf { it.isNotBlank() } ?: when (state) {
                 JarvisState.IDLE -> getString(R.string.status_idle)
                 JarvisState.LISTENING -> getString(R.string.status_listening)
                 JarvisState.THINKING -> getString(R.string.status_thinking)
@@ -171,6 +177,9 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
                 JarvisState.DISCONNECTED -> getString(R.string.status_disconnected)
             }
 
+            if (!hasTranscription) {
+                tvSubtitle.text = tvStatus.text
+            }
             val ledColor = when (state) {
                 JarvisState.IDLE -> 0xFF00E5FF.toInt()
                 JarvisState.LISTENING -> 0xFF00E676.toInt()
@@ -190,15 +199,20 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
 
     override fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean) {
         runOnUiThread {
+            hasTranscription = true
             tvSubtitle.text = text
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        if (isBound) {
+        remoteConfigManager.close()
+        kioskService?.serviceCallback = null
+        kioskService = null
+        if (isBound || bindingRequested) {
             unbindService(serviceConnection)
             isBound = false
+            bindingRequested = false
         }
     }
 }
