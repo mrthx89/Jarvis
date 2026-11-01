@@ -64,6 +64,21 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <TextView
+        android:id="@+id/voiceMood"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:gravity="center"
+        android:text="@string/voice_mood_off"
+        android:textSize="13sp"
+        android:textColor="@color/text_primary"
+        android:accessibilityLiveRegion="polite"
+        app:layout_constraintTop_toBottomOf="@id/toggleVoice"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <!-- Central Living 3D Mascot with Organic Physics & Transitions -->
     <id.my.yhdev.jarvis.ui.VisualizerView
         android:id="@+id/visualizerView"
@@ -76,7 +91,7 @@
         app:layout_constraintBottom_toTopOf="@id/consoleCard"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/toggleVoice" />
+        app:layout_constraintTop_toBottomOf="@id/voiceMood" />
 
     <!-- Bottom 3D Cyberdeck Curved Glass Console Readout -->
     <LinearLayout

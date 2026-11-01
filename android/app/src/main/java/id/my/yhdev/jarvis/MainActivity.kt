@@ -38,6 +38,8 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
     private lateinit var tvSubtitle: TextView
     private lateinit var toggleVoice: Button
     private var voiceEnabled = false
+    private var voiceStateKnown = false
+    private lateinit var voiceMood: TextView
     private lateinit var copyReply: Button
     private var lastAssistantReply = ""
     private lateinit var ivStatusLed: android.widget.ImageView
@@ -126,6 +128,8 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         visualizerView = findViewById(R.id.visualizerView)
         tvStatus = findViewById(R.id.tvStatus)
         tvStatus.setOnLongClickListener { showCredentialSetup(); true }
+        voiceMood = findViewById(R.id.voiceMood)
+        visualizerView.setVoiceEnabled(false, animateReaction = false)
         toggleVoice = findViewById(R.id.toggleVoice)
         toggleVoice.setOnClickListener {
             val service = kioskService ?: return@setOnClickListener
@@ -254,7 +258,11 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
 
     override fun onVoiceEnabledChanged(enabled: Boolean) {
         runOnUiThread {
+            val changed = voiceStateKnown && voiceEnabled != enabled
             voiceEnabled = enabled
+            voiceStateKnown = true
+            visualizerView.setVoiceEnabled(enabled, animateReaction = changed)
+            voiceMood.setText(if (enabled) R.string.voice_mood_on else R.string.voice_mood_off)
             toggleVoice.isEnabled = true
             toggleVoice.setText(if (enabled) R.string.voice_stop else R.string.voice_start)
             renderStatus()
