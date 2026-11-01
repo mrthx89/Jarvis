@@ -20,6 +20,18 @@ In Telegram, `/model MODEL_OR_ALIAS` and `/status` apply to that Telegram sessio
 
 For a deterministic per-call override, Hermes supports `hermes chat -c appliance --model MODEL_ID --provider PROVIDER -q MESSAGE -Q`. This makes a real provider call; it is not a no-op configuration command. The bridge would need explicit model/provider configuration to enforce that on every voice turn; that feature is not included here.
 
+## Terminal & Local Session Bridging
+
+For dynamic two-way bridging between local terminal sessions and Nexo Appliance (sending messages, listening to cognitive streams, linking session threads, and triggering audio), see the comprehensive guide:
+- **[docs/TERMINAL_SESSION_BRIDGE.md](TERMINAL_SESSION_BRIDGE.md)**
+
+Quick commands:
+- `nexo session send <pesan> [-s]` : Send text instructions and optionally speak on appliance.
+- `nexo session watch` : Stream cognitive events and transcripts real-time.
+- `nexo session link [--latest]` : Link appliance thread to active Hermes terminal session.
+- `nexo session bridge` : Interactive two-way bridging terminal.
+
 References:
+- [Terminal Session Bridge Guide](TERMINAL_SESSION_BRIDGE.md)
 - https://hermes-agent.nousresearch.com/docs/reference/cli-commands
 - https://hermes-agent.nousresearch.com/docs/user-guide/sessions

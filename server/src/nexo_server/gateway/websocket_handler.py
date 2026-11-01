@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Optional
+from typing import Any, Optional
 from fastapi import WebSocket
 
 from ..models.messages import (
@@ -51,6 +51,7 @@ class ApplianceSession:
         authenticated_device_id: str | None = None,
         max_json_bytes: int = 4096,
         agent_name: str = "Nexo",
+        session_hub: Optional[Any] = None,
     ):
         self.authenticated_device_id = authenticated_device_id
         self.agent_name = agent_name
@@ -61,6 +62,7 @@ class ApplianceSession:
         self.stt = stt
         self.tts = tts
         self.hermes = hermes
+        self.hub = session_hub
         self.vad = EnergyVAD()
         self.state = NexoState.IDLE
         self.audio_buffer = bytearray()
@@ -73,6 +75,8 @@ class ApplianceSession:
         self._tts_started = False
         self._gap_handle = None
         self._preroll = bytearray()
+        if self.hub:
+            self.hub.register_session(self)
 
     def _arm_gap_timeout(self):
         if self._gap_handle:
@@ -89,6 +93,8 @@ class ApplianceSession:
 
     async def close(self):
         self._closed = True
+        if self.hub:
+            self.hub.unregister_session(self)
         if self._gap_handle:
             self._gap_handle.cancel()
             self._gap_handle = None
@@ -127,9 +133,52 @@ class ApplianceSession:
     ):
         """Transition and broadcast state change with mascot expression to client."""
         self.state = state
+        if self.hub:
+            state_val = getattr(state, "value", str(state))
+            self.hub.publish_event({
+                "type": "state_change",
+                "state": state_val,
+                "message": message,
+                "expression": expression,
+            })
         await self.send_json_message(
             StateChange(state=state, message=message, expression=expression)
         )
+
+    async def speak_text(self, text: str, expression: Optional[str] = None) -> bool:
+        """Stream TTS audio to the appliance speaker and animate the mascot."""
+        if self._closed or not self.ready:
+            return False
+
+        speech_expr = expression or "senang"
+        await self.send_state(NexoState.SPEAKING, expression=speech_expr)
+        await self.send_json_message(TTSStart())
+        self._tts_started = True
+
+        try:
+            async for chunk in self.tts.synthesize_stream(text):
+                await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
+                self._playback_until = max(time.monotonic(), self._playback_until) + len(chunk) / 48000.0
+                amp = self.vad.get_normalized_amplitude(chunk)
+                await self.send_json_message(
+                    VisualTelemetry(
+                        amplitude=max(0.2, amp),
+                        frequency_bands=[amp * 0.9, amp * 1.1, amp * 0.7],
+                    )
+                )
+            return True
+        finally:
+            if self._tts_started:
+                try:
+                    await self.send_json_message(TTSEnd())
+                except Exception:
+                    pass
+                self._tts_started = False
+            self._cooldown_until = max(time.monotonic(), self._playback_until) + 0.6
+            try:
+                await self.send_state(NexoState.IDLE, expression="netral")
+            except Exception:
+                pass
 
     async def handle_text_frame(self, data_str: str):
         """Handle incoming control JSON frames."""
@@ -272,6 +321,13 @@ class ApplianceSession:
         await self.send_json_message(
             TranscriptionMessage(role="user", text=transcription, is_final=True)
         )
+        if self.hub:
+            self.hub.publish_event({
+                "type": "transcription",
+                "role": "user",
+                "text": transcription,
+                "source": "appliance_voice",
+            })
 
         # Step 2: Only a whole supported mascot command bypasses Hermes.
         command_expression = parse_expression_command(transcription)
@@ -286,6 +342,14 @@ class ApplianceSession:
         await self.send_json_message(
             TranscriptionMessage(role="assistant", text=agent_reply, is_final=True)
         )
+        if self.hub:
+            self.hub.publish_event({
+                "type": "transcription",
+                "role": "assistant",
+                "text": agent_reply,
+                "expression": speech_expr,
+                "source": "nexo_hermes",
+            })
 
         # Step 3: Speaking / Streaming TTS
         await self.send_state(NexoState.SPEAKING, expression=speech_expr)

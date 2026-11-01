@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Nexo CLI Dispatcher
+set -e
+
+TARGET="${BASH_SOURCE[0]}"
+while [ -h "$TARGET" ]; do
+    DIR="$(cd -P "$(dirname "$TARGET")" && pwd)"
+    TARGET="$(readlink "$TARGET")"
+    [[ $TARGET != /* ]] && TARGET="$DIR/$TARGET"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$TARGET")" && pwd)"
+if [ ! -f "$SCRIPT_DIR/nexo_session.py" ]; then
+    SCRIPT_DIR="/data/home/Jarvis/scripts"
+fi
+PYTHON_BIN="/data/home/Jarvis/server/.venv/bin/python"
+if [ ! -f "$PYTHON_BIN" ]; then
+    PYTHON_BIN="python3"
+fi
+
+export PYTHONPATH="/data/home/Jarvis/server/src:${PYTHONPATH}"
+
+if [ "$1" = "session" ]; then
+    shift
+    exec "$PYTHON_BIN" "$SCRIPT_DIR/nexo_session.py" "$@"
+else
+    case "$1" in
+        send|watch|stream|listen|transcript|history|link|speak|bridge|status)
+            exec "$PYTHON_BIN" "$SCRIPT_DIR/nexo_session.py" "$@"
+            ;;
+        *)
+            exec "$PYTHON_BIN" "$SCRIPT_DIR/nexo_session.py" "$@"
+            ;;
+    esac
+fi

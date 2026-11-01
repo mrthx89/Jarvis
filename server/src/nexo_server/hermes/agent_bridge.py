@@ -5,6 +5,8 @@ import logging
 import os
 import signal
 
+from typing import Optional
+
 logger = logging.getLogger(__name__)
 
 
@@ -15,7 +17,7 @@ class HermesBridge:
         self,
         mode: str = "cli",
         hermes_binary: str = "hermes",
-        session_name: str = "appliance",
+        session_name: str = "nexo",
         timeout: int = 60,
     ):
         self.mode = mode
@@ -23,8 +25,16 @@ class HermesBridge:
         self.session_name = session_name
         self.timeout = timeout
 
-    async def query(self, prompt: str) -> str:
+    def get_session_name(self) -> str:
+        return self.session_name
+
+    def set_session_name(self, name: str) -> None:
+        if name and name.strip():
+            self.session_name = name.strip()
+
+    async def query(self, prompt: str, session_name: Optional[str] = None) -> str:
         """Send prompt to Hermes and receive response with session context."""
+        active_session = session_name or self.session_name
         if self.mode == "mock":
             await asyncio.sleep(0.3)
             return f"Sistem terhubung. Saya telah menerima instruksi Anda: '{prompt}'. Seluruh modul beroperasi normal."
@@ -36,7 +46,7 @@ class HermesBridge:
                 self.hermes_binary,
                 "chat",
                 "-c",
-                self.session_name,
+                active_session,
                 "--create-if-missing",
                 "-q",
                 prompt,
@@ -98,6 +108,10 @@ class HermesBridge:
         return clean_text if clean_text else raw_output
 
 
-def create_hermes_bridge(mode: str = "cli", hermes_binary: str = "hermes") -> HermesBridge:
+def create_hermes_bridge(
+    mode: str = "cli",
+    hermes_binary: str = "hermes",
+    session_name: str = "nexo",
+) -> HermesBridge:
     """Factory to instantiate the appropriate Hermes bridge."""
-    return HermesBridge(mode=mode, hermes_binary=hermes_binary)
+    return HermesBridge(mode=mode, hermes_binary=hermes_binary, session_name=session_name)

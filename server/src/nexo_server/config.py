@@ -38,6 +38,7 @@ class HermesSettings:
     bridge_mode: str = "cli"
     hermes_binary: str = "hermes"
     timeout_seconds: int = 60
+    session_name: str = "nexo"
 
 
 @dataclass

@@ -2,10 +2,14 @@
 
 from contextlib import asynccontextmanager
 import asyncio
+import json
 import logging
+import time
+from typing import Optional
 import uuid
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 import uvicorn
 
 from .config import load_config
@@ -14,6 +18,7 @@ from .gateway.websocket_handler import ApplianceSession, ProtocolViolation
 from .pipeline.stt import create_stt_engine
 from .pipeline.tts import create_tts_engine
 from .hermes.agent_bridge import create_hermes_bridge
+from .session_hub import hub
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,6 +40,10 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing Nexo Dedicated Appliance Server...")
     logger.info(f"STT Provider: {config.stt.provider} | TTS Provider: {config.tts.provider}")
     logger.info(f"Hermes Mode: {config.hermes.bridge_mode}")
+    hub.set_hermes_bridge(hermes_bridge)
+    hub.set_tts_engine(tts_engine)
+    hub.set_stt_engine(stt_engine)
+    hub.set_session_thread(getattr(config.hermes, "session_name", "nexo"))
     yield
     logger.info("Shutting down Nexo Server...")
 
@@ -45,6 +54,21 @@ app = FastAPI(
     description="Dedicated Ambient AI Appliance Gateway for YH Dev",
     lifespan=lifespan,
 )
+
+
+class SessionSendPayload(BaseModel):
+    message: str
+    speak: bool = False
+    session_name: Optional[str] = None
+
+
+class SessionSpeakPayload(BaseModel):
+    text: str
+    expression: Optional[str] = None
+
+
+class SessionLinkPayload(BaseModel):
+    session_name: str
 
 
 @app.get("/health")
@@ -59,6 +83,117 @@ async def health_check():
             "ethos": "berkarya dengan hati @ 2026",
         }
     )
+
+
+@app.post("/session/send")
+async def session_send_endpoint(payload: SessionSendPayload):
+    """Send text instruction to Nexo session, optionally triggering audio output on appliance."""
+    res = await hub.inject_message(
+        payload.message,
+        speak=payload.speak,
+        session_name=payload.session_name,
+    )
+    return JSONResponse(res)
+
+
+@app.post("/session/speak")
+async def session_speak_endpoint(payload: SessionSpeakPayload):
+    """Trigger audio response / speech on connected appliance screen/speaker."""
+    res = await hub.trigger_speech(payload.text, expression=payload.expression)
+    return JSONResponse(res)
+
+
+@app.post("/session/link")
+async def session_link_endpoint(payload: SessionLinkPayload):
+    """Link Hermes session thread (nexo / appliance / active local session) with Nexo."""
+    name = hub.set_session_thread(payload.session_name)
+    return JSONResponse({"status": "ok", "session_name": name})
+
+
+@app.get("/session/status")
+async def session_status_endpoint():
+    """Return status of appliance connectivity and session hub."""
+    return JSONResponse(hub.get_status())
+
+
+@app.get("/session/transcript")
+async def session_transcript_endpoint(limit: int = 50):
+    """Retrieve recent transcript entries for the Nexo session."""
+    return JSONResponse({
+        "session_name": hub.current_session_thread,
+        "transcript": hub.get_transcript(limit=limit),
+    })
+
+
+@app.get("/session/stream")
+async def session_stream_endpoint():
+    """Server-Sent Events stream for cognitive events, state changes, and transcripts."""
+    q = hub.subscribe()
+
+    async def event_generator():
+        try:
+            yield f"data: {json.dumps({'type': 'status', 'status': hub.get_status()})}\n\n"
+            while True:
+                event = await q.get()
+                yield f"data: {json.dumps(event)}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            hub.unsubscribe(q)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.websocket("/ws/session/stream")
+async def websocket_session_stream_endpoint(websocket: WebSocket):
+    """Full-duplex WebSocket stream for terminal sessions to interact and listen to Nexo."""
+    await websocket.accept()
+    q = hub.subscribe()
+    await websocket.send_json({"type": "status", "status": hub.get_status()})
+
+    async def push_events():
+        try:
+            while True:
+                event = await q.get()
+                await websocket.send_json(event)
+        except (asyncio.CancelledError, WebSocketDisconnect):
+            pass
+        except Exception:
+            pass
+
+    push_task = asyncio.create_task(push_events())
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+            if msg_type == "send":
+                res = await hub.inject_message(
+                    data.get("message", ""),
+                    speak=data.get("speak", False),
+                    session_name=data.get("session_name"),
+                )
+                await websocket.send_json({"type": "send_response", **res})
+            elif msg_type == "speak":
+                res = await hub.trigger_speech(
+                    data.get("text", ""),
+                    expression=data.get("expression"),
+                )
+                await websocket.send_json({"type": "speak_response", **res})
+            elif msg_type == "link":
+                res = hub.set_session_thread(data.get("session_name", "nexo"))
+                await websocket.send_json({"type": "link_response", "session_name": res})
+            elif msg_type == "status":
+                await websocket.send_json({"type": "status", "status": hub.get_status()})
+            elif msg_type == "ping":
+                await websocket.send_json({
+                    "type": "pong",
+                    "timestamp": data.get("timestamp", int(time.time() * 1000)),
+                })
+    except WebSocketDisconnect:
+        pass
+    finally:
+        push_task.cancel()
+        hub.unsubscribe(q)
 
 
 _active_sessions = 0
@@ -90,6 +225,7 @@ async def websocket_appliance_endpoint(websocket: WebSocket):
         stt=stt_engine, tts=tts_engine, hermes=hermes_bridge,
         authenticated_device_id=device_id, max_json_bytes=config.server.max_json_bytes,
         agent_name="Nexo",
+        session_hub=hub,
     )
     try:
         await websocket.accept()
