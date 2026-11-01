@@ -93,6 +93,8 @@ def run():
         host=config.server.host,
         port=config.server.port,
         log_level="info",
+        proxy_headers=True,
+        forwarded_allow_ips="*",
     )
 
 
