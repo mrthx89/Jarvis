@@ -1,5 +1,5 @@
 # WebSocket Communication Protocol Specification
-## Project: Jarvis Dedicated Appliance
+## Project: Nexo Dedicated Appliance (formerly Jarvis)
 **Protocol Version**: 1.0.0  
 **Transport**: WebSocket (RFC 6455)  
 **Encoding**: JSON (Control/Telemetry) + Binary (Raw PCM Audio)  
@@ -20,7 +20,7 @@ Stage 1 menggunakan token unik per perangkat yang dibuat pemilik (bukan pairing 
 Sebelum WebSocket diterima, request upgrade ke `/ws/appliance` wajib membawa:
 
 ```text
-Authorization: Bearer <token-perangkat>
+Authorization: Bearer ***
 X-Device-ID: <ID-yang-diprovisikan>
 ```
 
@@ -48,7 +48,7 @@ Klien kemudian mengirim handshake:
 {
   "type": "client_hello",
   "protocol_version": "1.0",
-  "device_id": "jarvis-tablet-01",
+  "device_id": "nexo-tablet-01",
   "audio_spec": {
     "format": "audio/pcm",
     "sample_rate": 16000,
@@ -63,7 +63,7 @@ Klien kemudian mengirim handshake:
 {
   "type": "server_hello",
   "session_id": "sess_20261101_8a9f02",
-  "agent_name": "Jarvis",
+  "agent_name": "Nexo",
   "status": "IDLE"
 }
 ```
@@ -103,7 +103,7 @@ Ketika hening terdeteksi melebihi ambang batas (misal 800ms):
 ### 4. Siklus Status Sistem & Telemetri Visual (Server -> Client)
 
 #### 4.1 Perubahan Status (State Change)
-Mengubah mode ekspresi wajah digital Jarvis:
+Mengubah mode ekspresi wajah digital Nexo:
 ```json
 {
   "type": "state_change",
@@ -113,7 +113,7 @@ Mengubah mode ekspresi wajah digital Jarvis:
 ```
 
 #### 4.2 Telemetri Amplitudo & Frekuensi (Server -> Client)
-Dikirim secara berkala (setiap 30-50ms) saat Jarvis sedang berbicara untuk menggerakkan visualizer secara akurat:
+Dikirim secara berkala (setiap 30-50ms) saat Nexo sedang berbicara untuk menggerakkan visualizer secara akurat:
 ```json
 {
   "type": "visual_telemetry",

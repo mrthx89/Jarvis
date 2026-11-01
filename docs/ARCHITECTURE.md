@@ -1,5 +1,5 @@
 # Architecture & System Design Document
-## Project: Jarvis Dedicated Appliance
+## Project: Nexo Dedicated Appliance (formerly Jarvis)
 **Architect**: Yanto Hariyono (YH Dev)  
 **Version**: 1.0.0  
 
@@ -25,7 +25,7 @@ Arsitektur dirancang dengan prinsip **Separation of Concerns (SoC)** yang tegas:
 |           |                                                         ^         |
 |           v                                                         |         |
 |   +---------------------------------------------------------------+ |         |
-|   |                  JarvisWebSocketClient (OkHttp)               | |         |
+|   |             NexoWebSocketClient / Jarvis (OkHttp)             | |         |
 |   +-------------------------------+-------------------------------+ |         |
 +-----------------------------------|---------------------------------|---------+
                                     | (Full-Duplex WebSocket)         |
@@ -34,7 +34,7 @@ Arsitektur dirancang dengan prinsip **Separation of Concerns (SoC)** yang tegas:
 |                              SERVER LAYER                                     |
 |                                                                               |
 |   +---------------------------------------------------------------+           |
-|   |                     FastAPI WebSocket Gateway                 |           |
+|   |         FastAPI WebSocket Gateway (nexo_server / jarvis)      |           |
 |   +-------------------------------+-------------------------------+           |
 |                                   |                                           |
 |         +-------------------------+-------------------------+                 |
@@ -60,7 +60,7 @@ Arsitektur dirancang dengan prinsip **Separation of Concerns (SoC)** yang tegas:
 ### 2. Klien Android: Lapisan Native & Audio
 
 #### 2.1 Audio Ingestion & Acoustic Echo Cancellation (AEC)
-Kunci utama keberhasilan komunikasi hands-free di dekat monitor adalah peniadaan gema suara Jarvis sendiri:
+Kunci utama keberhasilan komunikasi hands-free di dekat monitor adalah peniadaan gema suara Nexo sendiri:
 - **Audio Source**: `MediaRecorder.AudioSource.VOICE_COMMUNICATION`. Sumber ini secara otomatis memicu pemrosesan DSP perangkat keras pada chipset Android (Qualcomm/MediaTek/Exynos).
 - **AcousticEchoCanceler**: Kelas `android.media.audiofx.AcousticEchoCanceler` diikatkan ke `audioSessionId` dari `AudioRecord`.
 - **Buffer Pool**: Menggunakan array byte statis (pre-allocated byte buffers) berukuran 3200 byte (100 ms audio pada 16kHz 16-bit mono) untuk mencegah garbage collection (GC) pauses di Android.
@@ -80,7 +80,7 @@ Klien menerapkan VAD berbasis energi (RMS Amplitude Threshold) atau Silero VAD r
 ### 3. Server: Audio Gateway & Pipeline Pemrosesan
 
 #### 3.1 Concurrency & Asynchronous Design
-- Server dibangun di atas Python `asyncio` dan `FastAPI / websockets`.
+- Server dibangun di atas Python `asyncio` dan `FastAPI / websockets` (`nexo_server` dengan kompatibilitas `jarvis_server`).
 - Setiap koneksi klien memiliki task loop terpisah:
   1. `inbound_receiver`: Membaca pesan teks JSON dan frame biner audio.
   2. `audio_transcription_worker`: Mengalirkan audio ke model STT.
@@ -88,7 +88,7 @@ Klien menerapkan VAD berbasis energi (RMS Amplitude Threshold) atau Silero VAD r
   4. `tts_streaming_worker`: Mengonversi teks keluaran Hermes menjadi potongan audio suara secara inkremental tanpa menunggu seluruh kalimat selesai.
 
 #### 3.2 Hermes Agent Bridge
-- Server berkomunikasi dengan runtime Hermes Agent melalui integrasi Python API / CLI / Socket internal.
+- Server berkomunikasi dengan runtime Hermes Agent melalui integrasi Python API / CLI / Socket internal (`scripts/nexo` dan bridge daemon).
 - Menjaga konteks percakapan tetap persisten di `state.db` Hermes.
 
 ---

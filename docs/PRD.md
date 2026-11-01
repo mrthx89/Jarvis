@@ -1,5 +1,5 @@
 # Product Requirements Document (PRD)
-## Project: Jarvis Dedicated Appliance
+## Project: Nexo Dedicated Appliance (formerly Jarvis)
 **Architect & Owner**: Yanto Hariyono (YH Dev)  
 **Version**: 1.0.0  
 **Status**: Approved / In Development  
@@ -8,9 +8,9 @@
 ---
 
 ### 1. Executive Summary & Visi Produk
-Jarvis Dedicated Appliance adalah sistem interaksi kecerdasan buatan ambient (hands-free physical appliance) yang menggabungkan layar monitor dan mikrofon/speaker array menjadi sebuah entitas cerdas di meja kerja tanpa memerlukan unit Personal Computer (PC) konvensional. 
+Nexo Dedicated Appliance (sebelumnya Jarvis) adalah sistem interaksi kecerdasan buatan ambient (hands-free physical appliance) yang menggabungkan layar monitor dan mikrofon/speaker array menjadi sebuah entitas cerdas di meja kerja tanpa memerlukan unit Personal Computer (PC) konvensional. 
 
-Pengguna dapat berinteraksi secara verbal secara alami, melihat ekspresi/status visual Jarvis di layar ("wajah digital"), dan menerima respons audio-visual secara real-time tanpa menyentuh keyboard, mouse, ataupun layar sentuh.
+Pengguna dapat berinteraksi secara verbal secara alami, melihat ekspresi/status visual Nexo di layar ("wajah digital"), dan menerima respons audio-visual secara real-time tanpa menyentuh keyboard, mouse, ataupun layar sentuh.
 
 ---
 

@@ -37,6 +37,12 @@ def _handle(raw_args, *, source=None, platform=None):
 
 
 def register(ctx):
+    ctx.register_command('nexo-token', handler=_handle,
+                         description='Kelola token perangkat Nexo (pemilik, chat privat).',
+                         args_hint='DEVICE_ID | deliver DEVICE_ID | rotate DEVICE_ID | revoke DEVICE_ID')
+    ctx.register_command('nexo_token', handler=_handle,
+                         description='Kelola token perangkat Nexo (pemilik, chat privat).',
+                         args_hint='DEVICE_ID | deliver DEVICE_ID | rotate DEVICE_ID | revoke DEVICE_ID')
     ctx.register_command('jarvis-token', handler=_handle,
                          description='Kelola token perangkat Jarvis (pemilik, chat privat).',
                          args_hint='DEVICE_ID | deliver DEVICE_ID | rotate DEVICE_ID | revoke DEVICE_ID')

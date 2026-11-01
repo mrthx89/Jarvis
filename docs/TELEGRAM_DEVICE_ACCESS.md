@@ -4,15 +4,15 @@ The appliance WebSocket requires an existing registered device ID plus its match
 
 ## Use in the owner's private bot chat
 
-    /jarvis_token DEVICE_ID
+    /nexo_token DEVICE_ID
 
-Replace DEVICE_ID with the exact ID shown by long-pressing the Android status. Telegram normalizes underscores to the registered `jarvis-token` command. This is a deterministic native Hermes slash command, not an LLM interpreting arbitrary provisioning instructions. Do not paste raw bearer tokens into normal conversations.
+Replace DEVICE_ID with the exact ID shown by long-pressing the Android status. Telegram normalizes underscores to the registered `nexo-token` command (with backward-compatible alias `/jarvis-token` / `/jarvis_token`). This is a deterministic native Hermes slash command, not an LLM interpreting arbitrary provisioning instructions. Do not paste raw bearer tokens into normal conversations.
 
 Additional explicit operations:
 
-    /jarvis_token deliver DEVICE_ID
-    /jarvis_token rotate DEVICE_ID
-    /jarvis_token revoke DEVICE_ID
+    /nexo_token deliver DEVICE_ID
+    /nexo_token rotate DEVICE_ID
+    /nexo_token revoke DEVICE_ID
 
 Creating an already registered ID does not replace its token. Use `deliver` to resend the private current delivery copy, or `rotate` deliberately; rotation requires entering the new token on Android. Revocation removes server access, not Android local storage. Registry checks on existing sockets occur at the next application frame; for urgent active-session termination restart the appliance service. There is no automatic expiry.
 
@@ -27,8 +27,8 @@ Creating an already registered ID does not replace its token. Use `deliver` to r
 
 ## Installation on this host / portability
 
-Plugin source is under `server/hermes-plugin/jarvis-device-access/`. Copy its two files to `$HERMES_HOME/plugins/jarvis-device-access/`. Create a mode-0600 `settings.json` beside the installed plugin with owner_user_id, owner_chat_id, registry_path, delivery_dir, origin, backend_python, server_src, telegram_env_file. Numeric owner IDs and absolute paths are deployment settings, never token literals. `telegram_env_file` points to the active Hermes secret environment file; do not duplicate the bot token in settings. Create delivery_dir privately, mode 0700.
+Plugin source is under `server/hermes-plugin/nexo-device-access/` (and backward-compatible `server/hermes-plugin/jarvis-device-access/`). Copy its two files to `$HERMES_HOME/plugins/nexo-device-access/`. Create a mode-0600 `settings.json` beside the installed plugin with owner_user_id, owner_chat_id, registry_path, delivery_dir, origin, backend_python, server_src, telegram_env_file. Numeric owner IDs and absolute paths are deployment settings, never token literals. `telegram_env_file` points to the active Hermes secret environment file; do not duplicate the bot token in settings. Create delivery_dir privately, mode 0700.
 
-Enable using `hermes plugins enable jarvis-device-access --no-allow-tool-override`. Plugin doctor checks registration; verify the live command separately. The command invokes the existing backend virtualenv through a fixed subprocess argv, sends only trusted source metadata/command args over stdin, and returns sanitized JSON summaries. Production settings and secrets are not tracked. This workflow requires the gateway version supporting plugin command source context; fail closed if missing.
+Enable using `hermes plugins enable nexo-device-access --no-allow-tool-override`. Plugin doctor checks registration; verify the live command separately. The command invokes the existing backend virtualenv through a fixed subprocess argv, sends only trusted source metadata/command args over stdin, and returns sanitized JSON summaries. Production settings and secrets are not tracked. This workflow requires the gateway version supporting plugin command source context; fail closed if missing.
 
 No Android build or CI is needed for this server-side workflow. Test provisioning with a fake sender before any real delivery; verify the actual public gateway separately with no token, wrong/unregistered token, and a registered device handshake. Do not infer working microphone/speaker behavior from auth acceptance.

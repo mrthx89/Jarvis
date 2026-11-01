@@ -1,5 +1,5 @@
 # Hardware Setup & Appliance Deployment Guide
-## Project: Jarvis Dedicated Appliance
+## Project: Nexo Dedicated Appliance (formerly Jarvis)
 **Target**: Hands-free Dedicated Desktop Experience (No PC)
 
 ---
@@ -17,7 +17,7 @@ Terdapat tiga kombinasi perangkat keras yang direkomendasikan berdasarkan prefer
 - **Perangkat**: Smart Monitor Android 24–32 inci (misal monitor berbasis Android TV/AOSP).
 - **Audio Eksternal**: USB Conference Speakerphone (Anker PowerConf, Jabra Speak, atau ReSpeaker USB Mic Array).
 - **Penempatan**: Monitor dipasang pada monitor arm; speakerphone diletakkan tepat di bawah monitor menghadap posisi duduk Anda.
-- **Kelebihan**: Visual "wajah" Jarvis tampil megah di meja kerja dan tangkapan suara 360 derajat sangat sensitif.
+- **Kelebihan**: Visual "wajah" Nexo tampil megah di meja kerja dan tangkapan suara 360 derajat sangat sensitif.
 
 #### Opsi 3: Monitor Standar + Android TV Box di Belakang Layar
 - **Perangkat**: Monitor PC biasa (HDMI) + Android TV Box / Streaming Stick yang dipasang di port belakang layar.
@@ -29,9 +29,9 @@ Terdapat tiga kombinasi perangkat keras yang direkomendasikan berdasarkan prefer
 
 1. **Jarak Mikrofon ke Pengguna**: Idealnya antara 60 cm hingga 150 cm dari posisi duduk.
 2. **Pencegahan Resonansi Suara**:
-   - Jika menggunakan speakerphone terpisah, letakkan di atas alas mousepad atau dudukan karet peredam agar getaran bass saat Jarvis berbicara tidak merambat ke meja.
+   - Jika menggunakan speakerphone terpisah, letakkan di atas alas mousepad atau dudukan karet peredam agar getaran bass saat Nexo berbicara tidak merambat ke meja.
 3. **Pemanfaatan Hardware AEC**:
-   - Pastikan aplikasi mengaktifkan `AcousticEchoCanceler`. Dengan AEC aktif, Jarvis dapat mendengar suara instruksi Anda meskipun saat itu Jarvis sendiri sedang berbicara melalui speaker ("Barge-in capability").
+   - Pastikan aplikasi mengaktifkan `AcousticEchoCanceler`. Dengan AEC aktif, Nexo dapat mendengar suara instruksi Anda meskipun saat itu Nexo sendiri sedang berbicara melalui speaker ("Barge-in capability").
 
 ---
 

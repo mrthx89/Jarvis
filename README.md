@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="android/app/src/main/res/drawable/mascot_senang.png" width="200" alt="Maskot Jarvis dengan ekspresi senang" />
+  <img src="android/app/src/main/res/drawable/mascot_senang.png" width="200" alt="Maskot Nexo dengan ekspresi senang" />
 </p>
 
-<h1 align="center">Jarvis Dedicated Appliance</h1>
+<h1 align="center">Nexo Dedicated Appliance</h1>
 
 <p align="center">
   Asisten suara ambient dengan wajah ekspresif, klien Android native, dan penalaran Hermes Agent.
@@ -14,7 +14,7 @@
   Yanto Hariyono · YH Dev
 </p>
 
-Jarvis menghadirkan interaksi suara melalui tablet atau layar pintar berbasis Android: berbicara, melihat respons maskot, dan mendengarkan jawaban tanpa mengetik. Tidak perlu PC konvensional di meja; komputasi penalaran dan pemrosesan suara tetap berjalan pada server terpisah. Monitor biasa memerlukan perangkat komputasi pendamping.
+Nexo (sebelumnya Jarvis) menghadirkan interaksi suara melalui tablet atau layar pintar berbasis Android: berbicara, melihat respons maskot, dan mendengarkan jawaban tanpa mengetik. Tidak perlu PC konvensional di meja; komputasi penalaran dan pemrosesan suara tetap berjalan pada server terpisah. Monitor biasa memerlukan perangkat komputasi pendamping.
 
 ## Tampilan aplikasi
 
@@ -24,8 +24,8 @@ Jarvis menghadirkan interaksi suara melalui tablet atau layar pintar berbasis An
     <td align="center"><strong>Mikrofon OFF</strong></td>
   </tr>
   <tr>
-    <td align="center"><img src="artifact/sreenshoot/WhatsApp%20Image%202026-11-01%20at%2016.46.33.jpeg" width="280" alt="Jarvis menyimak dengan panel Cognitive Stream dan ikon clipboard" /></td>
-    <td align="center"><img src="artifact/sreenshoot/WhatsApp%20Image%202026-11-01%20at%2016.46.34.jpeg" width="280" alt="Jarvis menangis saat mikrofon mati dan panel percakapan tersembunyi" /></td>
+    <td align="center"><img src="artifact/sreenshoot/WhatsApp%20Image%202026-11-01%20at%2016.46.33.jpeg" width="280" alt="Nexo menyimak dengan panel Cognitive Stream dan ikon clipboard" /></td>
+    <td align="center"><img src="artifact/sreenshoot/WhatsApp%20Image%202026-11-01%20at%2016.46.34.jpeg" width="280" alt="Nexo menangis saat mikrofon mati dan panel percakapan tersembunyi" /></td>
   </tr>
   <tr>
     <td align="center">Status menyimak, respons teks, dan salin jawaban.</td>
@@ -43,14 +43,15 @@ Screenshot dikirim oleh pengembang; ilustrasi UI ini bukan bukti setiap revisi s
 - **Antarmuka yang tenang.** Ucapan senang saat ON hilang setelah 15 detik. Panel COGNITIVE STREAM tersembunyi ketika OFF agar wajah mendapat lebih banyak ruang.
 - **Jawaban dapat disalin.** Ikon clipboard di kanan header menyalin jawaban final asisten secara lengkap, bukan hanya baris yang terlihat.
 - **Konfigurasi perangkat.** Bottom sheet native untuk kredensial, endpoint WSS dari Firebase Remote Config, dan autentikasi per perangkat.
+- **Terminal & Local Session Bridge.** Utilitas CLI `scripts/nexo` untuk interaksi kognitif langsung dari terminal developer.
 
-## Beri Jarvis ekspresi
+## Beri Nexo ekspresi
 
 Saat mikrofon ON dan siap, ucapkan perintah pendek yang berdiri sendiri:
 
 | Perintah | Reaksi |
 | --- | --- |
-| “Jarvis, tersenyum” | Senang |
+| “Nexo, tersenyum” (atau “Jarvis, tersenyum”) | Senang |
 | “Coba tertawa” | Tertawa |
 | “Tunjukkan wajah bingung” | Bingung |
 | “Berkedip” | Mengedip |
@@ -76,17 +77,17 @@ Perangkat Android                          Server
 
 Transport WebSocket dua arah membawa audio dan pesan kontrol. Percakapan saat ini memakai alur **half-duplex**: pengiriman audio mikrofon dijeda selama pemrosesan/pemutaran agar respons speaker tidak ditangkap sebagai perintah baru. Ini bukan klaim barge-in atau percakapan simultan full-duplex.
 
-Hermes memakai sesi lokal bernama `appliance`, bukan otomatis sesi Telegram. Detail sesi dan pemilihan model ada di [APPLIANCE_SESSION](docs/APPLIANCE_SESSION.md).
+Hermes memakai sesi lokal bernama `nexo` (atau `appliance`), bukan otomatis sesi Telegram. Detail sesi dan pemilihan model ada di [APPLIANCE_SESSION](docs/APPLIANCE_SESSION.md).
 
 ## Compatible dengan Hermes Agent
 
-Jarvis memakai **Hermes Agent CLI** sebagai mesin penalaran pada server. Ini integrasi independen, bukan produk resmi atau endorsement Nous Research. Bridge menjalankan:
+Nexo memakai **Hermes Agent CLI** sebagai mesin penalaran pada server. Ini integrasi independen, bukan produk resmi atau endorsement Nous Research. Bridge menjalankan:
 
 ```bash
-hermes chat -c appliance --create-if-missing -q "<transkripsi pengguna>" -Q
+hermes chat -c nexo --create-if-missing -q "<transkripsi pengguna>" -Q
 ```
 
-Runtime Hermes harus mendukung flag tersebut. Provider/model, tools, dan kredensial mengikuti akun/profil Hermes yang dipakai layanan; tidak ditanamkan ke APK. Sesi `appliance` tidak otomatis mengikuti Telegram. Perintah ekspresi pendek yang dikenali ditangani gateway, sedangkan permintaan biasa diteruskan ke Hermes. Catatan kompatibilitas CLI dan batas verifikasi ada di [panduan instalasi lengkap](docs/INSTALLATION.md).
+Runtime Hermes harus mendukung flag tersebut. Provider/model, tools, dan kredensial mengikuti akun/profil Hermes yang dipakai layanan; tidak ditanamkan ke APK. Sesi `nexo` tidak otomatis mengikuti Telegram. Perintah ekspresi pendek yang dikenali ditangani gateway, sedangkan permintaan biasa diteruskan ke Hermes. Catatan kompatibilitas CLI dan batas verifikasi ada di [panduan instalasi lengkap](docs/INSTALLATION.md).
 
 Sebelum memasang gateway, instal dan konfigurasi Hermes pada akun layanan:
 
@@ -99,7 +100,7 @@ hermes doctor
 hermes --version
 ```
 
-Lihat [dokumentasi resmi Hermes](https://hermes-agent.nousresearch.com/docs/getting-started/installation). Token perangkat Jarvis bukan sandbox untuk tools Hermes; gunakan akun layanan berhak minimum dan perangkat tepercaya.
+Lihat [dokumentasi resmi Hermes](https://hermes-agent.nousresearch.com/docs/getting-started/installation). Token perangkat Nexo bukan sandbox untuk tools Hermes; gunakan akun layanan berhak minimum dan perangkat tepercaya.
 
 ## Memulai
 
@@ -124,15 +125,15 @@ Jalankan dari direktori `server/` agar konfigurasi lokal dimuat:
 
 ```bash
 cd server
-PYTHONPATH=src .venv/bin/python -m jarvis_server.main
+PYTHONPATH=src .venv/bin/python -m nexo_server.main
 ```
 
-Health endpoint: `http://127.0.0.1:8765/health`. Koneksi klien: `wss://<domain-anda>/ws/appliance` melalui terminasi TLS yang sesuai. Status health bukan bukti keberhasilan percakapan suara end-to-end.
+Health endpoint: `http://127.0.0.1:8765/health`. Koneksi klien: `wss://<domain-anda>/ws/appliance` (default `wss://nexo.yhdev.my.id/ws/appliance`) melalui terminasi TLS yang sesuai. Status health bukan bukti keberhasilan percakapan suara end-to-end.
 
 ### Android
 
 1. Buka `android/` di Android Studio dengan full JDK 17 dan Android SDK 34.
-2. Sediakan konfigurasi Firebase lokal untuk paket `id.my.yhdev.jarvis` dan atur endpoint WSS sesuai [panduan Remote Config](docs/REMOTE_CONFIG_SETUP.md).
+2. Sediakan konfigurasi Firebase lokal untuk paket `id.my.yhdev.nexo` (atau `id.my.yhdev.jarvis`) dan atur endpoint WSS sesuai [panduan Remote Config](docs/REMOTE_CONFIG_SETUP.md).
 3. Ikuti [panduan build dan signing](docs/BUILDING.md). Build dilakukan pada komputer pengembang; tidak perlu membuild Android di server gateway.
 4. Jalankan aplikasi, izinkan mikrofon, lalu tekan lama status untuk membuka pengaturan kredensial perangkat.
 5. Tekan **Mulai mikrofon** dan tunggu status kesiapan sebelum berbicara. Tekan **Berhenti** untuk menghentikan audio/koneksi. Ketuk status untuk melihat detail gangguan.

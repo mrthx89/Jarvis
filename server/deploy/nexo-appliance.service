@@ -1,6 +1,6 @@
 [Unit]
 Description=Nexo Dedicated Appliance - Audio Gateway & Hermes Bridge
-After=network.target
+After=network.target hermes-gateway.service
 
 [Service]
 Type=simple
@@ -14,3 +14,4 @@ RestartSec=3
 
 [Install]
 WantedBy=default.target
+Alias=jarvis-appliance.service

@@ -51,10 +51,12 @@ def test_nexo_and_jarvis_mascot_commands():
 
 def test_nexo_auth_fallback_to_jarvis_auth():
     """Registry path resolver must support /root/.config/nexo-auth/ with fallback to jarvis-auth."""
-    from nexo_server.auth import resolve_registry_path, JARVIS_DEFAULT_REGISTRY
+    from nexo_server.auth import resolve_registry_path, JARVIS_DEFAULT_REGISTRY, NEXO_DEFAULT_REGISTRY
 
-    # When jarvis-auth exists on this system, nexo-auth path should fall back to it
-    if JARVIS_DEFAULT_REGISTRY.exists():
+    if NEXO_DEFAULT_REGISTRY.exists():
+        assert resolve_registry_path("/root/.config/nexo-auth/") == NEXO_DEFAULT_REGISTRY
+        assert resolve_registry_path("/root/.config/nexo-auth/devices.json") == NEXO_DEFAULT_REGISTRY
+    elif JARVIS_DEFAULT_REGISTRY.exists():
         resolved_dir = resolve_registry_path("/root/.config/nexo-auth/")
         assert resolved_dir == JARVIS_DEFAULT_REGISTRY
 

@@ -1,0 +1,4 @@
+name: nexo-device-access
+version: 1.0.0
+description: Owner-only private Telegram provisioning for Nexo appliance devices.
+author: YH Dev

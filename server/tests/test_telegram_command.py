@@ -81,3 +81,25 @@ def test_telegram_command_dual_compatibility():
     import jarvis_server.telegram_command as legacy_cmd
     assert callable(legacy_cmd.read_settings)
     assert callable(legacy_cmd.send_protected)
+
+
+def test_plugin_registers_commands():
+    """Verify plugin registers both nexo-token and legacy jarvis-token aliases."""
+    spec = importlib.util.spec_from_file_location('device_access_plugin', PLUGIN)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    commands = {}
+
+    class FakeCtx:
+        def register_command(self, name, handler, description="", args_hint=""):
+            commands[name] = {"handler": handler, "description": description, "args_hint": args_hint}
+
+    ctx = FakeCtx()
+    module.register(ctx)
+    assert "nexo-token" in commands
+    assert "nexo_token" in commands
+    assert "jarvis-token" in commands
+    assert "jarvis_token" in commands
+    assert commands["nexo-token"]["handler"] == module._handle
+    assert commands["jarvis-token"]["handler"] == module._handle

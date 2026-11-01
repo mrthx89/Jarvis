@@ -1,10 +1,10 @@
-# AGENTS.md — Jarvis Dedicated Appliance
+# AGENTS.md — Nexo Dedicated Appliance
 
 ## Project Identity & Vision
-- **Project**: Jarvis Dedicated Appliance
+- **Project**: Nexo Dedicated Appliance
 - **Architect & Lead**: Yanto Hariyono (YH Dev)
 - **Ethos**: "Berkarya dengan hati @ 2026" — menggabungkan stabilitas, kejelasan logika rekayasa, dan nilai guna humanis.
-- **Objective**: Menghadirkan asisten AI otonom (Jarvis) dalam bentuk physical smart appliance (monitor + mikrofon/speaker) tanpa ketergantungan pada PC konvensional di meja kerja.
+- **Objective**: Menghadirkan asisten AI otonom (Nexo) dalam bentuk physical smart appliance (monitor + mikrofon/speaker) tanpa ketergantungan pada PC konvensional di meja kerja.
 
 ## Core Architectural Invariants
 1. **Decoupled Architecture**: Klien fisik (Android Smart Screen/Tablet) hanya bertindak sebagai "Indra dan Wajah" (Audio Capture, Audio Playback, Reactive Visualizer). Seluruh pemrosesan kognitif, LLM/Hermes, STT, dan TTS berada di Server.
