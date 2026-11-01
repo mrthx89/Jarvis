@@ -23,7 +23,7 @@
         app:layout_constraintTop_toTopOf="parent" />
 
     <!-- Central Audioreactive Mascot Eyes (The Living Face of Jarvis) -->
-    <com.yhdev.jarvis.ui.VisualizerView
+    <id.my.yhdev.jarvis.ui.VisualizerView
         android:id="@+id/visualizerView"
         android:layout_width="480dp"
         android:layout_height="280dp"

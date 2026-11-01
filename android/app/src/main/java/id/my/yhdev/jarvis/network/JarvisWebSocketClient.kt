@@ -1,9 +1,9 @@
-package com.yhdev.jarvis.network
+package id.my.yhdev.jarvis.network
 
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonObject
-import com.yhdev.jarvis.ui.JarvisState
+import id.my.yhdev.jarvis.ui.JarvisState
 import okhttp3.*
 import okio.ByteString
 import java.util.concurrent.TimeUnit

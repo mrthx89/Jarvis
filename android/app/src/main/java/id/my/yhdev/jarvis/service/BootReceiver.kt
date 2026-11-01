@@ -1,10 +1,10 @@
-package com.yhdev.jarvis.service
+package id.my.yhdev.jarvis.service
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.yhdev.jarvis.MainActivity
+import id.my.yhdev.jarvis.MainActivity
 
 class BootReceiver : BroadcastReceiver() {
     private val TAG = "BootReceiver"

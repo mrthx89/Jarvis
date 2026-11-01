@@ -20,7 +20,7 @@
 
 2. **Daftarkan Aplikasi Android**:
    - Tambahkan aplikasi Android dengan Package Name:
-     `com.yhdev.jarvis`
+     `id.my.yhdev.jarvis`
    - Unduh file `google-services.json`.
    - Letakkan file tersebut di dalam folder repositori:
      `android/app/google-services.json`

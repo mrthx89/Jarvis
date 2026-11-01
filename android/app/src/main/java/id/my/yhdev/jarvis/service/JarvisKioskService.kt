@@ -1,4 +1,4 @@
-package com.yhdev.jarvis.service
+package id.my.yhdev.jarvis.service
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -11,10 +11,10 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.yhdev.jarvis.audio.AudioPlayerManager
-import com.yhdev.jarvis.audio.AudioRecorderManager
-import com.yhdev.jarvis.network.JarvisWebSocketClient
-import com.yhdev.jarvis.ui.JarvisState
+import id.my.yhdev.jarvis.audio.AudioPlayerManager
+import id.my.yhdev.jarvis.audio.AudioRecorderManager
+import id.my.yhdev.jarvis.network.JarvisWebSocketClient
+import id.my.yhdev.jarvis.ui.JarvisState
 
 class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListener {
 
