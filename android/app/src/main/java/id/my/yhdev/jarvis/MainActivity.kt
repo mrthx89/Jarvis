@@ -14,15 +14,13 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.TextView
-import android.widget.EditText
-import android.text.InputType
-import androidx.appcompat.app.AlertDialog
 import id.my.yhdev.jarvis.security.DeviceCredentialStore
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import id.my.yhdev.jarvis.config.RemoteConfigManager
 import id.my.yhdev.jarvis.service.JarvisKioskService
+import id.my.yhdev.jarvis.ui.CredentialSetupSheet
 import id.my.yhdev.jarvis.ui.JarvisState
 import id.my.yhdev.jarvis.ui.VisualizerView
 
@@ -40,6 +38,7 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
     private var hasTranscription = false
     private val credentialStore by lazy { DeviceCredentialStore(this) }
     private var currentServerUrl: String? = null
+    private var credentialSheet: CredentialSetupSheet? = null
     private val deviceId: String by lazy {
         val androidId = android.provider.Settings.Secure.getString(
             contentResolver, android.provider.Settings.Secure.ANDROID_ID)
@@ -124,59 +123,30 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
     }
 
     private fun showCredentialSetup() {
+        if (credentialSheet != null || isFinishing || isDestroyed) return
         val serverUrl = currentServerUrl
         val origin = serverUrl?.let { credentialStore.origin(it) }
         if (serverUrl == null || origin == null) {
             onStateChanged(JarvisState.ERROR, "Endpoint WSS belum tersedia. Coba lagi setelah konfigurasi dimuat.", null)
             return
         }
-        val input = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            isSingleLine = true
-            hint = "Token perangkat dari pemilik"
-            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-            imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Penyiapan perangkat")
-            .setMessage("ID: $deviceId\nServer: $origin\n\nVerifikasi server ini dengan pemilik. Token hanya berlaku untuk ID dan server ini. Ini bukan pairing otomatis.")
-            .setView(input)
-            .setPositiveButton("Simpan", null)
-            .setNeutralButton("Hapus token", null)
-            .setNegativeButton("Batal", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val token = input.text.toString().trim()
-                if (!token.matches(Regex("[A-Za-z0-9_-]{43,128}"))) {
-                    input.error = "Format token tidak valid"
-                } else {
-                    try {
-                        credentialStore.save(serverUrl, deviceId, token)
-                        input.text.clear()
-                        hasTranscription = false
-                        kioskService?.refreshCredentials()
-                        dialog.dismiss()
-                    } catch (_: Exception) {
-                        input.error = "Token gagal disimpan dengan Android Keystore"
-                    }
-                }
-            }
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                try {
-                    credentialStore.clear()
-                    input.text.clear()
-                    hasTranscription = false
-                    kioskService?.refreshCredentials()
-                    dialog.dismiss()
-                } catch (_: Exception) {
-                    input.error = "Token gagal dihapus"
-                }
-            }
-        }
-        dialog.setOnDismissListener { input.text.clear() }
-        dialog.show()
+        credentialSheet = CredentialSetupSheet(
+            activity = this,
+            deviceId = deviceId,
+            origin = origin,
+            isCurrentOrigin = { currentServerUrl == serverUrl },
+            onSave = { token ->
+                credentialStore.save(serverUrl, deviceId, token)
+                hasTranscription = false
+                kioskService?.refreshCredentials()
+            },
+            onReset = {
+                credentialStore.clear()
+                hasTranscription = false
+                kioskService?.refreshCredentials()
+            },
+            onDismiss = { credentialSheet = null }
+        ).also { it.show() }
     }
 
     private fun checkAndRequestAudioPermission() {
@@ -283,6 +253,8 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
 
     override fun onDestroy() {
         super.onDestroy()
+        credentialSheet?.dismiss()
+        credentialSheet = null
         remoteConfigManager.close()
         kioskService?.serviceCallback = null
         kioskService = null

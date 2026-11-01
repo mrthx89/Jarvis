@@ -32,10 +32,27 @@ def test_setup_dialog_and_service_reset_wiring():
     activity = (ROOT / 'MainActivity.kt').read_text()
     service = (ROOT / 'service/JarvisKioskService.kt').read_text()
     assert 'setOnLongClickListener' in activity
-    assert 'TYPE_TEXT_VARIATION_PASSWORD' in activity
-    assert 'FLAG_SECURE' in activity
+    sheet = (ROOT / 'ui/CredentialSetupSheet.kt').read_text()
+    assert 'CredentialSetupSheet(' in activity
+    assert 'BottomSheetDialog(' in sheet
+    assert 'FLAG_SECURE' in sheet
+    assert 'setOnDismissListener' in sheet
+    assert 'input.text?.clear()' in sheet
+    assert 'setPositiveButton' in sheet
+    assert 'Token perangkat' not in activity
+    import xml.etree.ElementTree as ET
+    layout = ROOT.parents[4] / 'res/layout/sheet_credential_setup.xml'
+    elements = list(ET.parse(layout).getroot().iter())
+    android = '{http://schemas.android.com/apk/res/android}'
+    token = next(e for e in elements if e.get(android + 'id') == '@+id/setupToken')
+    assert 'textPassword' in token.get(android + 'inputType')
+    assert token.get(android + 'saveEnabled') == 'false'
+    assert token.get(android + 'importantForAutofill') == 'noExcludeDescendants'
+    assert token.get(android + 'maxLength') == '128'
     assert 'credentialStore.save(' in activity
     assert 'credentialStore.clear()' in activity
+    assert 'credentialSheet?.dismiss()' in activity
+    assert 'currentServerUrl == serverUrl' in activity
     assert 'refreshCredentials()' in activity
     assert 'credentialStore.read(serverUrl, deviceId)' in service
     assert 'forceReconnect = true' in service
