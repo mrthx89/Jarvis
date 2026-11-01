@@ -3,6 +3,8 @@ package id.my.yhdev.nexo.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -103,6 +105,26 @@ class CredentialSetupSheet(
                     confirmation.show()
                 }
         }
+
+        // App Version & Buy Me a Coffee Support
+        val versionView = content.findViewById<TextView>(R.id.setupAppVersion)
+        val versionName = try {
+            val pInfo = activity.packageManager.getPackageInfo(activity.packageName, 0)
+            pInfo.versionName ?: "1.0.0"
+        } catch (_: Exception) {
+            "1.0.0"
+        }
+        versionView?.text = activity.getString(R.string.setup_app_version, versionName)
+
+        content.findViewById<View>(R.id.setupSupportButton)?.setOnClickListener {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://yapp.ink/yhdev"))
+                activity.startActivity(intent)
+            } catch (_: Exception) {
+                Toast.makeText(activity, "Buka https://yapp.ink/yhdev di browser Anda.", Toast.LENGTH_LONG).show()
+            }
+        }
+
         val leftPadding = content.paddingLeft
         val topPadding = content.paddingTop
         val rightPadding = content.paddingRight
@@ -128,8 +150,14 @@ class CredentialSetupSheet(
             // A bounded viewport lets the form scroll instead of measuring taller
             // than a phone window. It shrinks with the keyboard via ADJUST_RESIZE.
             dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.let { sheet ->
+                val displayMetrics = activity.resources.displayMetrics
+                val maxSheetWidth = (560 * displayMetrics.density).toInt()
+                val isTablet = displayMetrics.widthPixels > maxSheetWidth
                 sheet.layoutParams = sheet.layoutParams.apply {
                     height = ViewGroup.LayoutParams.MATCH_PARENT
+                    if (isTablet) {
+                        width = maxSheetWidth
+                    }
                 }
             }
             dialog.behavior.apply {

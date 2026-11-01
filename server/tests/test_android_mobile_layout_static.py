@@ -127,3 +127,21 @@ def test_nexo_state_mapping_static():
     """Verify Nexo states exist and map cleanly for mobile layout rendering."""
     from nexo_server.models.messages import NexoState
     assert all(hasattr(NexoState, s) for s in ("IDLE", "LISTENING", "THINKING", "SPEAKING", "ERROR", "DISCONNECTED"))
+
+
+def test_sheet_app_version_and_support_button():
+    """Verify bottom sheet includes version info and Buy me a coffee support button linking to yapp.ink/yhdev."""
+    root = ET.parse(MAIN / 'res/layout/sheet_credential_setup.xml').getroot()
+    support_btn = by_id(root, 'setupSupportButton')
+    assert support_btn is not None
+    assert support_btn.get(A + 'layout_width') == 'match_parent'
+    assert support_btn.get(A + 'minHeight') == '48dp'
+
+    version_view = by_id(root, 'setupAppVersion')
+    assert version_view is not None
+
+    sheet_code = (MAIN / 'java/id/my/yhdev/nexo/ui/CredentialSetupSheet.kt').read_text()
+    assert 'https://yapp.ink/yhdev' in sheet_code
+    assert 'setupAppVersion' in sheet_code
+    assert 'setupSupportButton' in sheet_code
+    assert 'isTablet' in sheet_code or 'maxSheetWidth' in sheet_code

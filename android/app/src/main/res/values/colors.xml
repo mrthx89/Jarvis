@@ -13,4 +13,8 @@
     <!-- Subtitles and typography -->
     <color name="text_primary">#E0E6ED</color>
     <color name="text_secondary">#8892B0</color>
+
+    <!-- Support and Sponsor -->
+    <color name="coffee_yellow">#FFDD00</color>
+    <color name="coffee_text">#000000</color>
 </resources>
