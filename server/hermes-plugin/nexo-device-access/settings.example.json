@@ -1,0 +1,10 @@
+{
+  "owner_user_id": "123456789",
+  "owner_chat_id": "123456789",
+  "registry_path": "/root/.config/nexo-auth/devices.json",
+  "delivery_dir": "/root/.config/nexo-auth",
+  "origin": "wss://nexo.domain-anda.id/ws/appliance",
+  "backend_python": "/data/home/Nexo/server/.venv/bin/python",
+  "server_src": "/data/home/Nexo/server/src",
+  "telegram_env_file": "/root/.hermes/.env"
+}

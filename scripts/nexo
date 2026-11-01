@@ -9,15 +9,23 @@ while [ -h "$TARGET" ]; do
     [[ $TARGET != /* ]] && TARGET="$DIR/$TARGET"
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$TARGET")" && pwd)"
-if [ ! -f "$SCRIPT_DIR/nexo_session.py" ]; then
-    SCRIPT_DIR="/data/home/Nexo/scripts"
-fi
-PYTHON_BIN="/data/home/Nexo/server/.venv/bin/python"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SERVER_DIR="$REPO_ROOT/server"
+
+PYTHON_BIN="$SERVER_DIR/.venv/bin/python"
 if [ ! -f "$PYTHON_BIN" ]; then
-    PYTHON_BIN="python3"
+    if [ -f "/data/home/Nexo/server/.venv/bin/python" ]; then
+        PYTHON_BIN="/data/home/Nexo/server/.venv/bin/python"
+    else
+        PYTHON_BIN="python3"
+    fi
 fi
 
-export PYTHONPATH="/data/home/Nexo/server/src:${PYTHONPATH}"
+if [ -d "$SERVER_DIR/src" ]; then
+    export PYTHONPATH="$SERVER_DIR/src:${PYTHONPATH}"
+else
+    export PYTHONPATH="/data/home/Nexo/server/src:${PYTHONPATH}"
+fi
 
 if [ "$1" = "session" ]; then
     shift

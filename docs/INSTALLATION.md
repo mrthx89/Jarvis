@@ -1,133 +1,302 @@
-# Instalasi dan penggunaan Nexo Dedicated Appliance
+# Panduan Instalasi Nexo Dedicated Appliance & Konfigurasi Hermes
 
-Panduan ini menjelaskan gateway Linux dan klien Android native untuk Nexo (sebelumnya Nexo). Nexo mengintegrasikan Hermes Agent melalui CLI dan session bridge; bukan plugin resmi Nous Research, bukan pengganti runtime Hermes, dan tidak menjalankan model di Android. Android minimum 8.0/API 26, target/compile SDK 34; build memerlukan full JDK 17. Server memerlukan Python 3.11+.
+Dokumen ini menjelaskan proses instalasi lengkap **Nexo Dedicated Appliance** pada host Linux baru serta konfigurasi integrasinya dengan **Hermes Agent**.
 
-## 1. Siapkan Hermes pada akun layanan
+Nexo menghadirkan antarmuka fisik (*user interface*) bagi Hermes Agent agar asisten AI tidak hanya beroperasi di terminal atau teks, melainkan hadir dalam bentuk **wujud nyata di atas meja kerja**: layar visual maskot digital yang hidup, pengeras suara alami, serta mikrofon hands-free dengan peredam gema (*hardware Acoustic Echo Cancellation*).
 
-Gunakan akun Linux khusus dengan hak akses minimum. Hermes dapat menjalankan tools; token perangkat hanya mengizinkan akses gateway, bukan membatasi kewenangan agen. Jangan membuka akses perangkat tidak tepercaya ke agen administratif.
+---
 
-Instalasi resmi CLI Linux/macOS/WSL2:
+## 1. Komponen Antarmuka Pengguna (User Interfaces)
 
-```bash
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
-```
+Saat Nexo terpasang dan terkonfigurasi ke Hermes, Anda memperoleh 4 (empat) lapisan antarmuka pengguna:
 
-Tinjau installer sebelum menjalankannya bila kebijakan sistem memerlukan. Panduan upstream: [installation](https://hermes-agent.nousresearch.com/docs/getting-started/installation) dan [CLI reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands). Konfigurasi awal sebagai pengguna yang nanti menjalankan gateway:
+| Antarmuka | Bentuk / Platform | Fungsi Utama |
+|---|---|---|
+| **Layar Kios Android** | Tablet / Smart Screen Android (`id.my.yhdev.nexo`) | **Wajah & Indra Fisik**: Mata digital maskot bercahaya dengan 16 ekspresi emosi Nusa Silver, animasi 60 FPS GPU, mikrofon hands-free AEC, speaker TTS, dan subtitle transkrip kognitif dengan tombol salin. |
+| **Telegram Bot UI** | Chat privat bot Telegram Hermes (`nexo-device-access`) | **Remote Control & Provisioning**: Kartu visual interaktif status appliance (`/nexo_status`), penerbitan token perangkat (`/nexo_token`), dan perintah suara jarak jauh (`/nexo_say`). |
+| **Terminal Console Bridge** | Terminal CLI Hermes lokal (`nexo` CLI & `hermes chat`) | **Konsol Interaktif & Watcher**: Konsol interaktif 2 arah (`nexo bridge`), visualizer gelombang audio & transkrip real-time (`nexo watch`), serta mirroring jawaban otomatis dari sesi `hermes chat -c nexo`. |
+| **Hermes Agent Skill** | Skill internal Hermes (`~/.hermes/skills/nexo`) | **Otonomi Agen**: Hermes Agent di host tersebut otomatis memahami cara mengecek, mengontrol, dan mendiagnosis Nexo secara mandiri. |
 
-```bash
-hermes setup
-hermes model
-hermes doctor
-hermes --version
-hermes chat --help
-```
+---
 
-Simpan kredensial provider melalui setup Hermes, bukan Git atau konfigurasi Android. Pastikan provider/model dapat menjawab. Uji berikut melakukan panggilan model, dapat menggunakan kuota, dan membuat/melanjutkan sesi:
+## 2. Prasyarat Sistem
 
-```bash
-hermes chat -c appliance --create-if-missing -q "Jawab singkat: koneksi Nexo siap." -Q
-```
+- **Sistem Operasi**: Linux x86_64 atau aarch64 (Ubuntu 22.04+, Debian 12+, Arch, Fedora).
+- **Python**: Versi 3.11 atau lebih baru.
+- **Paket Dasar**: `ffmpeg`, `curl`, `git`, `build-essential`.
+- **Hermes Agent CLI**: Sudah terpasang dan terkonfigurasi dengan provider model (LLM).
+- **Perangkat Klien**: Monitor pintar / tablet Android (Min Android 8.0 / API 26).
 
-### Kontrak kompatibilitas
+---
 
-Bridge Nexo menjalankan command berikut secara langsung, tanpa shell:
+## 3. Instalasi Otomatis (Direkomendasikan)
 
-```text
-hermes chat -c appliance --create-if-missing -q <transkripsi> -Q
-```
+Repositori menyediakan skrip setup otomatis yang menangani seluruh persiapan: pembuatan virtual environment, dependensi Python, pre-cache model suara, konfigurasi server, binding sesi Hermes, systemd service, skill, hingga plugin Telegram.
 
-Runtime harus mendukung `chat`, `-c`, `--create-if-missing`, `-q`, dan `-Q`. CLI pada lingkungan pengembangan diperiksa sebagai `v0.22.5+2971.ga938f00`; ini catatan pemeriksaan command, bukan jaminan seluruh versi Hermes. Tidak ada minimum versi upstream yang telah dibuktikan melalui matriks pengujian. Setelah upgrade, periksa help/flag, banner/footer output, timeout, sesi, kemudian uji percakapan nyata. Bridge membersihkan metadata CLI yang dikenal sebelum TTS.
-
-Akun, PATH, HOME/HERMES_HOME dan profil service menentukan konfigurasi yang dipakai. Uji dari akun dan direktori kerja yang sama dengan service. Semua appliance saat ini menggunakan nama sesi `appliance`; ini bukan isolasi per perangkat atau sesi Telegram. Nexo tidak mengirim override model/provider lewat CLI. Detail: [APPLIANCE_SESSION](APPLIANCE_SESSION.md).
-
-## 2. Pasang gateway
+Jalankan perintah berikut di direktori repositori Nexo:
 
 ```bash
 git clone https://github.com/mrthx89/Nexo.git
 cd Nexo
-python3 -m venv server/.venv
-source server/.venv/bin/activate
-pip install -r server/requirements.txt
-cp server/config.example.yaml server/config.yaml
+chmod +x scripts/setup_host.sh
+./scripts/setup_host.sh
 ```
 
-Sesuaikan `server/config.yaml` atau gunakan file eksternal melalui `NEXO_CONFIG_PATH` (atau `JARVIS_CONFIG_PATH`). Field utama:
+Skrip akan menjalankan 10 langkah verifikasi dan konfigurasi secara otomatis. Setelah selesai, server akan langsung aktif pada port `8765`.
+
+---
+
+## 4. Instalasi Manual Langkah demi Langkah
+
+Jika Anda ingin mengonfigurasi host secara manual atau menyesuaikan konfigurasi khusus, ikuti langkah-langkah di bawah ini:
+
+### Langkah A: Siapkan Dependensi Sistem & Hermes CLI
+
+Pasang paket yang diperlukan:
+```bash
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip ffmpeg curl git build-essential
+```
+
+Pastikan Hermes Agent CLI telah terpasang:
+```bash
+command -v hermes || curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+hermes setup
+hermes model
+```
+
+### Langkah B: Inisialisasi Sesi Kanonis Hermes (`nexo`)
+
+Server Nexo mengunci percakapan ke satu ID percakapan kanonis bernama `nexo`. Buat sesi ini di Hermes CLI sebelum server dijalankan:
+
+```bash
+hermes chat -c nexo -q "Inisialisasi sesi Nexo Dedicated Appliance." -Q
+```
+
+Perintah di atas akan mencatat sesi bernama `nexo` di database SQLite `$HERMES_HOME/state.db`.
+
+### Langkah C: Setup Python Virtual Environment
+
+```bash
+cd /data/home/Nexo  # Atau path instalasi Anda
+python3 -m venv server/.venv
+source server/.venv/bin/activate
+pip install --upgrade pip
+pip install -r server/requirements.txt
+```
+
+### Langkah D: Pre-download & Cache Model STT/TTS
+
+Unduh model Faster-Whisper `base` agar inferensi pertama tidak mengalami jeda:
+```bash
+python3 - << 'EOF'
+from faster_whisper import WhisperModel
+model = WhisperModel("base", device="cpu", compute_type="int8")
+print("Faster-Whisper model cached!")
+EOF
+```
+
+Uji koneksi sintesis suara Edge-TTS (Indonesia - Ardi):
+```bash
+python3 - << 'EOF'
+import asyncio, edge_tts
+async def test():
+    comm = edge_tts.Communicate("Koneksi suara siap.", "id-ID-ArdiNeural")
+    data = b"".join([chunk["data"] async for chunk in comm.stream() if chunk["type"] == "audio"])
+    print(f"Edge-TTS OK ({len(data)} bytes).")
+asyncio.run(test())
+EOF
+```
+
+### Langkah E: Siapkan Direktori Autentikasi & Binding Sesi
+
+```bash
+umask 077
+mkdir -p ~/.config/nexo-auth
+chmod 700 ~/.config/nexo-auth
+echo "{}" > ~/.config/nexo-auth/devices.json
+chmod 600 ~/.config/nexo-auth/devices.json
+
+mkdir -p ~/.config/nexo
+chmod 700 ~/.config/nexo
+```
+
+### Langkah F: Konfigurasi `server/config.yaml`
+
+Buat file `server/config.yaml` dari template:
 
 ```yaml
 server:
   host: "127.0.0.1"
   port: 8765
-  device_registry_path: "/home/nexo/.config/nexo-auth/devices.json"
+  ws_path: "/ws/appliance"
+  ping_interval: 15
+  ping_timeout: 30
+  device_registry_path: "/root/.config/nexo-auth/devices.json"
+  max_sessions: 4
+  hello_timeout_seconds: 5.0
+  max_json_bytes: 4096
+
 stt:
   provider: "faster-whisper"
   model: "base"
   language: "id"
+
 tts:
   provider: "edge-tts"
   voice: "id-ID-ArdiNeural"
+
 hermes:
   bridge_mode: "cli"
-  hermes_binary: "/home/nexo/.local/bin/hermes"
+  hermes_binary: "/root/.local/bin/hermes"
+  timeout_seconds: 60
+  session_name: "nexo"
+  hermes_home: "/root/.hermes"
+  session_binding_path: "/root/.config/nexo/session_binding.json"
+```
+*(Sesuaikan path `/root` dengan `$HOME` Anda bila berjalan sebagai user non-root).*
+
+### Langkah G: Konfigurasi Systemd User Service
+
+Buat file unit di `~/.config/systemd/user/nexo-appliance.service`:
+
+```ini
+[Unit]
+Description=Nexo Dedicated Appliance - Audio Gateway & Hermes Bridge
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/home/Nexo/server
+Environment=PYTHONPATH=/data/home/Nexo/server/src
+Environment=HERMES_HOME=/root/.hermes
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/root
+ExecStart=/data/home/Nexo/server/.venv/bin/python -m nexo_server.main
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+Alias=nexo-appliance.service
 ```
 
-Ini contoh path, bukan path yang wajib dipakai. Gunakan hasil `command -v hermes` dari akun layanan untuk binary. Pilihan `hermes_binary` dan `bridge_mode: cli` adalah jalur integrasi yang digunakan; field konfigurasi lain jangan diasumsikan aktif tanpa menelusuri implementasi. Model STT dapat memerlukan unduhan pada pemakaian awal. Edge TTS dan provider model memerlukan jaringan. Pastikan kapasitas disk mencukupi.
-
-Gateway default hanya bind loopback. Ekspos `/ws/appliance` melalui reverse proxy atau tunnel dengan TLS/WSS dan dukungan WebSocket Upgrade. Batasi port origin dari jaringan publik; jangan menonaktifkan validasi WSS Android. Endpoint health tidak memerlukan token dan bukan pemeriksaan otorisasi.
-
-## 3. Siapkan klien dan kredensial
-
-1. Buka `android/` di Android Studio. Sediakan SDK 34/full JDK 17 serta `android/app/google-services.json` milik proyek Firebase dengan package `id.my.yhdev.nexo` (atau alias `id.my.yhdev.nexo`).
-2. Konfigurasikan Remote Config `server_websocket_url` ke `wss://domain-anda/ws/appliance`; ikuti [REMOTE_CONFIG_SETUP](REMOTE_CONFIG_SETUP.md). Kredensial tidak boleh disimpan di Firebase.
-3. Build di komputer pengembang sesuai [BUILDING](BUILDING.md). Jangan membuild di gateway bila storage dibatasi. Paket `internal` memakai debug signing; tidak dapat memperbarui instalasi yang memakai signing berbeda. Jangan uninstall sembarangan karena token/data lokal akan hilang.
-4. Buka aplikasi dan tekan lama status mikrofon. Catat ID perangkat dan verifikasi origin WSS yang ditampilkan.
-5. Provision token per perangkat menggunakan bot Telegram (`/nexo-token` atau `/nexo-token`) atau CLI offline dalam [DEVICE_AUTH](DEVICE_AUTH.md). Registry berisi hash, file pengiriman privat berisi token sekali terbit. Masukkan token pada field bertopeng, konfirmasi origin, lalu simpan. Jangan kirim token ke chat publik, commit, atau log.
-6. Koordinasikan aktivasi gateway dan klien yang mendukung autentikasi. Registry kosong/invalid menolak semua koneksi; APK lama tanpa auth ditolak.
-
-## 4. Jalankan sebagai service
-
-Uji foreground terlebih dahulu dari `server/`:
-
+Aktifkan service dan hidupkan user lingering (agar service tetap hidup setelah logout SSH):
 ```bash
-cd server
-PYTHONPATH=src .venv/bin/python -m nexo_server.main
-```
-
-Di terminal lain, `curl -fsS http://127.0.0.1:8765/health` memeriksa HTTP saja. Lanjutkan pemeriksaan koneksi tanpa token/invalid token, handshake valid, kemudian audio end-to-end.
-
-Untuk operasi berkelanjutan, salin dan sesuaikan [template systemd](../server/deploy/nexo-appliance.service), bukan menggunakan path pengembang mentah. Ganti `WorkingDirectory`, `ExecStart`, `PYTHONPATH`, `PATH` dan `HOME` agar konsisten dengan akun layanan. Gunakan `Environment=NEXO_CONFIG_PATH=/path/private/config.yaml` bila konfigurasi eksternal. Profil Hermes khusus harus memiliki home/profil dan kredensial yang benar; jangan mengubah profil lain tanpa sengaja.
-
-```bash
-mkdir -p ~/.config/systemd/user
-# Salin template yang SUDAH disesuaikan ke:
-# ~/.config/systemd/user/nexo-appliance.service
 systemctl --user daemon-reload
+loginctl enable-linger $USER
 systemctl --user enable --now nexo-appliance.service
-systemctl --user status nexo-appliance.service
-journalctl --user -u nexo-appliance.service -n 50 --no-pager
 ```
 
-Aktivasi/restart memutus sesi suara aktif. Lakukan ketika perangkat tidak sedang berbicara. Atur user lingering melalui kebijakan administrator bila service harus bertahan setelah logout. Lindungi log; jangan membagikan payload/kredensial provider.
+Periksa kesehatan service:
+```bash
+curl -fsS http://127.0.0.1:8765/health
+curl -fsS http://127.0.0.1:8765/session/status
+```
+Status harus menampilkan `session_locked: true` dan `hermes_session_id`.
 
-## 5. Pemakaian sehari-hari
+---
 
-- Instalasi baru dimulai OFF. Tekan **Mulai mikrofon**, tunggu status menyimak/kesiapan, lalu bicara dengan jeda di akhir kalimat.
-- Selama memproses dan memutar suara, alur half-duplex menahan pengiriman mikrofon. Barge-in belum dijanjikan.
-- Tekan **Berhenti** untuk menghentikan audio/koneksi. Maskot menangis dan panel percakapan disembunyikan; tidak ada perintah suara yang dapat membangunkan mikrofon OFF.
-- Saat ON, ucapan senang hilang setelah 15 detik. Ini teks reaksi, bukan status koneksi.
-- Ketuk ikon clipboard di kanan `NEXO // COGNITIVE STREAM` untuk menyalin jawaban final lengkap. Jawaban tersimpan dalam memori Activity dan hilang setelah Activity dibuat ulang.
-- Ucapkan “Nexo tersenyum” (atau “Nexo tersenyum”), “coba tertawa”, “ekspresi jahil”, atau “kembali normal”. Perintah singkat mengubah ekspresi sementara; tidak mengubah hak akses maupun konfigurasi model. Lihat [MASCOT_EXPRESSIONS](MASCOT_EXPRESSIONS.md).
-- Gunakan utilitas sesi terminal `./scripts/nexo` untuk interaksi kognitif langsung dari terminal (`./scripts/nexo status`, `./scripts/nexo send "Halo"`, `./scripts/nexo watch`).
-- Ketuk status untuk detail gangguan; tekan lama untuk pengaturan token. Saat origin berpindah ke host/port lain, verifikasi dan provision ulang, jangan meneruskan token sembarangan.
+## 5. Konfigurasi Ekstensi & Integrasi Hermes
 
-## 6. Diagnostik dan upgrade
+### A. Memasang Skill Nexo ke Hermes Agent
+Agar instance Hermes dapat memahami perintah dan troubleshooting Nexo:
+```bash
+mkdir -p ~/.hermes/skills/iot-appliance/nexo
+cp -r skills/nexo/* ~/.hermes/skills/iot-appliance/nexo/
+```
 
-| Gejala | Pemeriksaan |
-| --- | --- |
-| Health normal, perangkat ditolak | Registry, ID, hash/token, origin, hello, dan izin file; health bukan bukti autentikasi. |
-| Hermes tidak ditemukan | Binary dan PATH akun systemd, bukan PATH shell interaktif. |
-| Model/provider salah | Periksa profil/home/sesi milik akun service; Telegram tidak otomatis berbagi sesi appliance. |
-| Tidak ada transkripsi | Izin mikrofon, readiness protokol, hardware, jarak/volume, dan STT diuji terpisah. |
-| Wajah tidak berubah | Backend baru harus aktif dan APK harus berisi perubahan terbaru; cek perintah yang didukung dan hasil STT. |
-| Token tidak dapat dibaca setelah reinstall | Provision ulang setelah memastikan identitas/signing; cabut ID lama bila tidak dipakai. |
+### B. Memasang Plugin Telegram Nexo (Remote Bot UI)
+Jika Hermes Gateway terhubung ke Telegram Bot:
+1. Salin plugin ke direktori plugins Hermes:
+   ```bash
+   mkdir -p ~/.hermes/plugins/nexo-device-access
+   cp server/hermes-plugin/nexo-device-access/plugin.yaml ~/.hermes/plugins/nexo-device-access/
+   cp server/hermes-plugin/nexo-device-access/__init__.py ~/.hermes/plugins/nexo-device-access/
+   ```
+2. Buat berkas `settings.json` di `~/.hermes/plugins/nexo-device-access/settings.json` (chmod 0600):
+   ```json
+   {
+     "owner_user_id": "<USER_ID_TELEGRAM_ANDA>",
+     "owner_chat_id": "<CHAT_ID_TELEGRAM_ANDA>",
+     "registry_path": "/root/.config/nexo-auth/devices.json",
+     "delivery_dir": "/root/.config/nexo-auth",
+     "origin": "wss://nexo.domain-anda.id/ws/appliance",
+     "backend_python": "/data/home/Nexo/server/.venv/bin/python",
+     "server_src": "/data/home/Nexo/server/src",
+     "telegram_env_file": "/root/.hermes/.env"
+   }
+   ```
+3. Aktifkan plugin:
+   ```bash
+   hermes plugins enable nexo-device-access
+   ```
+4. Di bot Telegram, perintah berikut akan langsung aktif:
+   - `/nexo_status` — Cek status server, koneksi tablet, dan ekspresi maskot.
+   - `/nexo_say <pesan>` — Suarakan teks langsung ke speaker monitor/tablet.
+   - `/nexo_token <device_id>` — Buat atau kirim ulang token akses tablet.
+   - `/nexo_help` — Bantuan perintah bot.
 
-Sebelum upgrade, baca [VERSIONING](VERSIONING.md) dan [CHANGELOG](../CHANGELOG.md), cadangkan konfigurasi/registry privat, catat commit dan versi Hermes, lalu pilih release/tag yang jelas. Source pull tidak memperbarui APK maupun proses server secara otomatis. Build/restart harus terkoordinasi; rollback memakai signing kompatibel dan cadangan data, bukan menghapus registry.
+### C. Mendaftarkan CLI Dispatcher ke PATH
+```bash
+mkdir -p ~/.local/bin
+ln -sf /data/home/Nexo/scripts/nexo ~/.local/bin/nexo
+chmod +x /data/home/Nexo/scripts/nexo /data/home/Nexo/scripts/nexo_session.py
+```
+
+---
+
+## 6. Menghubungkan Layar Android (Physical Kiosk UI)
+
+Layar Android bertindak sebagai wajah utama Nexo:
+
+1. **Pasang APK**: Pasang file APK `id.my.yhdev.nexo` pada tablet / smart screen Android.
+2. **Lihat Device ID**: Buka aplikasi. Tekan lama (*long-press*) pada teks status koneksi / mikrofon di bagian atas layar.
+3. **Catat Device ID**: Di bottom sheet pengaturan yang muncul, catat `Device ID` Anda (contoh: `kiosk-tablet-01`).
+4. **Terbitkan Token**:
+   - **Lewat Telegram**: Kirim `/nexo_token <Device_ID>` ke bot Telegram Anda.
+   - **Lewat Terminal**:
+     ```bash
+     PYTHONPATH=server/src server/.venv/bin/python -m nexo_server.auth provision \
+       --registry ~/.config/nexo-auth/devices.json \
+       --device-id "<DEVICE_ID>" \
+       --origin "wss://nexo.domain-anda.id/ws/appliance" \
+       --output ~/.config/nexo-auth/device-delivery.json
+     ```
+     Salin token dari file JSON tersebut, lalu hapus filenya.
+5. **Masukkan Token ke Tablet**: Masukkan token ke input bertopeng pada bottom sheet tablet, pastikan WSS Origin sesuai, lalu klik **Simpan**.
+6. Tablet akan mengenkripsi token ke Android Keystore (AES-GCM) dan otomatis tersambung.
+7. **Wajah Maskot Aktif**: Mata digital maskot akan menyala, ekspresi responsif siap digunakan, dan mikrofon siap menerima perintah suara.
+
+---
+
+## 7. Ekspos Publik dengan Cloudflare Tunnel (WSS)
+
+Agar perangkat Android dapat tersambung secara aman dari luar LAN:
+
+1. Buat tunnel: `cloudflared tunnel create nexo-tunnel`
+2. Atur ingress di `/etc/cloudflared/config.yml`:
+   ```yaml
+   tunnel: <TUNNEL_UUID>
+   credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+
+   ingress:
+     - hostname: nexo.domain-anda.id
+       service: http://127.0.0.1:8765
+       originRequest:
+         noTLSVerify: false
+     - service: http_status:404
+   ```
+3. Arahkan DNS: `cloudflared tunnel route dns nexo-tunnel nexo.domain-anda.id`
+4. Mulai tunnel: `sudo systemctl restart cloudflared`
+5. Endpoint publik Anda adalah: `wss://nexo.domain-anda.id/ws/appliance`
+
+---
+
+## 8. Verifikasi Keseluruhan Sistem
+
+Jalankan skrip diagnostik terpadu:
+```bash
+./skills/nexo/scripts/verify_appliance.sh
+```
+
+Skrip akan menguji 13 poin kesehatan sistem: ketersediaan Python, virtualenv, CLI Hermes, izin file autentikasi (0700/0600), port 8765, health endpoint HTTP 200, status CLI, dan seluruh test suite server.
