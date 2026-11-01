@@ -5,7 +5,18 @@
 # ==============================================================================
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -d "${SCRIPT_DIR}/../server" ]; then
+    REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+elif [ -d "${SCRIPT_DIR}/../../server" ]; then
+    REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+elif [ -d "${SCRIPT_DIR}/../../../server" ]; then
+    REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+elif [ -d "/data/home/Jarvis/server" ]; then
+    REPO_ROOT="/data/home/Jarvis"
+else
+    REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+fi
 SERVER_DIR="${REPO_ROOT}/server"
 AUTH_DIR="${HOME}/.config/nexo-auth"
 REGISTRY_FILE="${AUTH_DIR}/devices.json"
@@ -46,7 +57,7 @@ check_item "Izin registry devices.json aman (0600)" "[ \"\$(stat -c '%a' '${REGI
 
 # 3. Service & Network Port
 check_item "Systemd unit nexo-appliance terpasang" "systemctl --user list-unit-files | grep -q 'nexo-appliance.service' || [ -f '${HOME}/.config/systemd/user/nexo-appliance.service' ]"
-check_item "Port 8765 sedang listening (Gateway aktif)" "ss -tulpn | grep -q ':8765 ' || netstat -tulpn 2>/dev/null | grep -q ':8765 '"
+check_item "Port 8765 sedang listening (Gateway aktif)" "ss -tulpn | grep -q ':8765' || netstat -tulpn 2>/dev/null | grep -q ':8765'"
 check_item "Health endpoint HTTP 200" "curl -fsS '${HEALTH_URL}'"
 
 # 4. CLI & Session Dispatcher

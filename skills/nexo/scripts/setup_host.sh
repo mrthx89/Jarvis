@@ -66,7 +66,9 @@ elif [ -x "${HOME}/.local/bin/hermes" ]; then
 else
     echo "⚠️  Hermes CLI belum terpasang di PATH."
     echo "   Memasang Hermes CLI..."
-    curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash || true
+    curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o /tmp/install-hermes.sh
+    bash /tmp/install-hermes.sh || true
+    rm -f /tmp/install-hermes.sh
     HERMES_BIN="${HOME}/.local/bin/hermes"
 fi
 
@@ -307,6 +309,16 @@ if [ -f "${REPO_ROOT}/skills/nexo/scripts/verify_appliance.sh" ]; then
 fi
 ln -sf "${REPO_ROOT}/scripts/nexo" "${HOME}/.local/bin/nexo"
 echo "✅ CLI 'nexo' ditautkan ke ${HOME}/.local/bin/nexo"
+
+# Setup Hermes Skill Installation
+SKILL_SRC="${REPO_ROOT}/skills/nexo"
+SKILL_DEST="${HERMES_HOME}/skills/iot-appliance/nexo"
+if [ -d "${SKILL_SRC}" ]; then
+    mkdir -p "${SKILL_DEST}/references" "${SKILL_DEST}/scripts"
+    cp -r "${SKILL_SRC}/"* "${SKILL_DEST}/"
+    chmod +x "${SKILL_DEST}/scripts/"*.sh 2>/dev/null || true
+    echo "✅ Skill Nexo terpasang di ${SKILL_DEST}"
+fi
 
 # ------------------------------------------------------------------------------
 # 10. Start Service & Verification
