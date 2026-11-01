@@ -10,8 +10,6 @@ def _get_service_file():
     candidates = [
         'android/app/src/main/java/id/my/yhdev/nexo/service/NexoKioskService.kt',
         'android/app/src/main/java/id/my/yhdev/nexo/service/JarvisKioskService.kt',
-        'android/app/src/main/java/id/my/yhdev/jarvis/service/NexoKioskService.kt',
-        'android/app/src/main/java/id/my/yhdev/jarvis/service/JarvisKioskService.kt',
     ]
     for c in candidates:
         p = Path(__file__).resolve().parents[2] / c

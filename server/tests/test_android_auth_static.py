@@ -16,7 +16,6 @@ def _resolve_file(*candidates):
 def test_keystore_encryption_and_origin_binding_are_wired():
     target = _resolve_file(
         'main/java/id/my/yhdev/nexo/security/DeviceCredentialStore.kt',
-        'main/java/id/my/yhdev/jarvis/security/DeviceCredentialStore.kt',
     )
     source = target.read_text()
     assert 'AndroidKeyStore' in source
@@ -33,8 +32,6 @@ def test_client_auth_denial_stops_retry_and_redirects_disabled():
     target = _resolve_file(
         'main/java/id/my/yhdev/nexo/network/NexoWebSocketClient.kt',
         'main/java/id/my/yhdev/nexo/network/JarvisWebSocketClient.kt',
-        'main/java/id/my/yhdev/jarvis/network/NexoWebSocketClient.kt',
-        'main/java/id/my/yhdev/jarvis/network/JarvisWebSocketClient.kt',
     )
     source = target.read_text()
     assert '.header("Authorization", "Bearer $bearerToken")' in source
@@ -50,19 +47,15 @@ def test_client_auth_denial_stops_retry_and_redirects_disabled():
 def test_setup_dialog_and_service_reset_wiring():
     activity_file = _resolve_file(
         'main/java/id/my/yhdev/nexo/MainActivity.kt',
-        'main/java/id/my/yhdev/jarvis/MainActivity.kt',
     )
     activity = activity_file.read_text()
     service_file = _resolve_file(
         'main/java/id/my/yhdev/nexo/service/NexoKioskService.kt',
         'main/java/id/my/yhdev/nexo/service/JarvisKioskService.kt',
-        'main/java/id/my/yhdev/jarvis/service/NexoKioskService.kt',
-        'main/java/id/my/yhdev/jarvis/service/JarvisKioskService.kt',
     )
     service = service_file.read_text()
     sheet_file = _resolve_file(
         'main/java/id/my/yhdev/nexo/ui/CredentialSetupSheet.kt',
-        'main/java/id/my/yhdev/jarvis/ui/CredentialSetupSheet.kt',
     )
     sheet = sheet_file.read_text()
 
@@ -97,8 +90,6 @@ def test_network_junit_constructor_and_auth_cases_are_updated():
     tests = _resolve_file(
         'test/java/id/my/yhdev/nexo/network/NexoWebSocketClientTest.kt',
         'test/java/id/my/yhdev/nexo/network/JarvisWebSocketClientTest.kt',
-        'test/java/id/my/yhdev/jarvis/network/NexoWebSocketClientTest.kt',
-        'test/java/id/my/yhdev/jarvis/network/JarvisWebSocketClientTest.kt',
     )
     source = tests.read_text()
     assert ', "test", events)' not in source

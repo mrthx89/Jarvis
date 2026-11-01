@@ -16,7 +16,6 @@ def _resolve_file(*candidates):
 def test_toggle_has_separate_caption_and_does_not_overwrite_reply():
     activity_file = _resolve_file(
         'java/id/my/yhdev/nexo/MainActivity.kt',
-        'java/id/my/yhdev/jarvis/MainActivity.kt',
     )
     activity = activity_file.read_text()
     callback = activity.split('override fun onVoiceEnabledChanged', 1)[1].split('private fun renderStatus', 1)[0]
@@ -33,7 +32,6 @@ def test_toggle_has_separate_caption_and_does_not_overwrite_reply():
 def test_on_caption_expires_after_15_seconds_without_duplicate_callback_extension():
     activity_file = _resolve_file(
         'java/id/my/yhdev/nexo/MainActivity.kt',
-        'java/id/my/yhdev/jarvis/MainActivity.kt',
     )
     activity = activity_file.read_text()
     callback = activity.split('override fun onVoiceEnabledChanged', 1)[1].split('private fun renderStatus', 1)[0]
@@ -61,7 +59,6 @@ def test_console_starts_hidden_and_visibility_only_follows_voice_enable():
     assert console.get(a + 'visibility') == 'gone'
     activity_file = _resolve_file(
         'java/id/my/yhdev/nexo/MainActivity.kt',
-        'java/id/my/yhdev/jarvis/MainActivity.kt',
     )
     activity = activity_file.read_text()
     callback = activity.split('override fun onVoiceEnabledChanged', 1)[1].split('private fun renderStatus', 1)[0]
@@ -74,7 +71,6 @@ def test_console_starts_hidden_and_visibility_only_follows_voice_enable():
 def test_conversation_expression_lingers_then_yields_to_listening_error_or_off():
     view_file = _resolve_file(
         'java/id/my/yhdev/nexo/ui/VisualizerView.kt',
-        'java/id/my/yhdev/jarvis/ui/VisualizerView.kt',
     )
     view = view_file.read_text()
     assert 'private var conversationExpression: MascotExpression? = null' in view
@@ -106,7 +102,6 @@ def test_conversation_expression_lingers_then_yields_to_listening_error_or_off()
 def test_paused_mascot_cries_and_optimistic_reaction_expires_without_audio_side_effects():
     view_file = _resolve_file(
         'java/id/my/yhdev/nexo/ui/VisualizerView.kt',
-        'java/id/my/yhdev/jarvis/ui/VisualizerView.kt',
     )
     view = view_file.read_text()
     assert 'fun setVoiceEnabled(enabled: Boolean, animateReaction: Boolean)' in view

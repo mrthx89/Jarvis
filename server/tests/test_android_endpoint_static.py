@@ -9,7 +9,6 @@ ANDROID = Path(__file__).resolve().parents[2] / "android/app/src"
 def _get_config_dir():
     for candidate in [
         ANDROID / "main/java/id/my/yhdev/nexo/config",
-        ANDROID / "main/java/id/my/yhdev/jarvis/config",
     ]:
         if candidate.exists():
             return candidate

@@ -42,7 +42,6 @@ def test_token_label_and_helper_wrap_outside_the_single_line_input():
     assert field.get('{http://schemas.android.com/apk/res-auto}hintEnabled') == 'false'
     sheet_file = _resolve_file(
         'java/id/my/yhdev/nexo/ui/CredentialSetupSheet.kt',
-        'java/id/my/yhdev/jarvis/ui/CredentialSetupSheet.kt',
     )
     sheet = sheet_file.read_text()
     assert 'ViewGroup.LayoutParams.MATCH_PARENT' in sheet
@@ -54,7 +53,6 @@ def test_token_label_and_helper_wrap_outside_the_single_line_input():
 def test_sheet_does_not_use_error_max_lines_api_absent_in_material_1_11():
     sheet_file = _resolve_file(
         'java/id/my/yhdev/nexo/ui/CredentialSetupSheet.kt',
-        'java/id/my/yhdev/jarvis/ui/CredentialSetupSheet.kt',
     )
     sheet = sheet_file.read_text()
     assert '.errorMaxLines' not in sheet
@@ -78,7 +76,6 @@ def test_copy_action_uses_last_final_assistant_reply_not_status_or_user_text():
     assert (MAIN / 'res/drawable/ic_clipboard.xml').exists()
     activity_file = _resolve_file(
         'java/id/my/yhdev/nexo/MainActivity.kt',
-        'java/id/my/yhdev/jarvis/MainActivity.kt',
     )
     activity = activity_file.read_text()
     assert 'if (role == "assistant" && isFinal)' in activity
@@ -101,7 +98,6 @@ def test_status_notch_is_content_sized_bounded_and_voice_button_is_explicit():
     assert toggle.get(A + 'minHeight') == '48dp'
     activity_file = _resolve_file(
         'java/id/my/yhdev/nexo/MainActivity.kt',
-        'java/id/my/yhdev/jarvis/MainActivity.kt',
     )
     activity = activity_file.read_text()
     assert 'service.stopVoice()' in activity and 'service.startVoice()' in activity
@@ -113,7 +109,6 @@ def test_status_notch_is_content_sized_bounded_and_voice_button_is_explicit():
 def test_enabled_only_callback_renders_cached_status_without_callback_order_dependency():
     activity_file = _resolve_file(
         'java/id/my/yhdev/nexo/MainActivity.kt',
-        'java/id/my/yhdev/jarvis/MainActivity.kt',
     )
     activity = activity_file.read_text()
     state_callback = activity.split('override fun onStateChanged(', 1)[1].split('override fun onVoiceEnabledChanged', 1)[0]
