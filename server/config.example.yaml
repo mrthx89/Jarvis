@@ -1,9 +1,15 @@
 server:
-  host: "0.0.0.0"
+  host: "127.0.0.1"
   port: 8765
   ws_path: "/ws/appliance"
   ping_interval: 15
   ping_timeout: 30
+  # FAIL CLOSED until owner provisions an external mode-0600 hash-only registry.
+  # See docs/DEVICE_AUTH.md before deploying; old APKs cannot authenticate.
+  device_registry_path: ""
+  max_sessions: 4 # per server process; use one worker
+  hello_timeout_seconds: 5
+  max_json_bytes: 4096
 
 stt:
   provider: "faster-whisper" # "faster-whisper" | "groq" | "mock"

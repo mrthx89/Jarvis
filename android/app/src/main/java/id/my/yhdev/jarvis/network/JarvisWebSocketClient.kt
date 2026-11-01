@@ -13,11 +13,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 class JarvisWebSocketClient(
     private val serverUrl: String,
     private val deviceId: String,
+    private val bearerToken: String,
     private val listener: WebSocketEventListener
 ) {
     private val TAG = "JarvisWebSocketClient"
     private val gson = Gson()
     private val client = OkHttpClient.Builder()
+        .followRedirects(false)
+        .followSslRedirects(false)
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .pingInterval(15, TimeUnit.SECONDS)
         .build()
@@ -44,13 +47,15 @@ class JarvisWebSocketClient(
 
     fun connect() {
         if (!shouldRun.get() || isConnected.get() || !connecting.compareAndSet(false, true)) return
-        Log.i(TAG, "Connecting to $serverUrl (attempt: $reconnectAttempt)...")
+        Log.i(TAG, "Connecting (attempt: $reconnectAttempt)")
 
         val request = try {
-            Request.Builder().url(serverUrl).build()
+            Request.Builder().url(serverUrl)
+                .header("Authorization", "Bearer $bearerToken")
+                .header("X-Device-ID", deviceId).build()
         } catch (e: IllegalArgumentException) {
             connecting.set(false)
-            listener.onStateChanged(JarvisState.ERROR, "URL server tidak valid: ${e.message}", null)
+            listener.onStateChanged(JarvisState.ERROR, "URL server tidak valid.", null)
             return
         }
         val ended = AtomicBoolean(false)
@@ -90,20 +95,24 @@ class JarvisWebSocketClient(
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                Log.w(TAG, "WebSocket closing: $code / $reason")
+                Log.w(TAG, "WebSocket closing: $code")
                 disconnected()
+                if (code == 1008) setupRequired()
                 webSocket.close(code, reason)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.w(TAG, "WebSocket closed: $code / $reason")
+                Log.w(TAG, "WebSocket closed: $code")
                 disconnected()
+                if (code == 1008) setupRequired()
                 scheduleReconnect()
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e(TAG, "WebSocket failure: ${t.message}")
+                Log.e(TAG, "WebSocket connection failed")
                 disconnected()
+                if (response?.code == 401 || response?.code == 403) setupRequired()
+                response?.close()
                 scheduleReconnect()
             }
         })
@@ -155,7 +164,7 @@ class JarvisWebSocketClient(
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing incoming text frame: ${e.message}")
+            Log.e(TAG, "Invalid server control frame")
         }
     }
 
@@ -173,6 +182,14 @@ class JarvisWebSocketClient(
             webSocket?.cancel()
         }
         return sent
+    }
+
+    private fun setupRequired() {
+        shouldRun.set(false)
+        protocolReady.set(false)
+        acceptingPlayback.set(false)
+        listener.onStateChanged(JarvisState.ERROR,
+            "Penyiapan perangkat diperlukan • tekan lama status untuk token pemilik", null)
     }
 
     private fun scheduleReconnect() {

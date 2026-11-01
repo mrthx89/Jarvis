@@ -16,7 +16,32 @@ Satu koneksi WebSocket full-duplex melayani dua jenis data:
 
 ### 2. Handshake & Inisialisasi
 
-Setelah koneksi WebSocket terbentuk di endpoint `/ws/appliance`, klien mengirimkan pesan handshake:
+Stage 1 menggunakan token unik per perangkat yang dibuat pemilik (bukan pairing otomatis).
+Sebelum WebSocket diterima, request upgrade ke `/ws/appliance` wajib membawa:
+
+```text
+Authorization: Bearer <token-perangkat>
+X-Device-ID: <ID-yang-diprovisikan>
+```
+
+Token tidak boleh dikirim melalui URL/query, Remote Config, APK literal, atau log. Server
+membaca registry JSON eksternal mode 0600 berisi SHA-256 saja; konfigurasi kosong,
+registry hilang/rusak, ID/token salah ditolak sebelum `accept` (HTTP 403).
+Android menyimpan token terenkripsi Android Keystore dan mengikatnya ke origin WSS
+(host+port) serta ID; perubahan origin memerlukan persetujuan/setup pemilik baru.
+HTTP 401/403 atau close 1008 menghentikan reconnect otomatis dan menampilkan setup.
+
+Setelah upgrade berhasil, hello wajib menjadi frame pertama dalam 5 detik (dapat
+dikonfigurasi). `device_id` harus sama dengan header terautentikasi, versi wajib `1.0`,
+dan `audio_spec` wajib lengkap persis PCM16 little-endian 16 kHz mono seperti di bawah.
+Tidak ada PCM/VAD/STT/Hermes sebelum hello valid. JSON non-object, format salah,
+duplikat hello, atau PCM sebelum hello ditutup dengan kode 1008.
+Batas default: 4096 byte per JSON dan 4 sesi simultan per proses; kapasitas penuh
+mengembalikan 503 (atau penolakan ASGI generik tanpa extension). Batas frame transport
+64 KB dan antrean 4 frame diterapkan oleh entrypoint server; konfigurasi launch eksternal
+harus mempertahankannya. Lihat [DEVICE_AUTH.md](DEVICE_AUTH.md) untuk migrasi/revoke.
+
+Klien kemudian mengirim handshake:
 
 #### 2.1 Client Hello (Client -> Server)
 ```json

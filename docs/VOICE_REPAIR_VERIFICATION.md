@@ -1,5 +1,7 @@
 # Voice/UI repair acceptance
 
+> Historical verification of the pre-auth voice repair. Stage 1 authentication/signing changes have NOT been built or tested on a device. Follow `docs/DEVICE_AUTH.md` from the repository root for migration; do not reuse these earlier live results as verification of the new secured deployment.
+
 ## Verified on server/build host
 
 - All 16 SVG-derived RGBA512 expressions pass `scripts/render_mascots.py --check`; black contact sheet visually inspected (not a device screenshot).

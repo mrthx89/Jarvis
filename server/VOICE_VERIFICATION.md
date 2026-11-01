@@ -1,5 +1,7 @@
 # Voice no-response repair verification
 
+> Historical verification of the pre-auth voice repair. Stage 1 authentication/signing changes have NOT been built or tested on a device. Follow `docs/DEVICE_AUTH.md` from the repository root for migration; do not reuse these earlier live results as verification of the new secured deployment.
+
 ## Runtime
 
 Python 3.11+ is required (`asyncio.timeout`). Project metadata and root README declare this minimum; Python 3.10 is no longer supported. Verification host runs Python 3.13.

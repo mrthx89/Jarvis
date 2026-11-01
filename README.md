@@ -85,6 +85,8 @@ Jarvis/
 
 ## 4. Memulai Pengembangan
 
+> Hardening tahap 1: baca [roadmap dan batas verifikasi](docs/IMPROVEMENT_ROADMAP.md). Klien dan server baru memerlukan kredensial perangkat; jangan restart server sebelum mengikuti panduan migrasi. Build/signing dijelaskan di [BUILDING](docs/BUILDING.md). APK lama tidak mengandung perubahan autentikasi ini.
+
 ### Persyaratan Awal:
 1. **Android Studio**: Ladybug / Hedgehog atau yang lebih baru dengan Android SDK 34 (Java 17+).
 2. **Python**: Versi 3.11 atau lebih baru (pipeline memakai `asyncio.timeout`) untuk menjalankan server gateway.
@@ -105,7 +107,7 @@ python -m jarvis_server.main
 2. Sinkronkan Gradle.
 3. Hubungkan perangkat Android (Tablet atau Smart Monitor) via ADB.
 4. Sesuaikan alamat IP server pada `res/values/strings.xml` atau konfigurasi aplikasi.
-5. Jalankan aplikasi ke perangkat.
+5. Ikuti [pendaftaran perangkat](docs/DEVICE_AUTH.md), lalu jalankan aplikasi ke perangkat.
 
 ---
 

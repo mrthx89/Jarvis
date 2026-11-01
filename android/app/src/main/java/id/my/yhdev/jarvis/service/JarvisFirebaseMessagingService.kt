@@ -21,7 +21,7 @@ class JarvisFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        Log.i(TAG, "New FCM Device Token generated: $token")
+        Log.i(TAG, "FCM device token refreshed")
         // Store locally so it can be synced with Jarvis server
         val prefs = getSharedPreferences("jarvis_fcm", Context.MODE_PRIVATE)
         prefs.edit().putString("fcm_token", token).apply()

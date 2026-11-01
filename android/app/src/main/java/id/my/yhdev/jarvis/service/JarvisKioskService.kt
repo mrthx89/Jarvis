@@ -18,6 +18,7 @@ import id.my.yhdev.jarvis.audio.AudioRecorderManager
 import id.my.yhdev.jarvis.audio.HalfDuplexGate
 import id.my.yhdev.jarvis.network.JarvisWebSocketClient
 import id.my.yhdev.jarvis.ui.JarvisState
+import id.my.yhdev.jarvis.security.DeviceCredentialStore
 
 class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListener {
     private val binder = LocalBinder()
@@ -28,6 +29,7 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
     @Volatile private var webSocketClient: JarvisWebSocketClient? = null
     @Volatile private var generation = 0
     private var connectionKey: Pair<String, String>? = null
+    private val credentialStore by lazy { DeviceCredentialStore(this) }
     private var currentState = JarvisState.DISCONNECTED
     private var currentMessage: String? = "Belum terhubung ke server."
     private var currentExpression: String? = null
@@ -99,14 +101,24 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
         }
     }
 
-    fun initializeConnection(serverUrl: String, deviceId: String) {
-        if (connectionKey == Pair(serverUrl, deviceId) && webSocketClient != null) return
+    fun refreshCredentials() {
+        connectionKey?.let { initializeConnection(it.first, it.second, forceReconnect = true) }
+    }
+
+    fun initializeConnection(serverUrl: String, deviceId: String, forceReconnect: Boolean = false) {
+        if (!forceReconnect && connectionKey == Pair(serverUrl, deviceId) && webSocketClient != null) return
+        val bearerToken = credentialStore.read(serverUrl, deviceId)
         connectionKey = Pair(serverUrl, deviceId)
         val token = ++generation
         duplex.disconnected()
         audioRecorder.stopRecording()
         audioPlayer.stop()
         webSocketClient?.disconnect()
+        webSocketClient = null
+        if (bearerToken == null) {
+            publish(JarvisState.ERROR, "Penyiapan perangkat diperlukan • tekan lama status untuk token pemilik")
+            return
+        }
         publish(JarvisState.DISCONNECTED, "Menghubungkan ke server...")
         // Fence callbacks from the old endpoint during Remote Config changes.
         val events = object : JarvisWebSocketClient.WebSocketEventListener {
@@ -124,7 +136,7 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
             override fun onTTSStarted() = dispatch { this@JarvisKioskService.onTTSStarted() }
             override fun onTTSEnded() = dispatch { this@JarvisKioskService.onTTSEnded() }
         }
-        webSocketClient = JarvisWebSocketClient(serverUrl, deviceId, events)
+        webSocketClient = JarvisWebSocketClient(serverUrl, deviceId, bearerToken, events)
         webSocketClient?.connect()
     }
 

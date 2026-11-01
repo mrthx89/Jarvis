@@ -8,7 +8,6 @@ from typing import Optional
 from fastapi import WebSocket
 
 from ..models.messages import (
-    ClientHello,
     ServerHello,
     StateChange,
     VisualTelemetry,
@@ -24,6 +23,10 @@ from ..pipeline.tts import BaseTTS
 from ..hermes.agent_bridge import HermesBridge
 
 logger = logging.getLogger(__name__)
+
+
+class ProtocolViolation(ValueError):
+    """Safe fixed diagnostic; never includes user input."""
 
 
 class ApplianceSession:
@@ -44,7 +47,12 @@ class ApplianceSession:
         stt: BaseSTT,
         tts: BaseTTS,
         hermes: HermesBridge,
+        authenticated_device_id: str | None = None,
+        max_json_bytes: int = 4096,
     ):
+        self.authenticated_device_id = authenticated_device_id
+        self.ready = False
+        self.max_json_bytes = max_json_bytes
         self.websocket = websocket
         self.session_id = session_id
         self.stt = stt
@@ -122,17 +130,34 @@ class ApplianceSession:
 
     async def handle_text_frame(self, data_str: str):
         """Handle incoming control JSON frames."""
+        if self._closed:
+            return
+        if not self.authenticated_device_id:
+            raise ProtocolViolation("Unauthenticated session")
+        if len(data_str.encode("utf-8")) > self.max_json_bytes:
+            raise ProtocolViolation("Control frame too large")
         try:
             payload = json.loads(data_str)
-        except json.JSONDecodeError:
-            logger.warning(f"Invalid JSON received: {data_str}")
-            return
-
+        except (ValueError, RecursionError):
+            raise ProtocolViolation("Invalid control JSON") from None
+        if not isinstance(payload, dict):
+            raise ProtocolViolation("Control frame must be an object")
         msg_type = payload.get("type")
+        if not self.ready and msg_type != "client_hello":
+            raise ProtocolViolation("Hello required")
 
         if msg_type == "client_hello":
-            hello = ClientHello(**payload)
-            logger.info(f"Client authenticated: {hello.device_id}")
+            if self.ready:
+                raise ProtocolViolation("Duplicate hello")
+            expected_audio = {"format": "audio/pcm", "sample_rate": 16000, "channels": 1, "bit_depth": 16}
+            if (payload.get("device_id") != self.authenticated_device_id
+                    or payload.get("protocol_version") != "1.0"
+                    or payload.get("audio_spec") != expected_audio
+                    or not isinstance(payload.get("audio_spec"), dict)
+                    or any(type(payload["audio_spec"].get(k)) is not type(v) for k, v in expected_audio.items())):
+                raise ProtocolViolation("Unsupported hello identity or audio protocol")
+            self.ready = True
+            logger.info("Protocol ready for session %s", self.session_id)
             await self.send_json_message(
                 ServerHello(
                     session_id=self.session_id,
@@ -156,10 +181,17 @@ class ApplianceSession:
 
         elif msg_type == "ping":
             ts = payload.get("timestamp", int(time.time() * 1000))
+            if type(ts) is not int or not 0 <= ts <= 2**63 - 1:
+                raise ProtocolViolation("Invalid ping")
             await self.send_json_message(PongMessage(timestamp=ts))
+        else:
+            raise ProtocolViolation("Unknown control type")
 
     async def handle_binary_frame(self, data_bytes: bytes):
         """Handle incoming raw audio PCM chunks."""
+        if not self.ready or not self.authenticated_device_id:
+            # No PCM may reach VAD, buffering or providers before auth + hello.
+            raise ProtocolViolation("Hello required before audio")
         if self._busy():
             self._preroll.clear()
             return  # Half duplex: never queue speaker echo for the next turn.
@@ -202,7 +234,7 @@ class ApplianceSession:
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("Voice pipeline failed for %s", self.session_id)
+            logger.error("Voice pipeline failed for %s", self.session_id)
             if not self._closed:
                 try:
                     await self.send_state(
@@ -211,7 +243,7 @@ class ApplianceSession:
                         expression="sedih",
                     )
                 except Exception:
-                    logger.debug("Unable to send pipeline error", exc_info=True)
+                    logger.debug("Unable to send pipeline error")
         finally:
             # PCM may be sent faster than real-time. Suppress microphone echo
             # until the client's queued samples finish, plus acoustic tail.
@@ -223,7 +255,7 @@ class ApplianceSession:
                         self._tts_started = False
                     await self.send_state(JarvisState.IDLE, expression="netral")
                 except Exception:
-                    logger.debug("Unable to send idle state", exc_info=True)
+                    logger.debug("Unable to send idle state")
 
     async def _run_pipeline(self, captured_pcm):
         """Process captured speech through STT -> Hermes -> TTS."""
@@ -234,7 +266,7 @@ class ApplianceSession:
         if not transcription:
             logger.info("No speech transcribed for %s", self.session_id)
             return
-        logger.info(f"Transcription: {transcription}")
+        logger.info("STT complete for %s (%d characters)", self.session_id, len(transcription))
 
 
         # Send transcription subtitle
@@ -244,7 +276,7 @@ class ApplianceSession:
 
         # Step 2: Query Hermes Agent
         agent_reply = await self.hermes.query(transcription)
-        logger.info(f"Agent response: {agent_reply}")
+        logger.info("Agent complete for %s (%d characters)", self.session_id, len(agent_reply))
 
         await self.send_json_message(
             TranscriptionMessage(role="assistant", text=agent_reply, is_final=True)

@@ -19,14 +19,32 @@ class RemoteConfigManager(private val context: Context) {
     private var remoteConfig: FirebaseRemoteConfig? = null
     private var registration: ConfigUpdateListenerRegistration? = null
     private var closed = false
+    private val preferences = context.getSharedPreferences("jarvis_endpoint", Context.MODE_PRIVATE)
+
+    private fun safeFallback(): String {
+        val bundled = context.getString(R.string.default_server_url)
+        check(ServerEndpointPolicy.isValid(bundled)) { "Bundled endpoint must use WSS" }
+        return preferences.getString("last_valid_url", null)
+            ?.takeIf(ServerEndpointPolicy::isValid) ?: bundled
+    }
+
+    private fun validated(value: String): String? {
+        if (ServerEndpointPolicy.isValid(value)) {
+            // Last syntactically validated endpoint, not a claim of backend readiness.
+            preferences.edit().putString("last_valid_url", value).apply()
+            return value
+        }
+        Log.w(TAG, "Ignored invalid Remote Config endpoint; retaining validated endpoint")
+        return null
+    }
 
     init {
         try {
             if (FirebaseApp.getApps(context).isNotEmpty()) {
                 remoteConfig = FirebaseRemoteConfig.getInstance().apply {
                     val configSettings = remoteConfigSettings {
-                        // 0 seconds for instant updates in appliance deployment
-                        minimumFetchIntervalInSeconds = 0
+                        // Realtime updates do not require disabling normal fetch caching.
+                        minimumFetchIntervalInSeconds = 3600
                     }
                     setConfigSettingsAsync(configSettings)
 
@@ -47,7 +65,7 @@ class RemoteConfigManager(private val context: Context) {
      * Fetches from Firebase Remote Config asynchronously and falls back to local default.
      */
     fun fetchServerUrl(onResolved: (String) -> Unit) {
-        val defaultUrl = context.getString(R.string.default_server_url)
+        val defaultUrl = safeFallback()
         val config = remoteConfig
 
         if (config == null) {
@@ -56,7 +74,7 @@ class RemoteConfigManager(private val context: Context) {
         }
 
         // Return current active cached value first for instantaneous startup
-        val cachedUrl = config.getString(KEY_SERVER_URL).takeIf { it.isNotBlank() } ?: defaultUrl
+        val cachedUrl = validated(config.getString(KEY_SERVER_URL)) ?: defaultUrl
         onResolved(cachedUrl)
 
         // Asynchronously fetch latest values from Firebase
@@ -64,9 +82,9 @@ class RemoteConfigManager(private val context: Context) {
             .addOnCompleteListener { task ->
                 if (closed) return@addOnCompleteListener
                 if (task.isSuccessful) {
-                    val latestUrl = config.getString(KEY_SERVER_URL)
-                    if (latestUrl.isNotBlank() && latestUrl != cachedUrl) {
-                        Log.i(TAG, "New server URL fetched from Remote Config: $latestUrl")
+                    val latestUrl = validated(config.getString(KEY_SERVER_URL))
+                    if (latestUrl != null && latestUrl != cachedUrl) {
+                        Log.i(TAG, "Validated server endpoint updated")
                         onResolved(latestUrl)
                     }
                 } else {
@@ -87,9 +105,10 @@ class RemoteConfigManager(private val context: Context) {
                 if (configUpdate.updatedKeys.contains(KEY_SERVER_URL)) {
                     config.activate().addOnCompleteListener {
                         if (closed) return@addOnCompleteListener
-                        val newUrl = config.getString(KEY_SERVER_URL)
-                        if (newUrl.isNotBlank()) {
-                            Log.i(TAG, "Realtime Remote Config update received: $newUrl")
+                        if (!it.isSuccessful) return@addOnCompleteListener
+                        val newUrl = validated(config.getString(KEY_SERVER_URL))
+                        if (newUrl != null) {
+                            Log.i(TAG, "Validated realtime server endpoint updated")
                             onUrlChanged(newUrl)
                         }
                     }

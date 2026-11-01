@@ -9,11 +9,15 @@ import yaml
 
 @dataclass
 class ServerSettings:
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8765
     ws_path: str = "/ws/appliance"
     ping_interval: int = 15
     ping_timeout: int = 30
+    device_registry_path: str = ""  # External mode-0600 JSON; empty denies all.
+    max_sessions: int = 4
+    hello_timeout_seconds: float = 5.0
+    max_json_bytes: int = 4096
 
 
 @dataclass

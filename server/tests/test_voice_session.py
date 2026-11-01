@@ -46,14 +46,19 @@ SPEECH = b"\x00\x20" * 320  # 20 ms @ 16 kHz
 SILENCE = bytes(640)
 
 
-def session():
+async def session():
     stt = STT()
-    return ApplianceSession(Socket(), "test", stt, TTS(), Hermes())
+    s = ApplianceSession(Socket(), "test", stt, TTS(), Hermes(), authenticated_device_id="tablet_01")
+    await s.handle_text_frame(json.dumps({"type": "client_hello", "device_id": "tablet_01",
+        "protocol_version": "1.0", "audio_spec": {"format": "audio/pcm", "sample_rate": 16000,
+        "channels": 1, "bit_depth": 16}}))
+    s.websocket.messages.clear()
+    return s
 
 
 @pytest.mark.asyncio
 async def test_continuous_pcm_endpoints_without_voice_end():
-    s = session()
+    s = await session()
     for _ in range(15):
         await s.handle_binary_frame(SPEECH)
     for _ in range(50):
@@ -76,7 +81,7 @@ async def test_continuous_pcm_endpoints_without_voice_end():
 
 @pytest.mark.asyncio
 async def test_continuous_noise_is_bounded():
-    s = session()
+    s = await session()
     try:
         for _ in range(1600):  # 32 seconds, no silence/voice_end
             await s.handle_binary_frame(SPEECH)
@@ -89,7 +94,7 @@ async def test_continuous_noise_is_bounded():
 
 @pytest.mark.asyncio
 async def test_audio_gap_endpoints_when_client_stops_sending():
-    s = session()
+    s = await session()
     s.AUDIO_GAP_TIMEOUT = 0.02
     try:
         await s.handle_binary_frame(SPEECH * 10)
@@ -101,7 +106,7 @@ async def test_audio_gap_endpoints_when_client_stops_sending():
 
 @pytest.mark.asyncio
 async def test_pipeline_timeout_recovers_and_disconnect_cancels():
-    s = session()
+    s = await session()
     s.PROCESSING_TIMEOUT = 0.02
     try:
         await s.handle_binary_frame(SPEECH * 10)
@@ -117,7 +122,7 @@ async def test_pipeline_timeout_recovers_and_disconnect_cancels():
 
 @pytest.mark.asyncio
 async def test_disconnected_session_cancels_pending_processing():
-    s = session()
+    s = await session()
     await s.handle_binary_frame(SPEECH * 10)
     await s.handle_text_frame('{"type":"voice_end"}')
     await asyncio.wait_for(s.stt.started.wait(), 0.2)
@@ -130,7 +135,7 @@ async def test_disconnected_session_cancels_pending_processing():
 
 @pytest.mark.asyncio
 async def test_invalid_audio_frames_are_dropped_before_vad():
-    s = session()
+    s = await session()
     try:
         for invalid in (b"", b"\xff", SPEECH * 101):
             await s.handle_binary_frame(invalid)
@@ -143,7 +148,7 @@ async def test_invalid_audio_frames_are_dropped_before_vad():
 
 @pytest.mark.asyncio
 async def test_preroll_preserves_quiet_onset_and_stays_bounded():
-    s = session()
+    s = await session()
     quiet = b"\x40\x00" * 320
     try:
         for _ in range(40):
@@ -165,7 +170,7 @@ async def test_failed_tts_still_ends_stream_and_recovers():
         async def synthesize_stream(self, text):
             yield bytes(960)
             raise RuntimeError("provider failed mid-stream")
-    s = session()
+    s = await session()
     s.stt.release.set()
     s.tts = BrokenTTS()
     try:
@@ -185,7 +190,7 @@ async def test_empty_transcription_skips_hermes_and_speech():
     class EmptySTT:
         async def transcribe(self, pcm):
             return "  "
-    s = session()
+    s = await session()
     s.stt = EmptySTT()
     try:
         await s.handle_binary_frame(SPEECH * 10)
@@ -200,7 +205,7 @@ async def test_empty_transcription_skips_hermes_and_speech():
 
 @pytest.mark.asyncio
 async def test_cooldown_covers_queued_playback_and_echo():
-    s = session()
+    s = await session()
     s.stt.release.set()
     try:
         await s.handle_binary_frame(SPEECH * 10)

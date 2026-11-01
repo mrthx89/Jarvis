@@ -1,6 +1,7 @@
 """Main entrypoint for Jarvis Appliance Server."""
 
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 import uuid
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -8,7 +9,8 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 from .config import load_config
-from .gateway.websocket_handler import ApplianceSession
+from .auth import DeviceRegistry
+from .gateway.websocket_handler import ApplianceSession, ProtocolViolation
 from .pipeline.stt import create_stt_engine
 from .pipeline.tts import create_tts_engine
 from .hermes.agent_bridge import create_hermes_bridge
@@ -58,34 +60,72 @@ async def health_check():
     )
 
 
+# Process-local admission: run one worker or divide capacity across workers.
+_active_sessions = 0
+
+
+async def _deny(websocket, status, code):
+    denial = getattr(websocket, "send_denial_response", None)
+    if callable(denial) and "websocket.http.response" in websocket.scope.get("extensions", {}):
+        await denial(JSONResponse({"detail": "Device authorization required"}, status_code=status))
+    else:
+        # ASGI servers without denial extension return HTTP 403 before accept.
+        await websocket.close(code=code)
+
+
 @app.websocket("/ws/appliance")
 async def websocket_appliance_endpoint(websocket: WebSocket):
-    await websocket.accept()
+    global _active_sessions
+    device_id = websocket.headers.get("x-device-id", "")
+    registry = DeviceRegistry(config.server.device_registry_path)
+    if not registry.authenticate(device_id, websocket.headers.get("authorization", "")):
+        await _deny(websocket, 403, 1008)
+        return
+    if _active_sessions >= config.server.max_sessions:
+        await _deny(websocket, 503, 1013)
+        return
+    # No await between admission check and reservation.
+    _active_sessions += 1
     session_id = f"sess_{uuid.uuid4().hex[:8]}"
-    logger.info(f"New client connected: {session_id} from {websocket.client}")
-
     session = ApplianceSession(
-        websocket=websocket,
-        session_id=session_id,
-        stt=stt_engine,
-        tts=tts_engine,
-        hermes=hermes_bridge,
+        websocket=websocket, session_id=session_id,
+        stt=stt_engine, tts=tts_engine, hermes=hermes_bridge,
+        authenticated_device_id=device_id, max_json_bytes=config.server.max_json_bytes,
     )
-
     try:
+        await websocket.accept()
+        logger.info("Device connected: %s", session_id)
+        hello_deadline = asyncio.get_running_loop().time() + config.server.hello_timeout_seconds
         while True:
-            message = await websocket.receive()
-            if "text" in message and message["text"]:
+            if session.ready:
+                message = await websocket.receive()
+            else:
+                remaining = hello_deadline - asyncio.get_running_loop().time()
+                message = await asyncio.wait_for(websocket.receive(), max(0, remaining))
+            if message.get("type") == "websocket.disconnect":
+                break
+            # Reload on every incoming frame: revocation applies before any new work.
+            if not registry.authenticate(device_id, websocket.headers.get("authorization", "")):
+                await websocket.close(code=1008, reason="Device authorization required")
+                break
+            if message.get("text") is not None:
                 await session.handle_text_frame(message["text"])
-            elif "bytes" in message and message["bytes"]:
+            elif message.get("bytes") is not None:
                 await session.handle_binary_frame(message["bytes"])
-    except (WebSocketDisconnect, RuntimeError):
-        logger.info(f"Client disconnected: {session_id}")
-    except Exception as e:
-        logger.error(f"Error in session {session_id}: {e}", exc_info=True)
+    except (ProtocolViolation, asyncio.TimeoutError):
+        await websocket.close(code=1008, reason="Protocol setup required")
+    except WebSocketDisconnect:
+        logger.info("Device disconnected: %s", session_id)
+    except Exception:
+        # Exception strings/tracebacks can include provider payloads. Do not log them.
+        logger.error("Session failure: %s", session_id)
+        await websocket.close(code=1011, reason="Session failure")
     finally:
-        await session.close()
-        logger.info(f"Cleaned up session {session_id}")
+        try:
+            await session.close()
+        finally:
+            _active_sessions -= 1
+        logger.info("Cleaned up session %s", session_id)
 
 
 def run():
@@ -95,7 +135,9 @@ def run():
         port=config.server.port,
         log_level="info",
         proxy_headers=True,
-        forwarded_allow_ips="*",
+        forwarded_allow_ips="127.0.0.1",
+        ws_max_size=max(config.server.max_json_bytes, ApplianceSession.MAX_FRAME_BYTES),
+        ws_max_queue=4,
     )
 
 
