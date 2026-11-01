@@ -35,7 +35,6 @@ import id.my.yhdev.jarvis.ui.JarvisState
 import id.my.yhdev.jarvis.ui.VisualizerView
 
 class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
-
     private lateinit var visualizerView: VisualizerView
     private lateinit var tvStatus: TextView
     private lateinit var tvSubtitle: TextView

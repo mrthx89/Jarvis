@@ -96,7 +96,6 @@
     <!-- Bottom 3D Cyberdeck Curved Glass Console Readout -->
     <LinearLayout
         android:id="@+id/consoleCard"
-        android:visibility="gone"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="20dp"
@@ -138,7 +137,7 @@
                 android:padding="13dp"
                 android:enabled="false"
                 android:alpha="0.35"
-                android:src="@drawable/ic_clipboard"
+                android:src="@drawable/ic_clipboard_24"
                 android:contentDescription="@string/copy_reply"
                 android:tooltipText="@string/copy_reply"
                 app:tint="@color/jarvis_cyan" />
