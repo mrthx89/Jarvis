@@ -6,6 +6,7 @@ import com.google.gson.JsonObject
 import id.my.yhdev.jarvis.ui.JarvisState
 import okhttp3.*
 import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -124,7 +125,7 @@ class JarvisWebSocketClient(
 
     fun sendAudioChunk(chunk: ByteArray, length: Int) {
         if (!isConnected.get()) return
-        val byteString = ByteString.of(chunk, 0, length)
+        val byteString = chunk.toByteString(0, length)
         webSocket?.send(byteString)
     }
 
