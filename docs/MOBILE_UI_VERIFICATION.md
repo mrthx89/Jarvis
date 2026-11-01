@@ -7,11 +7,11 @@ Source changes only. No Gradle invocation, APK build, emulator run, or remote bu
 - Credential sheet uses an expanded window-height scroll viewport, with system bar/cutout padding and `ADJUST_RESIZE` for the keyboard.
 - Token label/helper are external wrapping TextViews rather than the single-line floating hint/helper area. Validation errors use the Material 1.11.0 default indicator; their wrapping remains a device acceptance check.
 - Actions use full-width wrapping labels and content-based heights; cancel/reset no longer compete in weighted columns.
-- The console has an explicit “Salin jawaban terakhir” action, initially disabled. It copies the full last final assistant reply, not the six visible lines, current user transcription, or connection status. It retains the previous reply while a new user utterance is displayed. Nothing is automatically copied. The reply remains only in Activity memory; recreation clears the copy state. Clipboard contents can be visible to the OS or other permitted apps, so copy sensitive replies deliberately.
+- The console header has a clipboard-only action on the right, initially disabled/dimmed, with a 48dp touch target, tooltip and accessible “Salin jawaban terakhir” label. It copies the full last final assistant reply, not the six visible lines, current user transcription, or connection status. It retains the previous reply while a new user utterance is displayed. Nothing is automatically copied. The reply remains only in Activity memory; recreation clears the copy state. Clipboard contents can be visible to the OS or other permitted apps, so copy sensitive replies deliberately.
 
 ## Compact status and explicit voice control
 
-- Status notch is content-sized and constrained within screen margins, with smaller 12sp labels and a bounds transition when status text changes. Full diagnostics remain in accessibility text; the console shows diagnostics when no transcript has arrived.
+- Status notch is content-sized and constrained within screen margins, with smaller 12sp labels and a bounds transition when status text changes. Full diagnostics remain in accessibility text and can be displayed by tapping the status, including while the console is hidden; the visible console shows diagnostics when no transcript has arrived. Long-press still opens credential setup.
 - “Mulai mikrofon” / “Berhenti” controls voice capture through the service, not just the UI. Initial installation defaults to stopped. Stopped state must survive Activity recreation, credential refresh, and endpoint updates.
 - Verify STOP during connection, recording, processing and playback: the Android microphone privacy indicator must turn off, speaker playback must stop, and there must be no reconnect/capture until START. Microphone start still requires permission, valid credentials and server protocol acknowledgement. A bound foreground service/notification may remain; stopping voice is not force-stopping the app.
 - Check the notch grows/shrinks for different labels without exceeding narrow screen bounds and without moving controls over the console. Tap targets remain at least 48dp for the separate voice button.
@@ -19,6 +19,13 @@ Source changes only. No Gradle invocation, APK build, emulator run, or remote bu
 ## ON/OFF mascot feedback
 
 OFF selects the existing crying expression with a gentle vertical tremble and the caption “Anda jahat… Jarvis menangis. Mikrofon tetap mati.” ON shows a happy/optimistic expression with a short bounce for two seconds, then returns to the latest conversation expression. Initial state synchronization does not replay the ON celebration. Captions are separate from the reply so copying still retains the last complete assistant answer. These are local visual reactions, not TTS or microphone commands; the compact status remains the source of connection/readiness information. Check rapid ON/OFF, incoming state events during the reaction, and app reattachment on the actual device. Animation smoothness and rendering remain unverified.
+
+## Quiet readout and transient caption
+
+- The entire COGNITIVE STREAM console starts `GONE` and appears only when voice is enabled. OFF hides both its header/clipboard and subtitle without deleting the last final answer. Incoming transcripts and status updates cannot reopen the panel. ON is the voice-control state, not a claim of actual recording readiness.
+- The ON caption disappears after 15 seconds using a monotonic deadline. Repeated same-value callbacks do not extend it. OFF cancels the timeout and restores the crying caption. Stopping the Activity cancels scheduled callbacks; resuming uses the original deadline, hiding immediately if it expired. A new Activity starts a fresh caption interval on the initial service-state sync.
+- Check narrow widths and font scaling with the weighted, wrapping header and fixed 48dp icon target; compare before/after timer expiry. The mascot should use freed space when the caption/console is gone, without overlap.
+- Device checks: ON → 15 seconds → caption hidden; ON → OFF before expiry → crying caption remains; rapid OFF/ON → only the latest ON timer applies; repeated enabled notifications → no caption reset; background >15 seconds → hidden on return; OFF during a response → panel stays hidden; ON again → clipboard still copies the previous complete final assistant reply. Android timing, layout and transitions remain unverified by these source guards.
 
 ## Owner device acceptance
 

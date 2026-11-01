@@ -49,7 +49,17 @@ def test_copy_action_uses_last_final_assistant_reply_not_status_or_user_text():
     root = ET.parse(MAIN / 'res/layout/activity_main.xml').getroot()
     button = by_id(root, 'copyReply')
     assert button.get(A + 'enabled') == 'false'
-    assert button.get(A + 'layout_width') == 'match_parent'
+    assert button.tag == 'androidx.appcompat.widget.AppCompatImageButton'
+    assert button.get(A + 'layout_width') == '48dp'
+    assert button.get(A + 'layout_height') == '48dp'
+    assert button.get(A + 'src') == '@drawable/ic_clipboard'
+    assert button.get(A + 'contentDescription') == '@string/copy_reply'
+    assert button.get(A + 'text') is None
+    header = by_id(root, 'consoleHeader')
+    assert header.get(A + 'orientation') == 'horizontal'
+    assert [e.get(A + 'id') for e in header] == ['@+id/tvConsoleHeader', '@+id/copyReply']
+    assert by_id(root, 'tvConsoleHeader').get(A + 'layout_weight') == '1'
+    assert (MAIN / 'res/drawable/ic_clipboard.xml').exists()
     activity = (MAIN / 'java/id/my/yhdev/jarvis/MainActivity.kt').read_text()
     assert 'if (role == "assistant" && isFinal)' in activity
     assert 'lastAssistantReply = text' in activity
