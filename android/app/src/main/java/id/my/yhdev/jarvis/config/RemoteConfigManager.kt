@@ -1,4 +1,4 @@
-package com.yhdev.jarvis.config
+package id.my.yhdev.jarvis.config
 
 import android.content.Context
 import android.util.Log
@@ -8,7 +8,7 @@ import com.google.firebase.remoteconfig.ConfigUpdateListener
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigException
 import com.google.firebase.remoteconfig.ktx.remoteConfigSettings
-import com.yhdev.jarvis.R
+import id.my.yhdev.jarvis.R
 
 class RemoteConfigManager(private val context: Context) {
 

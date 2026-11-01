@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.yhdev.jarvis"
+    namespace = "id.my.yhdev.jarvis"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.yhdev.jarvis"
+        applicationId = "id.my.yhdev.jarvis"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

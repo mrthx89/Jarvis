@@ -1,6 +1,6 @@
-package com.yhdev.jarvis.ui
+package id.my.yhdev.jarvis.ui
 
-import com.yhdev.jarvis.R
+import id.my.yhdev.jarvis.R
 
 enum class MascotExpression(val drawableRes: Int, val idName: String) {
     NETRAL(R.drawable.mascot_netral, "netral"),

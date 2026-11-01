@@ -1,4 +1,4 @@
-package com.yhdev.jarvis
+package id.my.yhdev.jarvis
 
 import android.Manifest
 import android.content.ComponentName
@@ -17,10 +17,10 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.yhdev.jarvis.config.RemoteConfigManager
-import com.yhdev.jarvis.service.JarvisKioskService
-import com.yhdev.jarvis.ui.JarvisState
-import com.yhdev.jarvis.ui.VisualizerView
+import id.my.yhdev.jarvis.config.RemoteConfigManager
+import id.my.yhdev.jarvis.service.JarvisKioskService
+import id.my.yhdev.jarvis.ui.JarvisState
+import id.my.yhdev.jarvis.ui.VisualizerView
 
 class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
 
