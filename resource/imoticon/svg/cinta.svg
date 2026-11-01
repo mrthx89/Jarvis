@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+<title>NUSA Silver — Cinta</title>
+
+<defs>
+  <linearGradient id="silver" x1="0" y1="0" x2="0.24" y2="1">
+    <stop offset="0" stop-color="#81868e"/>
+    <stop offset="0.22" stop-color="#ffffff"/>
+    <stop offset="0.44" stop-color="#b9bec5"/>
+    <stop offset="0.64" stop-color="#f9fafb"/>
+    <stop offset="0.86" stop-color="#aab0b8"/>
+    <stop offset="1" stop-color="#79818b"/>
+  </linearGradient>
+  <linearGradient id="silverShine" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#777f89" stop-opacity="0.8"/>
+    <stop offset="0.1" stop-color="#fff" stop-opacity="0.88"/>
+    <stop offset="0.25" stop-color="#fff" stop-opacity="0.05"/>
+    <stop offset="0.54" stop-color="#fff" stop-opacity="0.58"/>
+    <stop offset="0.78" stop-color="#fff" stop-opacity="0.05"/>
+    <stop offset="0.93" stop-color="#fff" stop-opacity="0.82"/>
+    <stop offset="1" stop-color="#848b95" stop-opacity="0.48"/>
+  </linearGradient>
+  <linearGradient id="midnight" x1="0" y1="0" x2="0.66" y2="1">
+    <stop offset="0" stop-color="#253b5d"/>
+    <stop offset="0.22" stop-color="#101c36"/>
+    <stop offset="0.58" stop-color="#050912"/>
+    <stop offset="0.98" stop-color="#02040b"/>
+  </linearGradient>
+  <radialGradient id="topGlow" cx="0.43" cy="0.04" r="0.9">
+    <stop offset="0" stop-color="#a9d4ff" stop-opacity="0.21"/>
+    <stop offset="0.54" stop-color="#254e98" stop-opacity="0.05"/>
+    <stop offset="1" stop-color="#000" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="tear" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#ffffff"/><stop offset="0.38" stop-color="#9cdbff"/>
+    <stop offset="0.72" stop-color="#4d9cd7"/><stop offset="1" stop-color="#effaff"/>
+  </linearGradient>
+  <linearGradient id="sunglasses" x1="0" y1="0" x2="0.8" y2="1">
+    <stop offset="0" stop-color="#172636"/><stop offset="0.56" stop-color="#03080d"/>
+    <stop offset="1" stop-color="#34445a"/>
+  </linearGradient>
+  <filter id="light" x="-65%" y="-70%" width="230%" height="240%">
+    <feGaussianBlur in="SourceGraphic" stdDeviation="2.8" result="glow"/>
+    <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="pinkLight" x="-80%" y="-80%" width="260%" height="260%">
+    <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="glow"/>
+    <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="softShadow" x="-30%" y="-40%" width="160%" height="200%">
+    <feGaussianBlur stdDeviation="4"/>
+  </filter>
+</defs>
+
+  <path d="M43 120 C39 95 45 70 59 46 C68 29 79 29 92 48
+    C103 63 112 64 128 64 C144 64 154 63 165 48
+    C178 29 189 29 198 46 C212 70 218 96 213 121
+    C221 151 211 184 184 195 C157 206 100 206 73 195
+    C45 184 35 153 43 120 Z"
+    fill="url(#silver)" stroke="#818a96" stroke-width="1.5"/>
+  <path d="M43 132 C45 171 60 188 82 194 C105 201 153 202 178 194
+    C200 187 213 171 213 132 C211 160 196 173 174 179
+    C143 186 111 186 82 179 C59 174 46 160 43 132 Z"
+    fill="url(#silverShine)" opacity="0.52"/>
+  <path d="M43 120 C39 95 45 70 59 46 C68 29 79 29 92 48
+    C103 63 112 64 128 64 C144 64 154 63 165 48
+    C178 29 189 29 198 46 C212 70 218 96 213 121
+    C211 140 201 149 183 157 C153 171 104 171 73 157
+    C55 150 45 141 43 120 Z"
+    fill="url(#midnight)" stroke="#334a72" stroke-width="1.8"/>
+  <path d="M43 120 C39 95 45 70 59 46 C68 29 79 29 92 48
+    C103 63 112 64 128 64 C144 64 154 63 165 48
+    C178 29 189 29 198 46 C212 70 218 96 213 121
+    C211 140 201 149 183 157 C153 171 104 171 73 157
+    C55 150 45 141 43 120 Z" fill="url(#topGlow)"/>
+  <path d="M49 89 C53 66 64 40 72 37 C77 36 82 42 88 51"
+    fill="none" stroke="#aed3ff" stroke-opacity="0.56" stroke-width="2.1" stroke-linecap="round"/>
+  <path d="M169 50 C180 35 186 35 192 43 C202 57 208 78 210 94"
+    fill="none" stroke="#8dbdfd" stroke-opacity="0.22" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="M55 168 Q64 185 85 190" fill="none" stroke="#fff" stroke-width="3" opacity="0.5" stroke-linecap="round"/>
+  <path d="M180 190 Q200 184 204 167" fill="none" stroke="#fff" stroke-width="2.5" opacity="0.42" stroke-linecap="round"/>
+
+
+    <path d="M0 13 C-20 -1 -20 -15 -10 -19 C-4 -22 0 -17 0 -13 C0 -17 5 -22 11 -19 C21 -15 20 -1 0 13 Z" transform="translate(103 126) scale(1.088235294117647)" fill="#f7ffff" filter="url(#light)"/> <path d="M0 13 C-20 -1 -20 -15 -10 -19 C-4 -22 0 -17 0 -13 C0 -17 5 -22 11 -19 C21 -15 20 -1 0 13 Z" transform="translate(153 126) scale(1.088235294117647)" fill="#f7ffff" filter="url(#light)"/>
+    <path d="M0 13 C-20 -1 -20 -15 -10 -19 C-4 -22 0 -17 0 -13 C0 -17 5 -22 11 -19 C21 -15 20 -1 0 13 Z" transform="translate(53 67) scale(0.5882352941176471)" fill="#ff9fdb" filter="url(#pinkLight)"/>
+    <path d="M0 13 C-20 -1 -20 -15 -10 -19 C-4 -22 0 -17 0 -13 C0 -17 5 -22 11 -19 C21 -15 20 -1 0 13 Z" transform="translate(205 60) scale(0.6764705882352942)" fill="#ff9fdb" filter="url(#pinkLight)"/>
+    <path d="M0 13 C-20 -1 -20 -15 -10 -19 C-4 -22 0 -17 0 -13 C0 -17 5 -22 11 -19 C21 -15 20 -1 0 13 Z" transform="translate(221 87) scale(0.4117647058823529)" fill="#ff9fdb" filter="url(#pinkLight)"/>
+</svg>
