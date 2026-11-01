@@ -1,4 +1,4 @@
-package com.yhdev.jarvis.ui
+package id.my.yhdev.jarvis.ui
 
 import android.content.Context
 import android.graphics.*

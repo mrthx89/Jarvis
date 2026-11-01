@@ -1,4 +1,4 @@
-package com.yhdev.jarvis.ui
+package id.my.yhdev.jarvis.ui
 
 enum class JarvisState {
     IDLE,

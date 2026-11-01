@@ -1,4 +1,4 @@
-package com.yhdev.jarvis.network
+package id.my.yhdev.jarvis.network
 
 import com.google.gson.annotations.SerializedName
 

@@ -47,7 +47,7 @@ Jarvis/
 │
 ├── android/                   # Klien Native Android Kiosk (Kotlin)
 │   ├── app/
-│   │   ├── src/main/java/com/yhdev/jarvis/
+│   │   ├── src/main/java/id/my/yhdev/jarvis/
 │   │   │   ├── audio/         # AudioRecord, AudioPlayer, Hardware AEC
 │   │   │   ├── network/       # WebSocket Client & Protocol Parser
 │   │   │   ├── service/       # Foreground Kiosk Service
