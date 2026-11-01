@@ -141,3 +141,25 @@ def test_main_activity_hud_pixel_shifting_and_ambient_dim():
     assert "ambientCheckRunnable" in source
     assert "resetActivity" in source
     assert "pillStatus.animate()" in source
+
+
+def test_disconnected_expression_and_searching_flow():
+    """Verify disconnected state uses searching/inquisitive expressions (BINGUNG/SEDIH) with amber aura and living saccades."""
+    vis_source = (JAVA_UI / "VisualizerView.kt").read_text()
+    assert "NexoState.DISCONNECTED -> MascotExpression.BINGUNG" in vis_source
+    assert "currentState == NexoState.DISCONNECTED && now >= nextGlanceTime" in vis_source
+    assert "currentState == NexoState.DISCONNECTED -> 0x33FFB300.toInt()" in vis_source
+
+    activity_source = (ANDROID_MAIN / "java/id/my/yhdev/nexo/MainActivity.kt").read_text()
+    assert "state == NexoState.DISCONNECTED" in activity_source
+    assert "NexoState.DISCONNECTED -> 0xFFFFB300.toInt()" in activity_source
+
+    service_source = (JAVA_SERVICE / "NexoKioskService.kt").read_text()
+    assert 'publish(NexoState.DISCONNECTED, "Koneksi terputus • mencari sinyal server...", "bingung")' in service_source
+    assert 'wasDisconnected = currentState == NexoState.DISCONNECTED' in service_source
+    assert '"Terhubung kembali! • Nexo Siaga"' in service_source
+
+    net_source = (ANDROID_MAIN / "java/id/my/yhdev/nexo/network/NexoWebSocketClient.kt").read_text()
+    assert "reconnectAttempt++" in net_source
+    assert "Koneksi terputus • mencoba ulang dalam" in net_source
+    assert "Menghubungkan ke server (percobaan" in net_source

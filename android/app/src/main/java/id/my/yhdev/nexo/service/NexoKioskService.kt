@@ -362,7 +362,18 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         val started = audioRecorder.startRecording()
         duplex.microphoneReady(started)
         if (started) {
-            publishListening()
+            val wasDisconnected = currentState == NexoState.DISCONNECTED
+            if (wasDisconnected) {
+                // Joyful reconnect greeting before settling into neutral listening
+                publish(NexoState.LISTENING, "Terhubung kembali! • Nexo Siaga", "senang")
+                main.postDelayed({
+                    if (isVoiceEnabled && audioRecorder.isRecording() && currentState == NexoState.LISTENING && currentExpression == "senang") {
+                        publishListening()
+                    }
+                }, 2500L)
+            } else {
+                publishListening()
+            }
             val audioToken = audioGeneration
             main.postDelayed({
                 if (isVoiceEnabled && audioToken == audioGeneration && audioRecorder.isRecording()) {
@@ -379,7 +390,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         duplex.disconnected()
         audioRecorder.stopRecording()
         audioPlayer.stop()
-        publish(NexoState.DISCONNECTED, "Koneksi terputus • mencoba menghubungkan ulang", "sedih")
+        publish(NexoState.DISCONNECTED, "Koneksi terputus • mencari sinyal server...", "bingung")
     }
 
     override fun onStateChanged(state: NexoState, message: String?, expression: String?) {

@@ -171,7 +171,7 @@ class VisualizerView @JvmOverloads constructor(
                 NexoState.THINKING -> MascotExpression.BINGUNG
                 NexoState.SPEAKING -> MascotExpression.SENANG
                 NexoState.ERROR -> MascotExpression.SEDIH
-                NexoState.DISCONNECTED -> MascotExpression.MENGANTUK
+                NexoState.DISCONNECTED -> MascotExpression.BINGUNG
             }
         }
 
@@ -321,10 +321,15 @@ class VisualizerView @JvmOverloads constructor(
                 gazeTargetY = 0f
                 tiltTargetDeg = 0f
             }
-            NexoState.ERROR, NexoState.DISCONNECTED -> {
+            NexoState.ERROR -> {
                 gazeTargetX = 0f
                 gazeTargetY = 10f
                 tiltTargetDeg = -2.0f
+            }
+            NexoState.DISCONNECTED -> {
+                gazeTargetX = 0f
+                gazeTargetY = if (currentExpression == MascotExpression.SEDIH) 12f else -6f
+                tiltTargetDeg = if (currentExpression == MascotExpression.BINGUNG) 4.5f else -2.0f
             }
         }
         applyExpressionPhysics(currentExpression)
@@ -370,12 +375,18 @@ class VisualizerView @JvmOverloads constructor(
         val breathFloatY = sin(breathPhase.toDouble()).toFloat() * (if (isAmbientSleeping) 2.2f else 5f) + reactionBob
         val breathScale = 1.0f + (sin(breathPhase.toDouble()).toFloat() * 0.012f)
 
-        // Random Saccade Glances & Physiological Micro-saccades during IDLE
+        // Random Saccade Glances & Physiological Micro-saccades during IDLE and DISCONNECTED
         if (currentState == NexoState.IDLE && !isAmbientSleeping && now >= nextGlanceTime) {
             gazeTargetX = Random.nextInt(-14, 15).toFloat()
             gazeTargetY = Random.nextInt(-6, 7).toFloat()
             tiltTargetDeg = Random.nextFloat() * 4f - 2f
             nextGlanceTime = now + Random.nextLong(3200L, 6500L)
+        } else if (currentState == NexoState.DISCONNECTED && now >= nextGlanceTime) {
+            // Searching glance while disconnected from server
+            gazeTargetX = Random.nextInt(-12, 13).toFloat()
+            gazeTargetY = if (currentExpression == MascotExpression.SEDIH) 12f else Random.nextInt(-8, 5).toFloat()
+            tiltTargetDeg = if (currentExpression == MascotExpression.BINGUNG) (Random.nextFloat() * 4f + 3f) else (Random.nextFloat() * 4f - 2f)
+            nextGlanceTime = now + Random.nextLong(2500L, 5000L)
         } else if (isAmbientSleeping) {
             gazeTargetX = 0f
             gazeTargetY = 2f
@@ -761,13 +772,14 @@ class VisualizerView @JvmOverloads constructor(
                     0x44FFD600.toInt()
                 currentExpression == MascotExpression.KEREN -> 0x4400E5FF.toInt()
                 currentExpression == MascotExpression.JAHIL -> 0x4400E676.toInt()
+                currentExpression == MascotExpression.BINGUNG -> 0x44FFB300.toInt()
                 currentExpression == MascotExpression.SEDIH || currentExpression == MascotExpression.MENANGIS ->
                     0x33448AFF.toInt()
                 currentState == NexoState.LISTENING -> 0x4400E5FF.toInt()
                 currentState == NexoState.THINKING -> 0x44FFB300.toInt()
                 currentState == NexoState.SPEAKING -> 0x5500E5FF.toInt()
+                currentState == NexoState.DISCONNECTED -> 0x33FFB300.toInt()
                 currentState == NexoState.ERROR -> 0x44FF5252.toInt()
-                currentState == NexoState.DISCONNECTED -> 0x22333333.toInt()
                 else -> 0x33254E98.toInt()
             }
         }

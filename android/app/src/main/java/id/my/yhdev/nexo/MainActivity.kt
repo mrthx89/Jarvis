@@ -467,8 +467,8 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             tvStatus.text = status
         }
         tvStatus.contentDescription = message ?: status
-        // Actionable errors remain visible; copy still retains the full last reply.
-        if (!hasTranscription || state == NexoState.ERROR) {
+        // Actionable errors and disconnect states remain visible; copy still retains the full last reply.
+        if (!hasTranscription || state == NexoState.ERROR || state == NexoState.DISCONNECTED) {
             tvSubtitle.text = message?.takeIf { it.isNotBlank() } ?: status
         }
         val ledColor = when {
@@ -479,7 +479,8 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
                 NexoState.LISTENING -> 0xFF00E676.toInt()
                 NexoState.THINKING -> 0xFFFFB300.toInt()
                 NexoState.SPEAKING -> 0xFF2979FF.toInt()
-                NexoState.ERROR, NexoState.DISCONNECTED -> 0xFFFF5252.toInt()
+                NexoState.DISCONNECTED -> 0xFFFFB300.toInt()
+                NexoState.ERROR -> 0xFFFF5252.toInt()
             }
         }
         ivStatusLed.setColorFilter(ledColor)
