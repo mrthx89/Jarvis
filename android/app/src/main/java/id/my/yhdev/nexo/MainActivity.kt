@@ -18,6 +18,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.transition.ChangeBounds
 import android.transition.TransitionManager
+import android.view.MotionEvent
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
@@ -98,8 +99,56 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         }
     }
 
+    private var isSleepingMode = false
+
+    private fun setHardwareBrightness(dimmed: Boolean) {
+        val lp = window.attributes
+        lp.screenBrightness = if (dimmed) 0.03f else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        window.attributes = lp
+    }
+
+    private fun applySleepModeUi(sleeping: Boolean) {
+        if (isSleepingMode == sleeping) return
+        isSleepingMode = sleeping
+        setHardwareBrightness(sleeping)
+
+        if (sleeping) {
+            if (::pillStatus.isInitialized) {
+                pillStatus.animate().alpha(0f).setDuration(450).withEndAction {
+                    if (isSleepingMode) pillStatus.visibility = View.GONE
+                }
+            }
+            if (::consoleCard.isInitialized) {
+                consoleCard.animate().alpha(0f).setDuration(450).withEndAction {
+                    if (isSleepingMode) consoleCard.visibility = View.GONE
+                }
+            }
+        } else {
+            if (::pillStatus.isInitialized) {
+                pillStatus.visibility = View.VISIBLE
+                pillStatus.animate().alpha(1f).setDuration(350).start()
+            }
+            if (::consoleCard.isInitialized && voiceEnabled) {
+                consoleCard.visibility = View.VISIBLE
+                consoleCard.animate().alpha(1f).setDuration(350).start()
+            }
+        }
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        if (isSleepingMode && ev?.action == MotionEvent.ACTION_DOWN) {
+            resetActivity()
+            visualizerView.triggerWakeSequence()
+            return true
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     private fun resetActivity() {
         lastInteractionTime = SystemClock.uptimeMillis()
+        if (isSleepingMode) {
+            applySleepModeUi(false)
+        }
         if (::pillStatus.isInitialized && pillStatus.alpha < 0.95f) {
             pillStatus.animate().alpha(1.0f).setDuration(400).start()
         }
@@ -395,6 +444,9 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
     private fun renderStatus() {
         val state = lastState
         val message = lastMessage
+        val isSleeping = (lastExpression == "sleeping" || lastExpression == "tidur") &&
+            (state == NexoState.IDLE || state == NexoState.LISTENING)
+        applySleepModeUi(isSleeping)
         visualizerView.setState(if (voiceEnabled) state else NexoState.IDLE, lastExpression)
         val status = getString(when {
             state == NexoState.ERROR -> R.string.voice_error

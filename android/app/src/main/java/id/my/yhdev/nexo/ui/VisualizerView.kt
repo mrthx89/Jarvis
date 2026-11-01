@@ -8,6 +8,7 @@ import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.Typeface
 import android.os.SystemClock
 import android.util.AttributeSet
 import android.view.MotionEvent
@@ -62,6 +63,15 @@ class VisualizerView @JvmOverloads constructor(
     private val eyeGlowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
+    private val zzzPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xAA00E5FF.toInt()
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        style = Paint.Style.FILL
+    }
+
+    // Wake-up Animation State
+    private var isWakingUp = false
+    private var wakeStartTime = 0L
 
     // Transformation Rects & Matrix
     private val drawRect = RectF()
@@ -220,6 +230,75 @@ class VisualizerView @JvmOverloads constructor(
         this.targetAmplitude = amp.coerceIn(0f, 1f)
     }
 
+    /**
+     * Triggers a smooth, organic wake-up sequence from deep sleep mode.
+     */
+    fun triggerWakeSequence() {
+        val now = SystemClock.uptimeMillis()
+        isWakingUp = true
+        wakeStartTime = now
+        idleStartTime = now
+        stateExpression = MascotExpression.SENANG
+        transitionToExpression(MascotExpression.SENANG)
+        postInvalidateOnAnimation()
+    }
+
+    private fun applyExpressionPhysics(expr: MascotExpression) {
+        when (expr) {
+            MascotExpression.BINGUNG -> {
+                gazeTargetX = 14f
+                gazeTargetY = -12f
+                tiltTargetDeg = 6.5f
+            }
+            MascotExpression.JAHIL -> {
+                gazeTargetX = -18f
+                gazeTargetY = -4f
+                tiltTargetDeg = -5.0f
+            }
+            MascotExpression.KEREN -> {
+                gazeTargetX = 0f
+                gazeTargetY = -2f
+                tiltTargetDeg = 3.5f
+            }
+            MascotExpression.SEDIH -> {
+                gazeTargetX = 0f
+                gazeTargetY = 14f
+                tiltTargetDeg = -3.0f
+            }
+            MascotExpression.MENANGIS -> {
+                gazeTargetX = 0f
+                gazeTargetY = 16f
+                tiltTargetDeg = -3.5f
+            }
+            MascotExpression.MALU -> {
+                gazeTargetX = 12f
+                gazeTargetY = 12f
+                tiltTargetDeg = -2.5f
+            }
+            MascotExpression.CINTA -> {
+                gazeTargetX = 0f
+                gazeTargetY = -4f
+                tiltTargetDeg = 2.0f
+            }
+            MascotExpression.MARAH -> {
+                gazeTargetX = 0f
+                gazeTargetY = -2f
+                tiltTargetDeg = 0f
+            }
+            MascotExpression.TERKEJUT -> {
+                gazeTargetX = 0f
+                gazeTargetY = -8f
+                tiltTargetDeg = 0f
+            }
+            MascotExpression.SLEEPING -> {
+                gazeTargetX = 0f
+                gazeTargetY = 2f
+                tiltTargetDeg = 0f
+            }
+            else -> {}
+        }
+    }
+
     private fun onStatePhysics(state: NexoState) {
         when (state) {
             NexoState.LISTENING -> {
@@ -248,6 +327,7 @@ class VisualizerView @JvmOverloads constructor(
                 tiltTargetDeg = -2.0f
             }
         }
+        applyExpressionPhysics(currentExpression)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -275,11 +355,11 @@ class VisualizerView @JvmOverloads constructor(
         // Ambient Sleep Mode Dimming (> 5 minutes idle or sleeping expression)
         val isAmbientSleeping = currentState == NexoState.IDLE &&
             (currentExpression == MascotExpression.SLEEPING || now - idleStartTime > 300000L)
-        val targetDim = if (isAmbientSleeping) 0.48f else 1.0f
+        val targetDim = if (isAmbientSleeping) 0.18f else 1.0f
         ambientDimMultiplier += (targetDim - ambientDimMultiplier) * (dt * 1.5f)
 
         // Continuous Organic Breathing Oscillation
-        val breathSpeed = if (isAmbientSleeping) 1.2f else 2.2f
+        val breathSpeed = if (isAmbientSleeping) 1.1f else 2.2f
         breathPhase += dt * breathSpeed
         if (breathPhase > Math.PI * 2) breathPhase -= (Math.PI * 2).toFloat()
         val reactionBob = when {
@@ -287,7 +367,7 @@ class VisualizerView @JvmOverloads constructor(
             now < voiceReactionUntil -> -kotlin.math.abs(sin(now / 180.0)).toFloat() * 8f
             else -> 0f
         }
-        val breathFloatY = sin(breathPhase.toDouble()).toFloat() * (if (isAmbientSleeping) 2.5f else 5f) + reactionBob
+        val breathFloatY = sin(breathPhase.toDouble()).toFloat() * (if (isAmbientSleeping) 2.2f else 5f) + reactionBob
         val breathScale = 1.0f + (sin(breathPhase.toDouble()).toFloat() * 0.012f)
 
         // Random Saccade Glances & Physiological Micro-saccades during IDLE
@@ -310,8 +390,21 @@ class VisualizerView @JvmOverloads constructor(
             (cos(now * 0.009).toFloat() * 0.6f)
         } else 0f
 
+        // Wake Sequence Flutter Kinetics
+        if (isWakingUp) {
+            val wakeElapsed = now - wakeStartTime
+            if (wakeElapsed < 750L) {
+                val wt = wakeElapsed / 750f
+                gazeTargetX = 0f
+                gazeTargetY = 0f
+                tiltTargetDeg = sin(wt * Math.PI * 2).toFloat() * 2f
+            } else {
+                isWakingUp = false
+            }
+        }
+
         // Organic Blinking Kinetics (asymmetric rapid drop, brief hold, smooth ease-out)
-        if (!isBlinking && now >= nextBlinkTime && currentState != NexoState.LISTENING && !isAmbientSleeping) {
+        if (!isBlinking && now >= nextBlinkTime && currentState != NexoState.LISTENING && !isAmbientSleeping && !isWakingUp) {
             isBlinking = true
             blinkStartTime = now
         }
@@ -320,6 +413,13 @@ class VisualizerView @JvmOverloads constructor(
         if (isAmbientSleeping) {
             blinkSquashY = 0.08f
             isBlinking = false
+        } else if (isWakingUp) {
+            val wt = (now - wakeStartTime).toFloat() / 750f
+            blinkSquashY = when {
+                wt < 0.35f -> 0.08f + (0.65f - 0.08f) * (wt / 0.35f)
+                wt < 0.55f -> 0.12f // Flutter blink
+                else -> 0.12f + (1.0f - 0.12f) * ((wt - 0.55f) / 0.45f)
+            }
         } else if (isBlinking) {
             val blinkElapsed = (now - blinkStartTime).toFloat()
             val blinkDuration = 160f
@@ -345,6 +445,61 @@ class VisualizerView @JvmOverloads constructor(
                     nextBlinkTime = now + Random.nextLong(3200L, 6200L)
                 }
             }
+        }
+
+        // Expression-Specific Physics & Kinetics
+        val laughBounceY = if (currentExpression == MascotExpression.TERTAWA) {
+            sin(now * 0.038).toFloat() * 4.2f
+        } else 0f
+        val laughSway = if (currentExpression == MascotExpression.TERTAWA) {
+            sin(now * 0.012).toFloat() * 3.5f
+        } else 0f
+
+        val angryJitterX = if (currentExpression == MascotExpression.MARAH) {
+            sin(now * 0.075).toFloat() * 1.6f
+        } else 0f
+
+        val heartT = ((now % 1000) / 1000f)
+        val heartPulse = if (currentExpression == MascotExpression.CINTA) {
+            when {
+                heartT < 0.16f -> sin(heartT / 0.16f * Math.PI).toFloat() * 0.045f
+                heartT in 0.24f..0.40f -> sin((heartT - 0.24f) / 0.16f * Math.PI).toFloat() * 0.028f
+                else -> 0f
+            }
+        } else 0f
+
+        val scareTremorX = if (currentExpression == MascotExpression.TAKUT) {
+            sin(now * 0.05).toFloat() * 2.2f
+        } else 0f
+
+        val cryTremorY = if (currentExpression == MascotExpression.MENANGIS) {
+            sin(now * 0.028).toFloat() * 1.6f
+        } else 0f
+
+        val drowsyT = ((now % 4200) / 4200f)
+        val drowsySquash = if (currentExpression == MascotExpression.MENGANTUK && !isBlinking && !isAmbientSleeping) {
+            when {
+                drowsyT < 0.65f -> 0.85f - (drowsyT / 0.65f) * 0.55f
+                drowsyT < 0.72f -> 0.30f
+                else -> 0.30f + ((drowsyT - 0.72f) / 0.28f) * 0.55f
+            }
+        } else 1.0f
+
+        val exprSquashY = when (currentExpression) {
+            MascotExpression.TERTAWA -> 0.65f
+            MascotExpression.MARAH -> 0.72f
+            MascotExpression.KEREN -> 0.82f
+            MascotExpression.SEDIH -> 0.68f
+            MascotExpression.TERKEJUT -> 1.15f
+            else -> 1.0f
+        }
+
+        var blinkSquashLeft = (blinkSquashY * drowsySquash * exprSquashY).coerceIn(0.08f, 1.25f)
+        var blinkSquashRight = (blinkSquashY * drowsySquash * exprSquashY).coerceIn(0.08f, 1.25f)
+
+        if (currentExpression == MascotExpression.MENGEDIP && !isBlinking && !isAmbientSleeping) {
+            blinkSquashLeft = 1.0f
+            blinkSquashRight = 0.08f
         }
 
         // Smooth Critically Damped Gaze & Tilt Interpolation
@@ -399,12 +554,13 @@ class VisualizerView @JvmOverloads constructor(
         // Calculate Final Geometry with Pixel-Shifting Offset
         val viewW = width.toFloat()
         val viewH = height.toFloat()
-        val cx = viewW / 2f + gazeCurrentX + currentShiftX
-        val cy = viewH / 2f + gazeCurrentY + breathFloatY + speechBounceY + currentShiftY
+        val cx = viewW / 2f + gazeCurrentX + currentShiftX + angryJitterX + scareTremorX
+        val cy = viewH / 2f + gazeCurrentY + breathFloatY + speechBounceY + currentShiftY + laughBounceY + cryTremorY
 
         val mascotSize = minOf(viewW, viewH) * 0.82f
-        val finalScaleX = breathScale * squashStretchX * speechScale * listenScale
-        val finalScaleY = breathScale * squashStretchY * speechScale * listenScale * blinkSquashY
+        val finalScaleX = breathScale * squashStretchX * speechScale * listenScale * (1.0f + heartPulse)
+        val finalScaleY = breathScale * squashStretchY * speechScale * listenScale * blinkSquashY * (1.0f + heartPulse)
+        val effectiveTilt = tiltCurrentDeg + laughSway
 
         // Draw 3D Perspective Floor Shadow under character
         val floorY = cy + (mascotSize * 0.44f)
@@ -423,11 +579,16 @@ class VisualizerView @JvmOverloads constructor(
         // Draw Ambient Lighting Aura behind mascot
         drawAmbientAura(canvas, cx, cy, mascotSize * 0.65f, isAmbientSleeping)
 
+        // Draw Floating "Zzz" Particles during Sleep Mode
+        if (isAmbientSleeping || currentExpression == MascotExpression.SLEEPING) {
+            drawSleepingZzz(canvas, cx, cy, mascotSize, now)
+        }
+
         // Setup Matrix for rotation, scale, and translation
         animMatrix.reset()
         animMatrix.postTranslate(-mascotSize / 2f, -mascotSize / 2f)
         animMatrix.postScale(finalScaleX, finalScaleY)
-        animMatrix.postRotate(tiltCurrentDeg)
+        animMatrix.postRotate(effectiveTilt)
         animMatrix.postTranslate(cx, cy)
 
         val prevBmp = bitmapCache[previousExpression]
@@ -467,12 +628,37 @@ class VisualizerView @JvmOverloads constructor(
         }
 
         // Draw Living Digital Glowing Eyes (Radial Gradient Layer on Pupil/Iris)
-        if (currentExpression != MascotExpression.SLEEPING && blinkSquashY > 0.15f) {
-            drawLivingEyeGlow(canvas, mascotSize, finalScaleX, finalScaleY, blinkSquashY, isAmbientSleeping)
+        if (currentExpression != MascotExpression.SLEEPING && !isAmbientSleeping && (blinkSquashLeft > 0.15f || blinkSquashRight > 0.15f)) {
+            drawLivingEyeGlow(canvas, mascotSize, finalScaleX, finalScaleY, blinkSquashLeft, blinkSquashRight, isAmbientSleeping)
         }
 
         // Continuous 60 FPS Frame Loop
         postInvalidateOnAnimation()
+    }
+
+    private fun drawSleepingZzz(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        mascotSize: Float,
+        now: Long
+    ) {
+        val zzzOriginX = cx + mascotSize * 0.28f
+        val zzzOriginY = cy - mascotSize * 0.16f
+        val zCycle = 3200L
+
+        for (i in 0..2) {
+            val offsetNow = now + i * 1050L
+            val phase = (offsetNow % zCycle) / zCycle.toFloat()
+            val x = zzzOriginX + phase * 36f + sin(phase * Math.PI * 2).toFloat() * 10f
+            val y = zzzOriginY - phase * 65f
+            val alpha = (sin(phase * Math.PI).toFloat() * 180).toInt().coerceIn(0, 255)
+            val size = 20f + i * 7f
+
+            zzzPaint.textSize = size
+            zzzPaint.alpha = alpha
+            canvas.drawText("Z", x, y, zzzPaint)
+        }
     }
 
     /**
@@ -484,12 +670,15 @@ class VisualizerView @JvmOverloads constructor(
         mascotSize: Float,
         scaleX: Float,
         scaleY: Float,
-        blinkSquashY: Float,
+        blinkSquashLeft: Float,
+        blinkSquashRight: Float,
         isAmbientSleeping: Boolean
     ) {
+        if (isAmbientSleeping) return
+
         val pulse = 1.0f + 0.05f * sin(breathPhase * 1.5).toFloat()
         val eyeRadiusX = mascotSize * 0.038f * pulse
-        val eyeRadiusY = mascotSize * 0.076f * pulse * blinkSquashY
+        val eyeRadiusY = mascotSize * 0.076f * pulse
 
         // Eye positions in mascot normalized coordinate space (centered at 0, 0)
         // Left eye center: (-0.09375 * mascotSize, -0.039 * mascotSize)
@@ -497,9 +686,20 @@ class VisualizerView @JvmOverloads constructor(
         val eyeOffsetX = mascotSize * 0.09375f
         val eyeOffsetY = -mascotSize * 0.039f
 
-        // Core iris color & bloom based on current state
+        // Core iris color & bloom based on current state and expression
         val (coreColor, glowColor) = when {
             isAmbientSleeping -> 0x5500E5FF.toInt() to 0x2200E5FF.toInt()
+            currentExpression == MascotExpression.CINTA -> 0xFFFF4081.toInt() to 0x55FF80AB.toInt()
+            currentExpression == MascotExpression.MARAH -> 0xFFFF1744.toInt() to 0x55FF5252.toInt()
+            currentExpression == MascotExpression.TERTAWA || currentExpression == MascotExpression.SANGAT_SENANG ->
+                0xFFFFD600.toInt() to 0x55FFAB00.toInt()
+            currentExpression == MascotExpression.KEREN -> 0xFF00E5FF.toInt() to 0x667C4DFF.toInt()
+            currentExpression == MascotExpression.JAHIL -> 0xFF00E676.toInt() to 0x5500B0FF.toInt()
+            currentExpression == MascotExpression.BINGUNG -> 0xFFFFB300.toInt() to 0x55FF8F00.toInt()
+            currentExpression == MascotExpression.SEDIH || currentExpression == MascotExpression.MENANGIS ->
+                0xFF448AFF.toInt() to 0x442979FF.toInt()
+            currentExpression == MascotExpression.TAKUT -> 0xFFCFD8DC.toInt() to 0x4490A4AE.toInt()
+            currentExpression == MascotExpression.MALU -> 0xFFFF80AB.toInt() to 0x55FF4081.toInt()
             currentState == NexoState.LISTENING -> 0xCC00E676.toInt() to 0x5500E676.toInt()
             currentState == NexoState.THINKING -> 0xCCFFB300.toInt() to 0x55FFB300.toInt()
             currentState == NexoState.SPEAKING -> 0xEE00E5FF.toInt() to 0x662979FF.toInt()
@@ -516,24 +716,30 @@ class VisualizerView @JvmOverloads constructor(
         val eyeCy = mascotSize / 2f + eyeOffsetY
 
         // Left Eye Pupil/Iris Radial Gradient Glow
-        eyeRectLeft.set(leftEyeCx - eyeRadiusX, eyeCy - eyeRadiusY, leftEyeCx + eyeRadiusX, eyeCy + eyeRadiusY)
-        eyeGlowPaint.shader = RadialGradient(
-            leftEyeCx, eyeCy, eyeRadiusY.coerceAtLeast(8f),
-            intArrayOf(coreColor, glowColor, 0x00000000),
-            floatArrayOf(0.15f, 0.65f, 1.0f),
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawOval(eyeRectLeft, eyeGlowPaint)
+        if (blinkSquashLeft > 0.15f) {
+            val leftRadiusY = eyeRadiusY * blinkSquashLeft
+            eyeRectLeft.set(leftEyeCx - eyeRadiusX, eyeCy - leftRadiusY, leftEyeCx + eyeRadiusX, eyeCy + leftRadiusY)
+            eyeGlowPaint.shader = RadialGradient(
+                leftEyeCx, eyeCy, leftRadiusY.coerceAtLeast(8f),
+                intArrayOf(coreColor, glowColor, 0x00000000),
+                floatArrayOf(0.15f, 0.65f, 1.0f),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawOval(eyeRectLeft, eyeGlowPaint)
+        }
 
         // Right Eye Pupil/Iris Radial Gradient Glow
-        eyeRectRight.set(rightEyeCx - eyeRadiusX, eyeCy - eyeRadiusY, rightEyeCx + eyeRadiusX, eyeCy + eyeRadiusY)
-        eyeGlowPaint.shader = RadialGradient(
-            rightEyeCx, eyeCy, eyeRadiusY.coerceAtLeast(8f),
-            intArrayOf(coreColor, glowColor, 0x00000000),
-            floatArrayOf(0.15f, 0.65f, 1.0f),
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawOval(eyeRectRight, eyeGlowPaint)
+        if (blinkSquashRight > 0.15f) {
+            val rightRadiusY = eyeRadiusY * blinkSquashRight
+            eyeRectRight.set(rightEyeCx - eyeRadiusX, eyeCy - rightRadiusY, rightEyeCx + eyeRadiusX, eyeCy + rightRadiusY)
+            eyeGlowPaint.shader = RadialGradient(
+                rightEyeCx, eyeCy, rightRadiusY.coerceAtLeast(8f),
+                intArrayOf(coreColor, glowColor, 0x00000000),
+                floatArrayOf(0.15f, 0.65f, 1.0f),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawOval(eyeRectRight, eyeGlowPaint)
+        }
 
         canvas.restore()
     }
@@ -546,15 +752,23 @@ class VisualizerView @JvmOverloads constructor(
         isAmbientSleeping: Boolean
     ) {
         val auraColor = if (isAmbientSleeping) {
-            0x15162B3A.toInt()
+            0x080A1015.toInt()
         } else {
-            when (currentState) {
-                NexoState.IDLE -> 0x33254E98.toInt()
-                NexoState.LISTENING -> 0x4400E5FF.toInt()
-                NexoState.THINKING -> 0x44FFB300.toInt()
-                NexoState.SPEAKING -> 0x5500E5FF.toInt()
-                NexoState.ERROR -> 0x44FF5252.toInt()
-                NexoState.DISCONNECTED -> 0x22333333.toInt()
+            when {
+                currentExpression == MascotExpression.CINTA -> 0x44FF4081.toInt()
+                currentExpression == MascotExpression.MARAH -> 0x44FF1744.toInt()
+                currentExpression == MascotExpression.TERTAWA || currentExpression == MascotExpression.SANGAT_SENANG ->
+                    0x44FFD600.toInt()
+                currentExpression == MascotExpression.KEREN -> 0x4400E5FF.toInt()
+                currentExpression == MascotExpression.JAHIL -> 0x4400E676.toInt()
+                currentExpression == MascotExpression.SEDIH || currentExpression == MascotExpression.MENANGIS ->
+                    0x33448AFF.toInt()
+                currentState == NexoState.LISTENING -> 0x4400E5FF.toInt()
+                currentState == NexoState.THINKING -> 0x44FFB300.toInt()
+                currentState == NexoState.SPEAKING -> 0x5500E5FF.toInt()
+                currentState == NexoState.ERROR -> 0x44FF5252.toInt()
+                currentState == NexoState.DISCONNECTED -> 0x22333333.toInt()
+                else -> 0x33254E98.toInt()
             }
         }
 

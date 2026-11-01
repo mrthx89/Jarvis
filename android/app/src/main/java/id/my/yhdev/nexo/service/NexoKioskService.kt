@@ -82,11 +82,14 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
     private fun publishListening() {
         if (isVoiceEnabled && duplex.canSendAudio) {
             val now = SystemClock.uptimeMillis()
-            if (now - lastListeningChime > 1500L && ::earconManager.isInitialized) {
+            val isSleeping = currentExpression == "sleeping"
+            if (!isSleeping && now - lastListeningChime > 1500L && ::earconManager.isInitialized) {
                 lastListeningChime = now
                 earconManager.playListening()
             }
-            publish(NexoState.LISTENING, "Mikrofon aktif • silakan bicara", "netral")
+            val expr = if (isSleeping) "sleeping" else "netral"
+            val msg = if (isSleeping) "Mode tidur • ucapkan 'Nexo bangun'" else "Mikrofon aktif • silakan bicara"
+            publish(NexoState.LISTENING, msg, expr)
         }
     }
 
