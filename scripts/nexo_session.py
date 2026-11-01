@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -99,12 +100,13 @@ async def cmd_watch(args: argparse.Namespace):
             text = event.get("text", "")
             src = event.get("source", "")
             expr = event.get("expression")
+            clean_text = re.sub(r"\[expr:\s*[a-zA-Z0-9_\s-]+?\s*\]", "", text).strip()
             expr_tag = f" (Mascot: {expr})" if expr else ""
             if role == "user":
                 tag = "👤 USER (Suara Appliance)" if src == "appliance_voice" else "👤 USER (Terminal)"
-                print(f"{prefix}{tag}: {text}")
+                print(f"{prefix}{tag}: {clean_text}")
             elif role == "assistant":
-                print(f"{prefix}🤖 NEXO: {text}{expr_tag}")
+                print(f"{prefix}🤖 NEXO: {clean_text}{expr_tag}")
         elif etype == "state_change":
             state = event.get("state")
             expr = event.get("expression")
@@ -114,8 +116,16 @@ async def cmd_watch(args: argparse.Namespace):
             print(f"{prefix}⚡ STATE: {state}{expr_tag}{msg_tag}")
         elif etype == "cognitive":
             stage = event.get("stage", "thought")
-            content = event.get("content", "")
-            print(f"{prefix}🧠 COGNITIVE ({stage}): {content}")
+            sentence = event.get("sentence") or event.get("content", "")
+            expr = event.get("expression")
+            expr_tag = f" (Mascot: {expr})" if expr else ""
+            clean_sentence = re.sub(r"\[expr:\s*[a-zA-Z0-9_\s-]+?\s*\]", "", sentence).strip()
+            if stage == "streaming" and clean_sentence:
+                idx = event.get("index")
+                idx_str = f" #{idx + 1}" if idx is not None else ""
+                print(f"{prefix}💬 [STREAM{idx_str}] 🤖 NEXO: {clean_sentence}{expr_tag}")
+            elif clean_sentence and stage != "streaming":
+                print(f"{prefix}🧠 COGNITIVE ({stage}): {clean_sentence}")
         elif etype == "appliance_connected":
             dev = event.get("device_id", "appliance")
             print(f"{prefix}🟢 Appliance terhubung: {dev}")
