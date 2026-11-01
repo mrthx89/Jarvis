@@ -93,3 +93,85 @@ def test_circular_buffer_indexing():
     buf.extend(b"ef")  # buffer contains b"cdef"
     assert buf[0] == ord("c")
     assert buf[3] == ord("f")
+
+
+def test_circular_buffer_exact_capacity_boundary():
+    buf = CircularAudioBuffer(capacity=5)
+    # 1. Exactly capacity
+    assert buf.extend(b"12345") == 5
+    assert len(buf) == 5
+    assert buf.get_bytes() == b"12345"
+
+    # 2. Overwrite by 1 byte
+    assert buf.extend(b"6") == 1
+    assert len(buf) == 5
+    assert buf.get_bytes() == b"23456"
+
+    # 3. Clear and write capacity - 1 then 1 byte
+    buf.clear()
+    assert buf.extend(b"ABCD") == 4
+    assert len(buf) == 4
+    assert buf.extend(b"E") == 1
+    assert len(buf) == 5
+    assert buf.get_bytes() == b"ABCDE"
+
+
+def test_circular_buffer_multiple_wraparound_cycles_fuzz():
+    from collections import deque
+    import random
+
+    capacity = 16
+    buf = CircularAudioBuffer(capacity=capacity)
+    reference = deque(maxlen=capacity)
+
+    rng = random.Random(42)
+    for _ in range(300):
+        chunk_len = rng.randint(0, 35)
+        chunk = bytes([rng.randint(0, 255) for _ in range(chunk_len)])
+
+        buf.extend(chunk)
+        reference.extend(chunk)
+
+        assert len(buf) == len(reference)
+        assert buf.get_bytes() == bytes(reference)
+
+
+def test_circular_buffer_negative_indexing_and_slices():
+    buf = CircularAudioBuffer(capacity=8)
+    buf.extend(b"01234567")
+    buf.extend(b"89")  # Now contents are b"23456789"
+    assert buf[-1] == ord("9")
+    assert buf[-2] == ord("8")
+    assert buf[:4] == b"2345"
+    assert buf[4:] == b"6789"
+    assert list(buf) == list(b"23456789")
+
+
+def test_circular_buffer_zero_byte_write_is_noop():
+    buf = CircularAudioBuffer(capacity=6)
+    buf.extend(b"hello")
+    assert buf.extend(b"") == 0
+    assert len(buf) == 5
+    assert buf.get_bytes() == b"hello"
+
+
+def test_circular_buffer_memory_stability():
+    buf = CircularAudioBuffer(capacity=1024)
+    original_id = id(buf._buffer)
+    for i in range(100):
+        buf.extend(b"chunk of audio bytes" * 10)
+        assert id(buf._buffer) == original_id
+    buf.clear()
+    assert id(buf._buffer) == original_id
+
+
+def test_circular_buffer_dual_compatibility():
+    import jarvis_server.gateway.audio_buffer as jarvis_ab
+    import nexo_server.gateway.audio_buffer as nexo_ab
+
+    buf1 = jarvis_ab.CircularAudioBuffer(capacity=10)
+    buf2 = nexo_ab.CircularAudioBuffer(capacity=10)
+    buf1.extend(b"audio_stream")
+    buf2.extend(b"audio_stream")
+    assert buf1.get_bytes() == buf2.get_bytes()
+

@@ -41,7 +41,8 @@
             android:name=".service.NexoKioskService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="microphone" />
+            android:foregroundServiceType="microphone"
+            android:stopWithTask="false" />
 
         <service
             android:name=".service.NexoFirebaseMessagingService"

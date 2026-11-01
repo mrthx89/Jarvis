@@ -98,4 +98,32 @@ class AudioPlayerManagerTest {
             player.release()
         }
     }
+
+    @Test fun boundedQueueRejectsExcessChunksToPreventLatencyBuildup() {
+        val worker = Executors.newSingleThreadExecutor()
+        val writeBlocked = CountDownLatch(1)
+        val player = AudioPlayerManager(
+            worker = worker,
+            maxBufferedBytes = 16,
+            outputFactory = {
+                object : PcmOutput {
+                    override val playbackHeadFrames = 0L
+                    override fun write(data: ByteArray, offset: Int, length: Int): Int {
+                        writeBlocked.await(500, TimeUnit.MILLISECONDS)
+                        return length
+                    }
+                    override fun close() {}
+                }
+            }
+        )
+        try {
+            assertTrue(player.writeChunk(ByteArray(10)))
+            // Exceeds maxBufferedBytes (10 + 10 > 16)
+            assertFalse(player.writeChunk(ByteArray(10)))
+        } finally {
+            writeBlocked.countDown()
+            player.release()
+            worker.awaitTermination(2, TimeUnit.SECONDS)
+        }
+    }
 }

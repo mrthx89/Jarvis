@@ -52,7 +52,13 @@ class EdgeTTS(BaseTTS):
                 for pcm in resampler.resample(frame):
                     yield pcm.to_ndarray().astype("<i2", copy=False).tobytes()
 
-        communicate = edge_tts.Communicate(text, voice or self.default_voice)
+        try:
+            from ..mascot import strip_emotional_tags
+            clean_text = strip_emotional_tags(text)
+        except Exception:
+            clean_text = text
+
+        communicate = edge_tts.Communicate(clean_text, voice or self.default_voice)
         prefix = bytearray()
         header_checked = False
         produced = False

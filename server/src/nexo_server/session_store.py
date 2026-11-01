@@ -10,6 +10,8 @@ from pathlib import Path
 import sqlite3
 import tempfile
 
+from .mascot import strip_emotional_tags
+
 
 def _connect(db_path: Path) -> sqlite3.Connection:
     # as_uri escapes SQLite URI metacharacters in real filenames.
@@ -121,8 +123,13 @@ class HermesAnswerReader:
                 if not rows:
                     return None
                 for mid, content in rows:
-                    if isinstance(content, str) and content.strip() == text.strip():
-                        return mid
+                    if isinstance(content, str):
+                        if content.strip() == text.strip():
+                            return mid
+                        clean_content = strip_emotional_tags(content).strip()
+                        clean_text = strip_emotional_tags(text).strip()
+                        if clean_content and clean_content == clean_text:
+                            return mid
                 before = rows[-1][0]
 
     def read_new(self) -> list[dict]:

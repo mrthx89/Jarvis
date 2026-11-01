@@ -8,7 +8,7 @@ from collections import deque
 import logging
 import time
 
-from .mascot import contextual_expression
+from .mascot import contextual_expression, parse_and_strip_emotional_tags
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,8 @@ class AnswerMirror:
             while True:
                 for row in rows:
                     if row["id"] > self._session_floor and row["id"] != owned_id:
-                        self.pending.append({**row, "queued_at": time.monotonic()})
+                        if not any(p["id"] == row["id"] for p in self.pending):
+                            self.pending.append({**row, "queued_at": time.monotonic()})
                 if through is None or self.reader.cursor >= through:
                     break
                 previous = self.reader.cursor
@@ -79,16 +80,17 @@ class AnswerMirror:
         if not self.pending:
             return
         row = self.pending[0]
-        expression = contextual_expression("", row["text"]).value
+        tag_expr, clean_text = parse_and_strip_emotional_tags(row["text"])
+        expression = tag_expr.value if tag_expr else contextual_expression("", clean_text).value
         # speak_text atomically reserves audio and sends the full final subtitle.
-        if await device.speak_text(row["text"], expression=expression):
+        if await device.speak_text(clean_text, expression=expression):
             # A disconnect may have invalidated this row while speech yielded.
             if not self.pending or self.pending[0] is not row:
                 return
             self.pending.popleft()
             self.hub.publish_event({
                 "type": "transcription", "role": "assistant",
-                "text": row["text"], "expression": expression,
+                "text": clean_text, "expression": expression,
                 "source": "terminal_mirror", "message_id": row["id"],
             })
 

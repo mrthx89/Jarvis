@@ -21,7 +21,12 @@ from ..pipeline.vad import EnergyVAD
 from ..pipeline.stt import BaseSTT
 from ..pipeline.tts import BaseTTS
 from ..hermes.agent_bridge import HermesBridge
-from ..mascot import contextual_expression, parse_expression_command
+from ..mascot import (
+    contextual_expression,
+    parse_expression_command,
+    parse_and_strip_emotional_tags,
+    strip_emotional_tags,
+)
 from .audio_buffer import CircularAudioBuffer, CircularRingBuffer
 from .mp3_frame import parse_audio_duration, parse_mp3_duration
 from ..hermes.sentence_chunker import split_into_sentences
@@ -172,21 +177,24 @@ class ApplianceSession:
             return False
         self._external_speech = True
         try:
+            tag_expr, clean_text = parse_and_strip_emotional_tags(text)
+            resolved_expr = tag_expr.value if tag_expr else (expression or "senang")
             await self.send_json_message(
-                TranscriptionMessage(role="assistant", text=text, is_final=True)
+                TranscriptionMessage(role="assistant", text=clean_text, is_final=True)
             )
-            return await self._speak_text_owned(text, expression)
+            return await self._speak_text_owned(clean_text, resolved_expr)
         finally:
             self._external_speech = False
 
     async def _speak_text_owned(self, text: str, expression: Optional[str]) -> bool:
-        speech_expr = expression or "senang"
+        tag_expr, clean_text = parse_and_strip_emotional_tags(text)
+        speech_expr = tag_expr.value if tag_expr else (expression or "senang")
         await self.send_state(NexoState.SPEAKING, expression=speech_expr)
         await self.send_json_message(TTSStart())
         self._tts_started = True
 
         try:
-            async for chunk in self.tts.synthesize_stream(text):
+            async for chunk in self.tts.synthesize_stream(clean_text):
                 await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
                 self._playback_until = max(time.monotonic(), self._playback_until) + parse_audio_duration(chunk)
                 amp = self.vad.get_normalized_amplitude(chunk)
@@ -397,11 +405,19 @@ class ApplianceSession:
                 clean_sentence = sentence.strip()
                 if not clean_sentence:
                     continue
+                tag_expr, clean_sentence = parse_and_strip_emotional_tags(clean_sentence)
+                if not clean_sentence:
+                    continue
                 collected_sentences.append(clean_sentence)
 
-                if speech_expr is None:
+                if tag_expr:
+                    speech_expr = tag_expr.value
+                    await self.send_state(NexoState.SPEAKING, expression=speech_expr)
+                elif speech_expr is None:
                     speech_expr = contextual_expression(transcription, clean_sentence).value
                     await self.send_state(NexoState.SPEAKING, expression=speech_expr)
+
+                if not self._tts_started:
                     await self.send_json_message(TTSStart())
                     self._tts_started = True
 
@@ -410,7 +426,9 @@ class ApplianceSession:
                         "type": "cognitive",
                         "stage": "streaming",
                         "sentence": clean_sentence,
+                        "content": clean_sentence,
                         "index": len(collected_sentences) - 1,
+                        "expression": speech_expr,
                     })
 
                 async for chunk in self.tts.synthesize_stream(clean_sentence):
@@ -440,17 +458,18 @@ class ApplianceSession:
                     })
         else:
             agent_reply = await self.hermes.query(transcription)
-            logger.info("Agent complete for %s (%d characters)", self.session_id, len(agent_reply))
-            speech_expr = contextual_expression(transcription, agent_reply).value
+            tag_expr, clean_reply = parse_and_strip_emotional_tags(agent_reply)
+            speech_expr = tag_expr.value if tag_expr else contextual_expression(transcription, clean_reply).value
+            logger.info("Agent complete for %s (%d characters)", self.session_id, len(clean_reply))
 
             await self.send_json_message(
-                TranscriptionMessage(role="assistant", text=agent_reply, is_final=True)
+                TranscriptionMessage(role="assistant", text=clean_reply, is_final=True)
             )
             if self.hub:
                 self.hub.publish_event({
                     "type": "transcription",
                     "role": "assistant",
-                    "text": agent_reply,
+                    "text": clean_reply,
                     "expression": speech_expr,
                     "source": "nexo_hermes",
                 })
@@ -459,9 +478,9 @@ class ApplianceSession:
             await self.send_json_message(TTSStart())
             self._tts_started = True
 
-            sentences = split_into_sentences(agent_reply)
+            sentences = split_into_sentences(clean_reply)
             if not sentences:
-                sentences = [agent_reply]
+                sentences = [clean_reply]
 
             for sentence in sentences:
                 async for chunk in self.tts.synthesize_stream(sentence):

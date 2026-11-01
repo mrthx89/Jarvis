@@ -18,12 +18,14 @@ enum class MascotExpression(val drawableRes: Int, val idName: String) {
     MARAH(R.drawable.mascot_marah, "marah"),
     MENANGIS(R.drawable.mascot_menangis, "menangis"),
     SEDIH(R.drawable.mascot_sedih, "sedih"),
-    TAKUT(R.drawable.mascot_takut, "takut");
+    TAKUT(R.drawable.mascot_takut, "takut"),
+    SLEEPING(R.drawable.mascot_sleeping, "sleeping");
 
     companion object {
         fun fromString(name: String?): MascotExpression {
             if (name == null) return NETRAL
             val normalized = name.lowercase().replace("-", "_")
+            if (normalized == "tidur") return SLEEPING
             return entries.find { it.idName == normalized } ?: NETRAL
         }
     }

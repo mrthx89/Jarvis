@@ -7,7 +7,12 @@ import time
 from typing import Any, Dict, List, Optional, Set
 
 from .models.messages import NexoState
-from .mascot import contextual_expression, parse_expression_command
+from .mascot import (
+    contextual_expression,
+    parse_expression_command,
+    parse_and_strip_emotional_tags,
+    strip_emotional_tags,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -175,16 +180,65 @@ class SessionHub:
                 "stage": "thinking",
                 "content": f"Querying Hermes in session '{target_session}'...",
             })
+            reply = ""
+            expr = "netral"
             if self._hermes_bridge:
                 import inspect
-                sig = inspect.signature(self._hermes_bridge.query)
-                if "session_name" in sig.parameters:
-                    reply = await self._hermes_bridge.query(message, session_name=target_session)
-                else:
-                    reply = await self._hermes_bridge.query(message)
+                used_stream = False
+                stream_fn = getattr(self._hermes_bridge, "query_stream", None)
+                if stream_fn and inspect.isasyncgenfunction(stream_fn):
+                    try:
+                        sig = inspect.signature(stream_fn)
+                        if "session_name" in sig.parameters:
+                            gen = stream_fn(message, session_name=target_session)
+                        else:
+                            gen = stream_fn(message)
+
+                        collected = []
+                        speech_expr = None
+                        async for sentence in gen:
+                            clean_sentence = sentence.strip()
+                            if not clean_sentence:
+                                continue
+                            tag_expr, clean_sentence = parse_and_strip_emotional_tags(clean_sentence)
+                            if not clean_sentence:
+                                continue
+                            collected.append(clean_sentence)
+                            if tag_expr:
+                                speech_expr = tag_expr.value
+                            elif speech_expr is None:
+                                speech_expr = contextual_expression(message, clean_sentence).value
+
+                            self.publish_event({
+                                "type": "cognitive",
+                                "stage": "streaming",
+                                "sentence": clean_sentence,
+                                "content": clean_sentence,
+                                "index": len(collected) - 1,
+                                "expression": speech_expr,
+                            })
+
+                        raw_reply = " ".join(collected).strip()
+                        tag_expr, reply = parse_and_strip_emotional_tags(raw_reply)
+                        if tag_expr:
+                            speech_expr = tag_expr.value
+                        expr = speech_expr or contextual_expression(message, reply).value
+                        used_stream = True
+                    except Exception as e:
+                        logger.warning("query_stream failed in inject_message, falling back to query: %s", e)
+                        used_stream = False
+
+                if not used_stream:
+                    sig = inspect.signature(self._hermes_bridge.query)
+                    if "session_name" in sig.parameters:
+                        raw_reply = await self._hermes_bridge.query(message, session_name=target_session)
+                    else:
+                        raw_reply = await self._hermes_bridge.query(message)
+                    tag_expr, reply = parse_and_strip_emotional_tags(raw_reply)
+                    expr = tag_expr.value if tag_expr else contextual_expression(message, reply).value
             else:
                 reply = "Hermes bridge belum diinisialisasi."
-            expr = contextual_expression(message, reply).value
+                expr = "netral"
 
         # 3. Publish assistant transcription event
         self.publish_event({

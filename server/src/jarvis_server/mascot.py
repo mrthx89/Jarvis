@@ -7,6 +7,7 @@ mixed tasks fall through to the agent. No input is interpolated into replies.
 
 from enum import Enum
 import re
+from typing import Optional
 
 
 class MascotExpression(str, Enum):
@@ -26,6 +27,7 @@ class MascotExpression(str, Enum):
     MENANGIS = "menangis"
     SEDIH = "sedih"
     TAKUT = "takut"
+    SLEEPING = "sleeping"
 
 
 # Filler may occur before/after one wakeword; the entire string must match.
@@ -43,10 +45,15 @@ _TARGET = re.compile(
 _LABEL_ALIASES = {
     "normal": "netral",
     "bahagia": "senang",
+    "gembira": "senang",
+    "senyum": "senang",
+    "lucu": "tertawa",
     "ngantuk": "mengantuk",
     "kaget": "terkejut",
     "seti": "sedih",
     "optimis": "sangat_senang",
+    "tidur": "sleeping",
+    "sleep": "sleeping",
 }
 _ACTIONS = {
     "senyum": MascotExpression.SENANG,
@@ -57,7 +64,58 @@ _ACTIONS = {
     "berkedip": MascotExpression.MENGEDIP,
     "kembali normal": MascotExpression.NETRAL,
     "jangan sedih": MascotExpression.SENANG,
+    "tidur": MascotExpression.SLEEPING,
 }
+
+EMOTIONAL_TAG_PATTERN = re.compile(r"\[expr:\s*([a-zA-Z0-9_\s-]+?)\s*\]", re.IGNORECASE)
+
+
+def parse_and_strip_emotional_tags(text: str) -> tuple[Optional[MascotExpression], str]:
+    """Parse explicit emotional tags [expr:...] from text and strip them.
+
+    Returns:
+        (expression, clean_text): The first recognized MascotExpression (or None),
+        and the text with all [expr:...] tags removed and whitespace normalized.
+    """
+    if not text:
+        return None, ""
+
+    first_expression: Optional[MascotExpression] = None
+
+    def _replace_tag(match: re.Match) -> str:
+        nonlocal first_expression
+        raw_label = match.group(1).strip().lower().replace("-", "_").replace(" ", "_")
+        target_label = _LABEL_ALIASES.get(raw_label, raw_label)
+        try:
+            expr = MascotExpression(target_label)
+            if first_expression is None:
+                first_expression = expr
+        except ValueError:
+            pass
+        return ""
+
+    cleaned = EMOTIONAL_TAG_PATTERN.sub(_replace_tag, text)
+    # Clean up whitespace: normalize intra-line spaces and remove spacing before punctuation
+    lines = []
+    for line in cleaned.splitlines():
+        line_clean = re.sub(r"[ \t]+", " ", line).strip()
+        line_clean = re.sub(r"\s+([.,!?;:])", r"\1", line_clean)
+        lines.append(line_clean)
+
+    result_text = "\n".join(l for l in lines if l).strip()
+    return first_expression, result_text
+
+
+def parse_emotional_tag(text: str) -> Optional[MascotExpression]:
+    """Extract the first recognized emotional tag [expr:...] from text."""
+    expr, _ = parse_and_strip_emotional_tags(text)
+    return expr
+
+
+def strip_emotional_tags(text: str) -> str:
+    """Remove all emotional tags [expr:...] from text."""
+    _, clean = parse_and_strip_emotional_tags(text)
+    return clean
 
 
 def parse_expression_command(text: str) -> MascotExpression | None:

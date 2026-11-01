@@ -145,35 +145,59 @@ def test_nexo_dual_compatibility_all_modules():
     import nexo_server.pipeline.stt
     import nexo_server.pipeline.tts
     import nexo_server.hermes.agent_bridge
+    import nexo_server.hermes.sentence_chunker
     import nexo_server.gateway.websocket_handler
+    import nexo_server.gateway.audio_buffer
+    import nexo_server.gateway.mp3_frame
     import nexo_server.telegram_command
     import nexo_server.telegram_provision
     import nexo_server.main
 
-    import nexo_server
-    import nexo_server.config
-    import nexo_server.auth
-    import nexo_server.mascot
-    import nexo_server.models.messages
-    import nexo_server.pipeline.vad
-    import nexo_server.pipeline.stt
-    import nexo_server.pipeline.tts
-    import nexo_server.hermes.agent_bridge
-    import nexo_server.gateway.websocket_handler
-    import nexo_server.telegram_command
-    import nexo_server.telegram_provision
-    import nexo_server.main
+    import jarvis_server
+    import jarvis_server.config
+    import jarvis_server.auth
+    import jarvis_server.mascot
+    import jarvis_server.models.messages
+    import jarvis_server.pipeline.vad
+    import jarvis_server.pipeline.stt
+    import jarvis_server.pipeline.tts
+    import jarvis_server.hermes.agent_bridge
+    import jarvis_server.hermes.sentence_chunker
+    import jarvis_server.gateway.websocket_handler
+    import jarvis_server.gateway.audio_buffer
+    import jarvis_server.gateway.mp3_frame
+    import jarvis_server.telegram_command
+    import jarvis_server.telegram_provision
+    import jarvis_server.main
 
-    assert nexo_server.__version__ == nexo_server.__version__
+    assert nexo_server.__version__ == jarvis_server.__version__
     assert hasattr(nexo_server.config, "AppConfig")
+    assert hasattr(jarvis_server.config, "AppConfig")
     assert hasattr(nexo_server.auth, "DeviceRegistry")
+    assert hasattr(jarvis_server.auth, "DeviceRegistry")
     assert hasattr(nexo_server.mascot, "MascotExpression")
+    assert hasattr(jarvis_server.mascot, "MascotExpression")
     assert hasattr(nexo_server.models.messages, "ClientHello")
+    assert hasattr(jarvis_server.models.messages, "ClientHello")
     assert hasattr(nexo_server.pipeline.vad, "EnergyVAD")
+    assert hasattr(jarvis_server.pipeline.vad, "EnergyVAD")
     assert hasattr(nexo_server.pipeline.stt, "FasterWhisperSTT")
+    assert hasattr(jarvis_server.pipeline.stt, "FasterWhisperSTT")
     assert hasattr(nexo_server.pipeline.tts, "EdgeTTS")
+    assert hasattr(jarvis_server.pipeline.tts, "EdgeTTS")
     assert hasattr(nexo_server.hermes.agent_bridge, "HermesBridge")
+    assert hasattr(jarvis_server.hermes.agent_bridge, "HermesBridge")
+    assert hasattr(nexo_server.hermes.sentence_chunker, "split_into_sentences")
+    assert hasattr(jarvis_server.hermes.sentence_chunker, "split_into_sentences")
     assert hasattr(nexo_server.gateway.websocket_handler, "ApplianceSession")
+    assert hasattr(jarvis_server.gateway.websocket_handler, "ApplianceSession")
+    assert hasattr(nexo_server.gateway.audio_buffer, "CircularAudioBuffer")
+    assert hasattr(jarvis_server.gateway.audio_buffer, "CircularAudioBuffer")
+    assert hasattr(nexo_server.gateway.mp3_frame, "parse_mp3_header")
+    assert hasattr(jarvis_server.gateway.mp3_frame, "parse_mp3_header")
     assert hasattr(nexo_server.telegram_command, "read_settings")
+    assert hasattr(jarvis_server.telegram_command, "read_settings")
     assert hasattr(nexo_server.telegram_provision, "handle_command")
+    assert hasattr(jarvis_server.telegram_provision, "handle_command")
     assert hasattr(nexo_server.main, "app")
+    assert hasattr(jarvis_server.main, "app")

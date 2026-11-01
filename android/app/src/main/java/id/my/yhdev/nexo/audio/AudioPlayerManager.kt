@@ -76,11 +76,13 @@ class AudioPlayerManager internal constructor(
     private val worker: ExecutorService = Executors.newSingleThreadExecutor(),
     private val outputFactory: () -> PcmOutput = { createPcmOutput(sampleRate) },
     private val nowNanos: () -> Long = System::nanoTime,
-    private val sleep: (Long) -> Unit = Thread::sleep
+    private val sleep: (Long) -> Unit = Thread::sleep,
+    private val maxBufferedBytes: Int = 120_000
 ) {
     private var output: PcmOutput? = null
     private val generation = AtomicInteger(0)
     private val released = AtomicBoolean(false)
+    private val queuedBytes = AtomicInteger(0)
     @Volatile private var isPlaying = false
     private var failed = false // worker-confined; only explicit stop/reconnect resets failure
     private var framesWritten = 0L
@@ -111,18 +113,28 @@ class AudioPlayerManager internal constructor(
         }
     }
 
-    fun writeChunk(data: ByteArray) {
+    fun writeChunk(data: ByteArray): Boolean {
         val token = generation.get()
+        if (queuedBytes.get() + data.size > maxBufferedBytes) {
+            Log.w("AudioPlayerManager", "Audio buffer queue full (${queuedBytes.get()} bytes); dropping chunk to bound latency")
+            return false
+        }
+        queuedBytes.addAndGet(data.size)
         worker.execute {
-            if (!current(token)) return@execute
             try {
-                startTrack()
-                writePcmChunk(data, { current(token) }, output!!::write, nowNanos, sleep,
-                    onWritten = { framesWritten += it / 2 })
-            } catch (e: Exception) {
-                fail(token, e)
+                if (!current(token)) return@execute
+                try {
+                    startTrack()
+                    writePcmChunk(data, { current(token) }, output!!::write, nowNanos, sleep,
+                        onWritten = { framesWritten += it / 2 })
+                } catch (e: Exception) {
+                    fail(token, e)
+                }
+            } finally {
+                queuedBytes.addAndGet(-data.size)
             }
         }
+        return true
     }
 
     /** tts_end means no more network data, not that queued hardware audio has finished. */
@@ -154,6 +166,7 @@ class AudioPlayerManager internal constructor(
         output = null
         isPlaying = false
         framesWritten = 0
+        queuedBytes.set(0)
         try { track?.close() }
         catch (e: Exception) { Log.w("AudioPlayerManager", "Error stopping AudioTrack: ${e.message}") }
     }
@@ -161,15 +174,23 @@ class AudioPlayerManager internal constructor(
     fun stop() {
         if (released.get()) return
         generation.incrementAndGet()
+        queuedBytes.set(0)
         worker.execute { stopTrack(); failed = false }
     }
 
     fun release() {
         if (!released.compareAndSet(false, true)) return
         generation.incrementAndGet()
+        queuedBytes.set(0)
         worker.execute { stopTrack() }
         worker.shutdown()
     }
 
     fun isPlaying(): Boolean = isPlaying
+
+    fun getQueuedBytes(): Int = queuedBytes.get()
+
+    fun getMaxBufferedBytes(): Int = maxBufferedBytes
+
+    fun isQueueFull(): Boolean = queuedBytes.get() >= maxBufferedBytes
 }

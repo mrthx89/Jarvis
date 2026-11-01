@@ -335,9 +335,13 @@ class NexoSessionClient:
             # Standalone fallback: execute directly via Hermes CLI
             logger.info("Nexo server unreachable; invoking Hermes CLI directly in session '%s'", target_session)
             reply = await self._query_hermes_direct(message, session_name=target_session)
+            tag_match = re.search(r"\[expr:\s*([a-zA-Z0-9_\s-]+?)\s*\]", reply, re.IGNORECASE)
+            expr = tag_match.group(1).strip().lower() if tag_match else None
+            clean_reply = re.sub(r"\[expr:\s*[a-zA-Z0-9_\s-]+?\s*\]", "", reply).strip()
             return {
                 "status": "ok",
-                "reply": reply,
+                "reply": clean_reply,
+                "expression": expr,
                 "spoken": speak,
                 "device_spoken": False,
                 "session_name": target_session,
@@ -519,8 +523,21 @@ class NexoSessionClient:
                     print(f"\n[{tag}] {text}")
                 elif role == "assistant":
                     expr = event.get("expression")
+                    clean_text = re.sub(r"\[expr:\s*[a-zA-Z0-9_\s-]+?\s*\]", "", text).strip()
                     expr_tag = f" (Mascot: {expr})" if expr else ""
-                    print(f"[{'🤖 NEXO'}] {text}{expr_tag}")
+                    print(f"[{'🤖 NEXO'}] {clean_text}{expr_tag}")
+            elif event_type == "cognitive":
+                stage = event.get("stage", "thought")
+                sentence = event.get("sentence") or event.get("content", "")
+                expr = event.get("expression")
+                expr_tag = f" (Mascot: {expr})" if expr else ""
+                clean_sentence = re.sub(r"\[expr:\s*[a-zA-Z0-9_\s-]+?\s*\]", "", sentence).strip()
+                if stage == "streaming" and clean_sentence:
+                    idx = event.get("index")
+                    idx_str = f" #{idx + 1}" if idx is not None else ""
+                    print(f"💬 [STREAM{idx_str}] 🤖 NEXO: {clean_sentence}{expr_tag}")
+                elif clean_sentence and stage != "streaming":
+                    print(f"🧠 [COGNITIVE: {stage}] {clean_sentence}")
             elif event_type == "state_change":
                 state = event.get("state")
                 expr = event.get("expression")

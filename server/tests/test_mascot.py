@@ -34,6 +34,11 @@ import pytest
     ("Tolong Nexo, tersenyum dong!", "senang"),
     ("Nexo tolong tampilkan ekspresi sangat senang ya.", "sangat_senang"),
     ("Nexo tersenyum", "senang"),
+    ("ekspresi tidur", "sleeping"),
+    ("ubah ekspresi ke tidur", "sleeping"),
+    ("tampilkan ekspresi sleeping", "sleeping"),
+    ("Nexo, tidur", "sleeping"),
+    ("coba tidur", "sleeping"),
 ])
 def test_supported_standalone_commands(text, expected):
     from nexo_server.mascot import MascotExpression, parse_expression_command
@@ -106,3 +111,20 @@ def test_mascot_dual_compatibility():
     assert hasattr(legacy_mascot, "MascotExpression")
     assert legacy_mascot.parse_expression_command("Nexo tersenyum") == "senang"
     assert legacy_mascot.parse_expression_command("Nexo tersenyum") == "senang"
+
+
+def test_parse_and_strip_emotional_tags():
+    from nexo_server.mascot import parse_and_strip_emotional_tags, MascotExpression  # type: ignore
+
+    expr, text = parse_and_strip_emotional_tags("[expr: senang] Halo kawan, selamat pagi!")
+    assert expr == MascotExpression.SENANG
+    assert text == "Halo kawan, selamat pagi!"
+
+    expr_sleep, text_sleep = parse_and_strip_emotional_tags("[expr: tidur] Waktunya beristirahat.")
+    assert expr_sleep == MascotExpression.SLEEPING
+    assert text_sleep == "Waktunya beristirahat."
+
+    expr_none, text_clean = parse_and_strip_emotional_tags("Halo tanpa tag emosi.")
+    assert expr_none is None
+    assert text_clean == "Halo tanpa tag emosi."
+

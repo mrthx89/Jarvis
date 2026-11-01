@@ -10,17 +10,25 @@ class HalfDuplexGate {
     @Volatile var playbackPending = false
         private set
 
+    // Individual volatile fields are not an atomic snapshot. The capture thread
+    // must observe a complete transition, not half of connected()/disconnected().
     val canSendAudio: Boolean
-        get() = ready && microphone && !playbackPending &&
+        @Synchronized get() = ready && microphone && !playbackPending &&
             (state == NexoState.IDLE || state == NexoState.LISTENING)
 
-    fun connected() { ready = true; microphone = false; state = NexoState.IDLE }
-    fun disconnected() { ready = false; microphone = false; playbackPending = false; state = NexoState.DISCONNECTED }
-    fun microphoneReady(ready: Boolean) { microphone = ready }
-    fun stateChanged(state: NexoState) { this.state = state }
-    fun ttsStarted() { playbackPending = true }
-    fun playbackDrained() { playbackPending = false }
+    @Synchronized fun connected() {
+        if (ready) return // Duplicate acknowledgement must not reopen a busy turn.
+        microphone = false
+        state = NexoState.IDLE
+        playbackPending = false
+        ready = true
+    }
+    @Synchronized fun disconnected() { ready = false; microphone = false; playbackPending = false; state = NexoState.DISCONNECTED }
+    @Synchronized fun microphoneReady(ready: Boolean) { microphone = ready }
+    @Synchronized fun stateChanged(state: NexoState) { this.state = state }
+    @Synchronized fun ttsStarted() { playbackPending = true }
+    @Synchronized fun playbackDrained() { playbackPending = false }
 
     /** A failed output ends the turn, but only a new handshake may re-enable capture. */
-    fun playbackFailed() { disconnected() }
+    @Synchronized fun playbackFailed() { disconnected() }
 }

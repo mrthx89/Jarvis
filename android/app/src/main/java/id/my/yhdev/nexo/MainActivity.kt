@@ -54,7 +54,56 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
     private lateinit var copyReply: androidx.appcompat.widget.AppCompatImageButton
     private var lastAssistantReply = ""
     private lateinit var ivStatusLed: android.widget.ImageView
+    private lateinit var pillStatus: View
     private lateinit var remoteConfigManager: RemoteConfigManager
+
+    // HUD Pixel-Shifting for OLED/IPS Burn-In Protection (2-3px every 3-5 minutes)
+    private val hudShiftOffsets = arrayOf(
+        0f to 0f, 2f to 0f, 2f to 2f, 0f to 2f, -2f to 1f, -1f to -2f, 1f to -2f, 2f to -1f
+    )
+    private var hudShiftIndex = 0
+    private val pixelShiftRunnable = object : Runnable {
+        override fun run() {
+            if (isDestroyed || !uiActive) return
+            hudShiftIndex = (hudShiftIndex + 1) % hudShiftOffsets.size
+            val (dx, dy) = hudShiftOffsets[hudShiftIndex]
+            if (::pillStatus.isInitialized) {
+                pillStatus.animate().translationX(dx).translationY(dy).setDuration(2200).start()
+            }
+            if (::toggleVoice.isInitialized) {
+                toggleVoice.animate().translationX(dx).translationY(dy).setDuration(2200).start()
+            }
+            if (::voiceMood.isInitialized) {
+                voiceMood.animate().translationX(dx).translationY(dy).setDuration(2200).start()
+            }
+            if (::consoleCard.isInitialized) {
+                consoleCard.animate().translationX(dx).translationY(dy).setDuration(2200).start()
+            }
+            uiHandler.postDelayed(this, 210_000L) // 3.5 minutes
+        }
+    }
+
+    // Inactivity & Ambient Sleep Dimming (> 5 minutes idle)
+    private var lastInteractionTime = SystemClock.uptimeMillis()
+    private val ambientCheckRunnable = object : Runnable {
+        override fun run() {
+            if (isDestroyed || !uiActive) return
+            val idleDuration = SystemClock.uptimeMillis() - lastInteractionTime
+            val isIdleQuiet = lastState == NexoState.IDLE || lastState == NexoState.DISCONNECTED
+            val targetAlpha = if (isIdleQuiet && idleDuration > 300_000L) 0.42f else 1.0f
+            if (::pillStatus.isInitialized && pillStatus.alpha != targetAlpha) {
+                pillStatus.animate().alpha(targetAlpha).setDuration(1200).start()
+            }
+            uiHandler.postDelayed(this, 30_000L)
+        }
+    }
+
+    private fun resetActivity() {
+        lastInteractionTime = SystemClock.uptimeMillis()
+        if (::pillStatus.isInitialized && pillStatus.alpha < 0.95f) {
+            pillStatus.animate().alpha(1.0f).setDuration(400).start()
+        }
+    }
 
     private var kioskService: NexoKioskService? = null
     private var isBound = false
@@ -153,6 +202,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemUI()
 
+        pillStatus = findViewById(R.id.pillStatus)
         visualizerView = findViewById(R.id.visualizerView)
         tvStatus = findViewById(R.id.tvStatus)
         tvStatus.setOnLongClickListener { showCredentialSetup(); true }
@@ -164,6 +214,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         visualizerView.setVoiceEnabled(false, animateReaction = false)
         toggleVoice = findViewById(R.id.toggleVoice)
         toggleVoice.setOnClickListener {
+            resetActivity()
             val service = kioskService ?: return@setOnClickListener
             if (service.isVoiceEnabled) service.stopVoice() else service.startVoice()
         }
@@ -239,14 +290,22 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         bindingRequested = true
         onStateChanged(NexoState.DISCONNECTED, "Memulai layanan suara...", null)
         val serviceIntent = Intent(this, NexoKioskService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
-        if (!bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            if (!bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)) {
+                bindingRequested = false
+                onStateChanged(NexoState.ERROR, "Layanan suara gagal dihubungkan.", null)
+            }
+        } catch (e: SecurityException) {
             bindingRequested = false
-            onStateChanged(NexoState.ERROR, "Layanan suara gagal dihubungkan.", null)
+            onStateChanged(NexoState.ERROR, "Izin mikrofon diperlukan • buka ulang aplikasi untuk melanjutkan.", null)
+        } catch (e: IllegalStateException) {
+            bindingRequested = false
+            onStateChanged(NexoState.ERROR, "Android membatasi layanan latar belakang • buka ulang aplikasi.", null)
         }
     }
 
@@ -254,12 +313,18 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         super.onResume()
         uiActive = true
         renderVoiceMood()
+        uiHandler.removeCallbacks(pixelShiftRunnable)
+        uiHandler.postDelayed(pixelShiftRunnable, 210_000L)
+        uiHandler.removeCallbacks(ambientCheckRunnable)
+        uiHandler.postDelayed(ambientCheckRunnable, 30_000L)
         hideSystemUI()
     }
 
     override fun onStop() {
         uiActive = false
         uiHandler.removeCallbacks(hideVoiceMood)
+        uiHandler.removeCallbacks(pixelShiftRunnable)
+        uiHandler.removeCallbacks(ambientCheckRunnable)
         super.onStop()
     }
 
@@ -289,6 +354,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
 
     override fun onStateChanged(state: NexoState, message: String?, expression: String?) {
         runOnUiThread {
+            resetActivity()
             lastState = state
             lastMessage = message
             lastExpression = expression
@@ -375,6 +441,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
 
     override fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean) {
         runOnUiThread {
+            resetActivity()
             hasTranscription = true
             tvSubtitle.text = text
             tvSubtitle.scrollTo(0, 0)
@@ -390,6 +457,8 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
 
     override fun onDestroy() {
         uiHandler.removeCallbacks(hideVoiceMood)
+        uiHandler.removeCallbacks(pixelShiftRunnable)
+        uiHandler.removeCallbacks(ambientCheckRunnable)
         super.onDestroy()
         credentialSheet?.dismiss()
         credentialSheet = null

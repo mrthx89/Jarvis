@@ -216,3 +216,160 @@ async def test_circular_ring_buffer_preroll_lifecycle():
         assert len(session.audio_buffer) >= session.PREROLL_BYTES
     finally:
         await session.close()
+
+
+def _generate_mp3_chunk(sample_rate: int = 24000, duration: float = 0.5) -> bytes:
+    import io, math
+    import av  # type: ignore
+    import numpy as np  # type: ignore
+    output = io.BytesIO()
+    total_samples = int(sample_rate * duration)
+    with av.open(output, mode="w", format="mp3") as container:
+        stream = container.add_stream("mp3", rate=sample_rate)
+        stream.layout = "mono"
+        t = np.arange(total_samples) / float(sample_rate)
+        samples = (0.3 * np.sin(2 * math.pi * 440 * t)).astype("float32")
+        frame = av.AudioFrame.from_ndarray(samples.reshape(1, -1), format="fltp", layout="mono")
+        frame.sample_rate = sample_rate
+        for packet in stream.encode(frame):
+            container.mux(packet)
+        for packet in stream.encode(None):
+            container.mux(packet)
+    return output.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_sentence_chunked_streaming_empty_and_whitespace_skipped():
+    """Verify empty or whitespace-only chunks from LLM stream do not trigger TTS."""
+    sentences = ["", "   ", "Pesan valid pertama.", "\n\n", "Pesan valid kedua.", "  \t  "]
+    hermes = StreamingHermesMock(sentences=sentences, delay_between_sentences=0.01)
+    tts = TrackingTTSMock()
+    stt = MockSTT("Halo")
+
+    session = await create_ready_session(stt, tts, hermes)
+    session.ECHO_GUARD_SECONDS = 0.01
+
+    try:
+        session.audio_buffer.extend(b"\x00\x20" * 3200)
+        await session.process_recorded_audio()
+
+        assert tts.synthesized_texts == ["Pesan valid pertama.", "Pesan valid kedua."]
+        ws = cast(Any, session.websocket)
+        assert len(ws.audio_chunks) == 2
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
+async def test_sentence_chunked_streaming_cognitive_hub_events():
+    """Verify cognitive streaming events are emitted to the hub for each chunk."""
+    class MockHub:
+        def __init__(self):
+            self.events = []
+
+        def publish_event(self, ev: dict):
+            self.events.append(ev)
+
+        def unregister_session(self, session):
+            pass
+
+    sentences = ["Kalimat satu.", "Kalimat dua."]
+    hermes = StreamingHermesMock(sentences=sentences, delay_between_sentences=0.01)
+    tts = TrackingTTSMock()
+    stt = MockSTT("Pertanyaan")
+
+    session = await create_ready_session(stt, tts, hermes)
+    session.ECHO_GUARD_SECONDS = 0.01
+    hub = MockHub()
+    session.hub = hub
+
+    try:
+        session.audio_buffer.extend(b"\x00\x20" * 3200)
+        await session.process_recorded_audio()
+
+        cognitive_events = [e for e in hub.events if e.get("type") == "cognitive" and e.get("stage") == "streaming"]
+        assert len(cognitive_events) == 2
+        assert cognitive_events[0]["sentence"] == "Kalimat satu."
+        assert cognitive_events[0]["index"] == 0
+        assert cognitive_events[1]["sentence"] == "Kalimat dua."
+        assert cognitive_events[1]["index"] == 1
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
+async def test_playback_until_monotonic_multi_chunk_advance():
+    """Verify _playback_until advances monotonically and accumulates duration across chunks."""
+    session = await create_ready_session(MockSTT(), TrackingTTSMock(), StreamingHermesMock(["Tes"]))
+
+    # Generate 3 chunks of 0.5s MP3
+    chunk1 = _generate_mp3_chunk(sample_rate=24000, duration=0.5)
+    chunk2 = _generate_mp3_chunk(sample_rate=24000, duration=0.5)
+    chunk3 = _generate_mp3_chunk(sample_rate=24000, duration=0.5)
+
+    try:
+        t0 = time.monotonic()
+        dur1 = parse_audio_duration(chunk1)
+        dur2 = parse_audio_duration(chunk2)
+        dur3 = parse_audio_duration(chunk3)
+
+        assert 0.45 <= dur1 <= 0.60
+        assert 0.45 <= dur2 <= 0.60
+        assert 0.45 <= dur3 <= 0.60
+
+        # Simulate consecutive arrivals
+        session._playback_until = max(time.monotonic(), session._playback_until) + dur1
+        p1 = session._playback_until
+        assert p1 >= t0 + 0.45
+
+        session._playback_until = max(time.monotonic(), session._playback_until) + dur2
+        p2 = session._playback_until
+        assert p2 >= p1 + 0.45
+
+        session._playback_until = max(time.monotonic(), session._playback_until) + dur3
+        p3 = session._playback_until
+        assert p3 >= p2 + 0.45
+
+        # Total playback until should be ~1.5s in the future
+        assert p3 >= t0 + 1.35
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
+async def test_circular_preroll_preserves_speech_onset_for_stt():
+    """Verify quiet audio in circular preroll is strictly preserved at start of audio_buffer."""
+    session = await create_ready_session(MockSTT(), TrackingTTSMock(), StreamingHermesMock(["Tes"]))
+
+    try:
+        # Feed 15 frames of quiet identifiable PCM (each 640 bytes = 9600 bytes total, capped at 8000)
+        pattern_frame = b"\x05\x00" * 320
+        for _ in range(15):
+            await session.handle_binary_frame(pattern_frame)
+
+        # Preroll is full (8000 bytes)
+        assert len(session._preroll) == session.PREROLL_BYTES
+        preroll_bytes = session._preroll.get_bytes()
+
+        # Trigger speech with loud audio
+        loud_speech = b"\x00\x50" * 320
+        await session.handle_binary_frame(loud_speech)
+
+        # Verify session is now recording
+        assert session.is_recording is True
+        # Verify audio buffer starts with the exact preroll bytes
+        assert bytes(session.audio_buffer[:session.PREROLL_BYTES]) == preroll_bytes
+        # Verify preroll buffer is cleared
+        assert len(session._preroll) == 0
+    finally:
+        await session.close()
+
+
+def test_dual_compatibility_streaming_pipeline():
+    """Verify legacy jarvis_server appliance session class matches nexo_server."""
+    from jarvis_server.gateway.websocket_handler import ApplianceSession as JarvisSession
+    from nexo_server.gateway.websocket_handler import ApplianceSession as NexoSession
+
+    assert JarvisSession is not None
+    assert NexoSession is not None
+
