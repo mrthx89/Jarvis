@@ -55,7 +55,10 @@ Thumbs.db
 *.swo
 *~
 .vscode/
-/android/app/google-services.json
+# Firebase configuration stays local, including variant-specific copies
+google-services.json
+google-service.json
+GoogleService-Info.plist
 
 # Signing secrets (wrapper files are deliberately tracked)
 *.jks
