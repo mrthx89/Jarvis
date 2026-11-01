@@ -4,6 +4,16 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+// Secrets are read from the local environment, never committed.
+val releaseStore = providers.environmentVariable("JARVIS_KEYSTORE_PATH").orNull
+val releaseStorePassword = providers.environmentVariable("JARVIS_KEYSTORE_PASSWORD").orNull
+val releaseAlias = providers.environmentVariable("JARVIS_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("JARVIS_KEY_PASSWORD").orNull
+val signingValues = listOf(releaseStore, releaseStorePassword, releaseAlias, releaseKeyPassword)
+require(signingValues.all { it == null } || signingValues.all { !it.isNullOrBlank() }) {
+    "Set all four JARVIS_KEYSTORE_* / JARVIS_KEY_* signing variables, or none for unsigned release."
+}
+
 android {
     namespace = "id.my.yhdev.jarvis"
     compileSdk = 34
@@ -21,14 +31,25 @@ android {
     testOptions { unitTests.isReturnDefaultValues = true }
 
     lint {
-        checkReleaseBuilds = false
-        abortOnError = false
+        checkReleaseBuilds = true
+        abortOnError = true
+    }
+
+    signingConfigs {
+        if (signingValues.all { !it.isNullOrBlank() }) {
+            create("production") {
+                storeFile = file(requireNotNull(releaseStore))
+                storePassword = releaseStorePassword
+                keyAlias = releaseAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("production")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -36,6 +57,14 @@ android {
         }
         debug {
             isMinifyEnabled = false
+        }
+        create("internal") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            versionNameSuffix = "-internal"
+            // Same applicationId deliberately retains the bundled Firebase client match.
+            // It cannot coexist with a differently signed production install.
         }
     }
 

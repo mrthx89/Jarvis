@@ -5,6 +5,9 @@ Not an Android microphone/speaker or wake-word test. Uses live providers.
 import argparse
 import asyncio
 import json
+import os
+import inspect
+import stat
 from pathlib import Path
 import time
 import wave
@@ -13,8 +16,37 @@ import av
 import numpy as np
 import websockets
 from jarvis_server.pipeline.tts import EdgeTTS
+from jarvis_server.auth import credential_origin, DEVICE_ID, TOKEN
+
+class NoRedirectConnect(websockets.connect):
+    # Current asyncio client and legacy 12/13 client use different hooks.
+    def process_redirect(self, exc):
+        return exc
+
+    def handle_redirect(self, uri):
+        raise ValueError('Redirects are disabled for credentialed probes')
+
+
+def auth_headers(args):
+    path = args.credentials or os.environ.get('JARVIS_PROBE_CREDENTIAL_FILE')
+    if not path:
+        raise ValueError('Private provisioned credential file required')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, encoding='utf-8') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_size > 4096:
+            raise ValueError('Credential file must be private and bounded')
+        credential = json.loads(stream.read(4096))
+    if credential.get('origin') != credential_origin(args.url):
+        raise ValueError('Credential origin does not match endpoint')
+    device, token = credential.get('device_id', ''), credential.get('token', '')
+    if not DEVICE_ID.fullmatch(device) or not TOKEN.fullmatch(token):
+        raise ValueError('Invalid provisioned credential')
+    return {'Authorization': 'Bearer ' + token, 'X-Device-ID': device}, device
+
 
 async def run(args):
+    headers, device_id = auth_headers(args)
     phrase = args.phrase
     pcm24 = b''.join([chunk async for chunk in EdgeTTS().synthesize_stream(phrase)])
     frame = av.AudioFrame.from_ndarray(np.frombuffer(pcm24, dtype='<i2').reshape(1, -1), format='s16', layout='mono')
@@ -25,8 +57,11 @@ async def run(args):
     result = {'input_phrase': phrase, 'input_bytes': len(pcm16), 'states': [], 'transcriptions': [], 'pcm_bytes': 0, 'pong': False}
     audio = bytearray()
     started = time.monotonic()
-    async with websockets.connect(args.url, max_size=2**22) as ws:
-        await ws.send(json.dumps({'type': 'client_hello', 'device_id': 'voice-smoke-probe', 'audio_spec': {'format':'audio/pcm','sample_rate':16000,'channels':1,'bit_depth':16}}))
+    # websockets 12 uses extra_headers; 14+ calls it additional_headers.
+    header_arg = 'additional_headers' if 'additional_headers' in inspect.signature(websockets.connect).parameters else 'extra_headers'
+    async with NoRedirectConnect(args.url, max_size=2**22, **{header_arg: headers}) as ws:
+        await ws.send(json.dumps({'type': 'client_hello', 'device_id': device_id, 'protocol_version': '1.0',
+                                 'audio_spec': {'format':'audio/pcm','sample_rate':16000,'channels':1,'bit_depth':16}}))
         hello = json.loads(await asyncio.wait_for(ws.recv(), 10))
         assert hello['type'] == 'server_hello', hello
         async def send():
@@ -76,7 +111,12 @@ async def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', default='wss://jarvis.yhdev.my.id/ws/appliance')
+    parser.add_argument('--credentials', help='Path to mode-0600 provisioned JSON (or JARVIS_PROBE_CREDENTIAL_FILE)')
     parser.add_argument('--phrase', default='Halo halo.')
     parser.add_argument('--output', default='/data/home/.hermes/cache/scratch/jarvis-voice-response.wav')
     parser.add_argument('--timeout', type=float, default=130)
-    asyncio.run(run(parser.parse_args()))
+    try:
+        asyncio.run(run(parser.parse_args()))
+    except Exception:
+        # Network exception reprs can include request headers. Never print them.
+        parser.exit(1, 'Voice probe failed; check credentials, origin and provider/network availability.\n')

@@ -56,7 +56,10 @@ Thumbs.db
 *~
 .vscode/
 /android/app/google-services.json
-/android/gradle/wrapper/gradle-wrapper.jar
-/android/gradle/wrapper/gradle-wrapper.properties
-/android/gradlew
-/android/gradlew.bat
+
+# Signing secrets (wrapper files are deliberately tracked)
+*.jks
+*.keystore
+keystore.properties
+.auth/
+*.credentials.json

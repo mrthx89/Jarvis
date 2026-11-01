@@ -14,6 +14,10 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.TextView
+import android.widget.EditText
+import android.text.InputType
+import androidx.appcompat.app.AlertDialog
+import id.my.yhdev.jarvis.security.DeviceCredentialStore
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -34,6 +38,17 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
     private var isBound = false
     private var bindingRequested = false
     private var hasTranscription = false
+    private val credentialStore by lazy { DeviceCredentialStore(this) }
+    private var currentServerUrl: String? = null
+    private val deviceId: String by lazy {
+        val androidId = android.provider.Settings.Secure.getString(
+            contentResolver, android.provider.Settings.Secure.ANDROID_ID)
+        // Persist a random fallback; never share a hard-coded ID across devices.
+        val identityPrefs = getSharedPreferences("device_identity", Context.MODE_PRIVATE)
+        val localId = androidId?.takeIf { it.isNotBlank() } ?: identityPrefs.getString("id", null)
+            ?: java.util.UUID.randomUUID().toString().also { identityPrefs.edit().putString("id", it).apply() }
+        "jarvis_appliance_$localId"
+    }
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -43,20 +58,19 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
             isBound = true
             bindingRequested = false
 
-            val androidId = android.provider.Settings.Secure.getString(
-                contentResolver,
-                android.provider.Settings.Secure.ANDROID_ID
-            ) ?: "appliance_01"
-            val deviceId = "jarvis_appliance_$androidId"
-            
+
             // Dynamically resolve server URL via Firebase Remote Config with fallback
             remoteConfigManager.fetchServerUrl { serverUrl ->
-                if (!isDestroyed && isBound) kioskService?.initializeConnection(serverUrl, deviceId)
+                runOnUiThread {
+                    currentServerUrl = serverUrl
+                    if (!isDestroyed && isBound) kioskService?.initializeConnection(serverUrl, deviceId)
+                }
             }
 
             // Listen for live URL updates from Firebase Console
             remoteConfigManager.listenForRealtimeUpdates { newUrl ->
                 runOnUiThread {
+                    currentServerUrl = newUrl
                     if (!isDestroyed && isBound) kioskService?.initializeConnection(newUrl, deviceId)
                 }
             }
@@ -94,12 +108,69 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
 
         visualizerView = findViewById(R.id.visualizerView)
         tvStatus = findViewById(R.id.tvStatus)
+        tvStatus.setOnLongClickListener { showCredentialSetup(); true }
         tvSubtitle = findViewById(R.id.tvSubtitle)
         tvSubtitle.movementMethod = android.text.method.ScrollingMovementMethod.getInstance()
         ivStatusLed = findViewById(R.id.ivStatusLed)
 
         onStateChanged(JarvisState.DISCONNECTED, "Memeriksa izin mikrofon...", null)
         checkAndRequestAudioPermission()
+    }
+
+    private fun showCredentialSetup() {
+        val serverUrl = currentServerUrl
+        val origin = serverUrl?.let { credentialStore.origin(it) }
+        if (serverUrl == null || origin == null) {
+            onStateChanged(JarvisState.ERROR, "Endpoint WSS belum tersedia. Coba lagi setelah konfigurasi dimuat.", null)
+            return
+        }
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            isSingleLine = true
+            hint = "Token perangkat dari pemilik"
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Penyiapan perangkat")
+            .setMessage("ID: $deviceId\nServer: $origin\n\nVerifikasi server ini dengan pemilik. Token hanya berlaku untuk ID dan server ini. Ini bukan pairing otomatis.")
+            .setView(input)
+            .setPositiveButton("Simpan", null)
+            .setNeutralButton("Hapus token", null)
+            .setNegativeButton("Batal", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val token = input.text.toString().trim()
+                if (!token.matches(Regex("[A-Za-z0-9_-]{43,128}"))) {
+                    input.error = "Format token tidak valid"
+                } else {
+                    try {
+                        credentialStore.save(serverUrl, deviceId, token)
+                        input.text.clear()
+                        hasTranscription = false
+                        kioskService?.refreshCredentials()
+                        dialog.dismiss()
+                    } catch (_: Exception) {
+                        input.error = "Token gagal disimpan dengan Android Keystore"
+                    }
+                }
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                try {
+                    credentialStore.clear()
+                    input.text.clear()
+                    hasTranscription = false
+                    kioskService?.refreshCredentials()
+                    dialog.dismiss()
+                } catch (_: Exception) {
+                    input.error = "Token gagal dihapus"
+                }
+            }
+        }
+        dialog.setOnDismissListener { input.text.clear() }
+        dialog.show()
     }
 
     private fun checkAndRequestAudioPermission() {

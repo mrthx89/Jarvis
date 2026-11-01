@@ -65,7 +65,11 @@ async def main(output):
         bridge = HermesBridge(hermes_binary=cfg.hermes.hermes_binary, session_name="jarvis-voice-probe", timeout=60)
         # Full session including endpoint detection, real STT, CLI and reply TTS.
         socket = CaptureSocket()
-        session = ApplianceSession(socket, "probe", stt, tts, bridge)
+        # In-process provider harness, NOT a gateway authentication test.
+        session = ApplianceSession(socket, "probe", stt, tts, bridge, authenticated_device_id="local-probe")
+        await session.handle_text_frame(json.dumps({"type": "client_hello", "device_id": "local-probe",
+            "protocol_version": "1.0", "audio_spec": {"format": "audio/pcm", "sample_rate": 16000,
+            "channels": 1, "bit_depth": 16}}))
         for pos in range(0, len(pcm16), 640):
             await session.handle_binary_frame(pcm16[pos:pos + 640])
         for _ in range(50):
