@@ -11,6 +11,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.transition.ChangeBounds
@@ -40,7 +43,12 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
     private var voiceEnabled = false
     private var voiceStateKnown = false
     private lateinit var voiceMood: TextView
-    private lateinit var copyReply: Button
+    private lateinit var consoleCard: View
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private var voiceMoodDeadline = 0L
+    private var uiActive = false
+    private val hideVoiceMood = Runnable { if (!isDestroyed) renderVoiceMood() }
+    private lateinit var copyReply: androidx.appcompat.widget.AppCompatImageButton
     private var lastAssistantReply = ""
     private lateinit var ivStatusLed: android.widget.ImageView
     private lateinit var remoteConfigManager: RemoteConfigManager
@@ -128,6 +136,10 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         visualizerView = findViewById(R.id.visualizerView)
         tvStatus = findViewById(R.id.tvStatus)
         tvStatus.setOnLongClickListener { showCredentialSetup(); true }
+        tvStatus.setOnClickListener {
+            Toast.makeText(this, tvStatus.contentDescription, Toast.LENGTH_LONG).show()
+        }
+        consoleCard = findViewById(R.id.consoleCard)
         voiceMood = findViewById(R.id.voiceMood)
         visualizerView.setVoiceEnabled(false, animateReaction = false)
         toggleVoice = findViewById(R.id.toggleVoice)
@@ -220,7 +232,15 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
 
     override fun onResume() {
         super.onResume()
+        uiActive = true
+        renderVoiceMood()
         hideSystemUI()
+    }
+
+    override fun onStop() {
+        uiActive = false
+        uiHandler.removeCallbacks(hideVoiceMood)
+        super.onStop()
     }
 
     private fun hideSystemUI() {
@@ -258,14 +278,31 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
 
     override fun onVoiceEnabledChanged(enabled: Boolean) {
         runOnUiThread {
+            if (isDestroyed) return@runOnUiThread
+            val firstSync = !voiceStateKnown
             val changed = voiceStateKnown && voiceEnabled != enabled
             voiceEnabled = enabled
             voiceStateKnown = true
             visualizerView.setVoiceEnabled(enabled, animateReaction = changed)
-            voiceMood.setText(if (enabled) R.string.voice_mood_on else R.string.voice_mood_off)
+            if (firstSync || changed) {
+                voiceMoodDeadline = if (enabled) SystemClock.elapsedRealtime() + 15_000L else 0L
+                voiceMood.setText(if (enabled) R.string.voice_mood_on else R.string.voice_mood_off)
+            }
+            renderVoiceMood()
+            // OFF hides the whole readout, not the stored last final answer.
+            consoleCard.visibility = if (enabled) View.VISIBLE else View.GONE
             toggleVoice.isEnabled = true
             toggleVoice.setText(if (enabled) R.string.voice_stop else R.string.voice_start)
             renderStatus()
+        }
+    }
+
+    private fun renderVoiceMood() {
+        uiHandler.removeCallbacks(hideVoiceMood)
+        val remaining = voiceMoodDeadline - SystemClock.elapsedRealtime()
+        voiceMood.visibility = if (voiceEnabled && remaining <= 0L) View.GONE else View.VISIBLE
+        if (voiceEnabled && remaining > 0L && uiActive) {
+            uiHandler.postDelayed(hideVoiceMood, remaining)
         }
     }
 
@@ -326,11 +363,13 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
             if (role == "assistant" && isFinal) {
                 lastAssistantReply = text
                 copyReply.isEnabled = text.isNotBlank()
+                copyReply.alpha = if (copyReply.isEnabled) 1f else 0.35f
             }
         }
     }
 
     override fun onDestroy() {
+        uiHandler.removeCallbacks(hideVoiceMood)
         super.onDestroy()
         credentialSheet?.dismiss()
         credentialSheet = null
