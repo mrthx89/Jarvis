@@ -7,9 +7,9 @@ from types import SimpleNamespace
 import pytest
 from starlette.datastructures import Headers
 
-from jarvis_server import main
-from jarvis_server.auth import DeviceRegistry
-from jarvis_server.gateway.websocket_handler import ApplianceSession, ProtocolViolation
+from nexo_server import main
+from nexo_server.auth import DeviceRegistry
+from nexo_server.gateway.websocket_handler import ApplianceSession, ProtocolViolation
 
 TOKEN = 'a' * 43
 HELLO = {'type': 'client_hello', 'device_id': 'tablet_01', 'protocol_version': '1.0',
@@ -181,3 +181,11 @@ async def test_real_starlette_denial_with_old_method_missing():
     ws.send_denial_response = None  # Older allowed Starlette API has no helper.
     await main._deny(ws, 403, 1008)
     assert sent == [{'type': 'websocket.close', 'code': 1008, 'reason': ''}]
+
+
+def test_jarvis_server_gateway_dual_compatibility():
+    """Verify legacy jarvis_server imports route to valid components."""
+    import jarvis_server.main as legacy_main
+    from jarvis_server.gateway.websocket_handler import ApplianceSession as LegacySession
+    assert LegacySession is not None
+    assert hasattr(legacy_main, "websocket_appliance_endpoint")

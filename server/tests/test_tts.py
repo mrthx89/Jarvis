@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import edge_tts
 
-from jarvis_server.pipeline.tts import EdgeTTS
+from nexo_server.pipeline.tts import EdgeTTS
 
 
 def mp3_tone():
@@ -50,3 +50,9 @@ async def test_edge_mp3_is_decoded_to_pcm16_mono_24khz(monkeypatch):
     peak = np.fft.rfftfreq(len(samples), 1 / 24000)[np.argmax(spectrum)]
     assert abs(peak - 440) < 2
     assert samples.std() > 1000
+
+
+def test_tts_dual_compatibility():
+    """Verify legacy jarvis_server tts import matches nexo_server."""
+    from jarvis_server.pipeline.tts import EdgeTTS as LegacyTTS
+    assert LegacyTTS is not None

@@ -6,6 +6,14 @@ MAIN = Path(__file__).resolve().parents[2] / 'android/app/src/main'
 A = '{http://schemas.android.com/apk/res/android}'
 
 
+def _resolve_file(*candidates):
+    for c in candidates:
+        p = MAIN / c
+        if p.exists():
+            return p
+    raise FileNotFoundError(f"None found from candidates: {candidates}")
+
+
 def by_id(root, name):
     return next(e for e in root.iter() if e.get(A + 'id') == '@+id/' + name)
 
@@ -32,7 +40,11 @@ def test_token_label_and_helper_wrap_outside_the_single_line_input():
     field = by_id(root, 'setupTokenLayout')
     assert field.get(A + 'hint') is None
     assert field.get('{http://schemas.android.com/apk/res-auto}hintEnabled') == 'false'
-    sheet = (MAIN / 'java/id/my/yhdev/jarvis/ui/CredentialSetupSheet.kt').read_text()
+    sheet_file = _resolve_file(
+        'java/id/my/yhdev/nexo/ui/CredentialSetupSheet.kt',
+        'java/id/my/yhdev/jarvis/ui/CredentialSetupSheet.kt',
+    )
+    sheet = sheet_file.read_text()
     assert 'ViewGroup.LayoutParams.MATCH_PARENT' in sheet
     assert 'WindowInsetsCompat.Type.displayCutout()' in sheet
     assert 'SOFT_INPUT_ADJUST_RESIZE' in sheet
@@ -40,7 +52,11 @@ def test_token_label_and_helper_wrap_outside_the_single_line_input():
 
 
 def test_sheet_does_not_use_error_max_lines_api_absent_in_material_1_11():
-    sheet = (MAIN / 'java/id/my/yhdev/jarvis/ui/CredentialSetupSheet.kt').read_text()
+    sheet_file = _resolve_file(
+        'java/id/my/yhdev/nexo/ui/CredentialSetupSheet.kt',
+        'java/id/my/yhdev/jarvis/ui/CredentialSetupSheet.kt',
+    )
+    sheet = sheet_file.read_text()
     assert '.errorMaxLines' not in sheet
     assert 'setErrorMaxLines(' not in sheet
 
@@ -60,7 +76,11 @@ def test_copy_action_uses_last_final_assistant_reply_not_status_or_user_text():
     assert [e.get(A + 'id') for e in header] == ['@+id/tvConsoleHeader', '@+id/copyReply']
     assert by_id(root, 'tvConsoleHeader').get(A + 'layout_weight') == '1'
     assert (MAIN / 'res/drawable/ic_clipboard.xml').exists()
-    activity = (MAIN / 'java/id/my/yhdev/jarvis/MainActivity.kt').read_text()
+    activity_file = _resolve_file(
+        'java/id/my/yhdev/nexo/MainActivity.kt',
+        'java/id/my/yhdev/jarvis/MainActivity.kt',
+    )
+    activity = activity_file.read_text()
     assert 'if (role == "assistant" && isFinal)' in activity
     assert 'lastAssistantReply = text' in activity
     assert 'ClipData.newPlainText(getString(R.string.reply_clip_label), lastAssistantReply)' in activity
@@ -79,7 +99,11 @@ def test_status_notch_is_content_sized_bounded_and_voice_button_is_explicit():
     toggle = by_id(root, 'toggleVoice')
     assert toggle.get(A + 'enabled') == 'false'
     assert toggle.get(A + 'minHeight') == '48dp'
-    activity = (MAIN / 'java/id/my/yhdev/jarvis/MainActivity.kt').read_text()
+    activity_file = _resolve_file(
+        'java/id/my/yhdev/nexo/MainActivity.kt',
+        'java/id/my/yhdev/jarvis/MainActivity.kt',
+    )
+    activity = activity_file.read_text()
     assert 'service.stopVoice()' in activity and 'service.startVoice()' in activity
     assert 'override fun onVoiceEnabledChanged(enabled: Boolean)' in activity
     assert 'TransitionManager.beginDelayedTransition' in activity
@@ -87,11 +111,24 @@ def test_status_notch_is_content_sized_bounded_and_voice_button_is_explicit():
 
 
 def test_enabled_only_callback_renders_cached_status_without_callback_order_dependency():
-    activity = (MAIN / 'java/id/my/yhdev/jarvis/MainActivity.kt').read_text()
+    activity_file = _resolve_file(
+        'java/id/my/yhdev/nexo/MainActivity.kt',
+        'java/id/my/yhdev/jarvis/MainActivity.kt',
+    )
+    activity = activity_file.read_text()
     state_callback = activity.split('override fun onStateChanged(', 1)[1].split('override fun onVoiceEnabledChanged', 1)[0]
     enabled_callback = activity.split('override fun onVoiceEnabledChanged', 1)[1].split('override fun onTelemetryReceived', 1)[0]
     assert 'lastState = state' in state_callback
     assert 'renderStatus()' in state_callback
     assert 'renderStatus()' in enabled_callback
     assert 'private fun renderStatus()' in activity
-    assert 'state == JarvisState.ERROR -> R.string.voice_error' in activity
+    assert (
+        'state == NexoState.ERROR -> R.string.voice_error' in activity or
+        'state == JarvisState.ERROR -> R.string.voice_error' in activity
+    )
+
+
+def test_nexo_state_mapping_static():
+    """Verify Nexo states exist and map cleanly for mobile layout rendering."""
+    from nexo_server.models.messages import NexoState
+    assert all(hasattr(NexoState, s) for s in ("IDLE", "LISTENING", "THINKING", "SPEAKING", "ERROR", "DISCONNECTED"))

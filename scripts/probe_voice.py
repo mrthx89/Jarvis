@@ -15,8 +15,12 @@ import wave
 import av
 import numpy as np
 import websockets
-from jarvis_server.pipeline.tts import EdgeTTS
-from jarvis_server.auth import credential_origin, DEVICE_ID, TOKEN
+try:
+    from nexo_server.pipeline.tts import EdgeTTS
+    from nexo_server.auth import credential_origin, DEVICE_ID, TOKEN
+except ImportError:
+    from jarvis_server.pipeline.tts import EdgeTTS
+    from jarvis_server.auth import credential_origin, DEVICE_ID, TOKEN
 
 class NoRedirectConnect(websockets.connect):
     # Current asyncio client and legacy 12/13 client use different hooks.
@@ -28,7 +32,7 @@ class NoRedirectConnect(websockets.connect):
 
 
 def auth_headers(args):
-    path = args.credentials or os.environ.get('JARVIS_PROBE_CREDENTIAL_FILE')
+    path = args.credentials or os.environ.get('NEXO_PROBE_CREDENTIAL_FILE') or os.environ.get('JARVIS_PROBE_CREDENTIAL_FILE')
     if not path:
         raise ValueError('Private provisioned credential file required')
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)

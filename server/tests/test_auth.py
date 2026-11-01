@@ -9,7 +9,7 @@ import sys
 def test_owner_provisions_hash_only_and_revokes(tmp_path):
     registry = tmp_path / 'devices.json'
     issued = tmp_path / 'issued.json'
-    result = subprocess.run([sys.executable, '-m', 'jarvis_server.auth', 'provision',
+    result = subprocess.run([sys.executable, '-m', 'nexo_server.auth', 'provision',
                              '--registry', str(registry), '--device-id', 'tablet_01',
                              '--output', str(issued), '--origin', 'wss://voice.example/ws/appliance'], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
@@ -22,11 +22,11 @@ def test_owner_provisions_hash_only_and_revokes(tmp_path):
     assert token not in result.stdout + result.stderr
     assert oct(os.stat(registry).st_mode & 0o777) == '0o600'
     assert oct(os.stat(issued).st_mode & 0o777) == '0o600'
-    from jarvis_server.auth import DeviceRegistry
+    from nexo_server.auth import DeviceRegistry
     assert DeviceRegistry(registry).authenticate('tablet_01', 'Bearer ' + token)
     assert not DeviceRegistry(registry).authenticate('tablet_02', 'Bearer ' + token)
     assert not DeviceRegistry(registry).authenticate('tablet_01', 'Bearer wrong')
-    revoked = subprocess.run([sys.executable, '-m', 'jarvis_server.auth', 'revoke',
+    revoked = subprocess.run([sys.executable, '-m', 'nexo_server.auth', 'revoke',
                               '--registry', str(registry), '--device-id', 'tablet_01'],
                              capture_output=True, text=True)
     assert revoked.returncode == 0, revoked.stderr
@@ -34,7 +34,7 @@ def test_owner_provisions_hash_only_and_revokes(tmp_path):
 
 
 def test_registry_missing_invalid_or_unreadable_fails_closed(tmp_path):
-    from jarvis_server.auth import DeviceRegistry
+    from nexo_server.auth import DeviceRegistry
     path = tmp_path / 'devices.json'
     for content in (None, 'invalid', '[]', '{"version":1,"devices":{"tablet_01":{"token":"raw"}}}'):
         if content is not None:
@@ -45,7 +45,7 @@ def test_registry_missing_invalid_or_unreadable_fails_closed(tmp_path):
 
 
 def test_registry_permissions_and_header_shape(tmp_path):
-    from jarvis_server.auth import DeviceRegistry
+    from nexo_server.auth import DeviceRegistry
     path = tmp_path / 'devices.json'
     token = 'a' * 43
     path.write_text(json.dumps({'version': 1, 'devices': {
@@ -62,7 +62,7 @@ def test_registry_permissions_and_header_shape(tmp_path):
 
 def test_provision_rejects_reuse_without_changing_registry(tmp_path):
     registry, output = tmp_path / 'devices.json', tmp_path / 'delivery.json'
-    command = [sys.executable, '-m', 'jarvis_server.auth', 'provision', '--registry', str(registry),
+    command = [sys.executable, '-m', 'nexo_server.auth', 'provision', '--registry', str(registry),
                '--device-id', 'tablet_01', '--origin', 'wss://voice.example/ws/appliance',
                '--output', str(output)]
     assert subprocess.run(command, capture_output=True).returncode == 0
@@ -72,8 +72,23 @@ def test_provision_rejects_reuse_without_changing_registry(tmp_path):
 
 
 def test_deeply_nested_registry_fails_closed(tmp_path):
-    from jarvis_server.auth import DeviceRegistry
+    from nexo_server.auth import DeviceRegistry
     path = tmp_path / 'devices.json'
     path.write_text('[' * 2000 + ']' * 2000)
     path.chmod(0o600)
     assert not DeviceRegistry(path).authenticate('tablet_01', 'Bearer ' + 'a' * 43)
+
+
+def test_dual_compatibility_jarvis_auth(tmp_path):
+    """Verify legacy jarvis_server.auth module alias and CLI dual compatibility."""
+    import jarvis_server.auth as legacy_auth
+    assert hasattr(legacy_auth, "DeviceRegistry")
+
+    registry = tmp_path / 'devices_legacy.json'
+    issued = tmp_path / 'issued_legacy.json'
+    result = subprocess.run([sys.executable, '-m', 'jarvis_server.auth', 'provision',
+                             '--registry', str(registry), '--device-id', 'tablet_legacy',
+                             '--output', str(issued), '--origin', 'wss://voice.example/ws/appliance'],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert legacy_auth.DeviceRegistry(registry).authenticate('tablet_legacy', 'Bearer ' + json.loads(issued.read_text())['token'])

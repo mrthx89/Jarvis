@@ -7,7 +7,7 @@ import stat
 
 import pytest
 
-from jarvis_server.auth import DeviceRegistry
+from nexo_server.auth import DeviceRegistry
 
 
 @pytest.fixture
@@ -27,8 +27,8 @@ def owner():
 
 
 def handle(*args):
-    assert importlib.util.find_spec('jarvis_server.telegram_provision') is not None, 'Provisioning API is missing'
-    return importlib.import_module('jarvis_server.telegram_provision').handle_command(*args)
+    assert importlib.util.find_spec('nexo_server.telegram_provision') is not None, 'Provisioning API is missing'
+    return importlib.import_module('nexo_server.telegram_provision').handle_command(*args)
 
 
 @pytest.mark.parametrize('changes', [
@@ -37,7 +37,7 @@ def handle(*args):
     {'user_id': 123}, {'chat_id': 456},
 ])
 def test_unauthorized_rejected_before_io(config, owner, changes, monkeypatch):
-    import jarvis_server.telegram_provision as provision
+    import nexo_server.telegram_provision as provision
     owner.update(changes)
     def forbidden(*args, **kwargs):
         pytest.fail('Unauthorized request reached IO')
@@ -49,7 +49,7 @@ def test_unauthorized_rejected_before_io(config, owner, changes, monkeypatch):
                                   'rotate', 'deliver', 'revoke', 'rotate a extra',
                                   'create a', 'help extra', None, 123])
 def test_invalid_args_have_no_io(config, owner, raw, monkeypatch):
-    import jarvis_server.telegram_provision as provision
+    import nexo_server.telegram_provision as provision
     def forbidden(*args, **kwargs):
         pytest.fail('Invalid request reached IO')
     monkeypatch.setattr(provision, '_registry_lock', forbidden)
@@ -57,7 +57,7 @@ def test_invalid_args_have_no_io(config, owner, raw, monkeypatch):
 
 
 def test_help_has_no_io(config, owner, monkeypatch):
-    import jarvis_server.telegram_provision as provision
+    import nexo_server.telegram_provision as provision
     def forbidden(*args, **kwargs):
         pytest.fail('Help reached IO')
     monkeypatch.setattr(provision, '_registry_lock', forbidden)
@@ -277,11 +277,17 @@ def test_cli_writer_and_telegram_share_lock_and_registry(config, owner):
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=2) as pool:
         future = pool.submit(handle, 'telegram_device', owner, config, lambda text: None)
-        result = subprocess.run([sys.executable, '-m', 'jarvis_server.auth', 'provision',
+        result = subprocess.run([sys.executable, '-m', 'nexo_server.auth', 'provision',
                                  '--registry', config['registry_path'], '--device-id', 'cli_device',
                                  '--output', str(Path(config['delivery_dir']) / 'cli_device.json'),
                                  '--origin', config['origin']], capture_output=True, text=True, env=os.environ.copy())
         assert 'sent privately' in future.result()
     assert result.returncode == 0
     assert set(DeviceRegistry(config['registry_path']).read()['devices']) == {'telegram_device', 'cli_device'}
+
+
+def test_telegram_provision_dual_compatibility():
+    """Verify legacy jarvis_server telegram provision imports match nexo_server."""
+    import jarvis_server.telegram_provision as legacy_provision
+    assert callable(legacy_provision.handle_command)
 

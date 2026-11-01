@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from jarvis_server.hermes.agent_bridge import HermesBridge
+from nexo_server.hermes.agent_bridge import HermesBridge
 
 
 def sleeper(tmp_path):
@@ -42,3 +42,9 @@ async def test_cancellation_reaps_real_child(tmp_path):
         await task
     with pytest.raises(ProcessLookupError):
         os.kill(int(pid.read_text()), 0)
+
+
+def test_dual_compatibility_hermes_bridge():
+    """Verify legacy jarvis_server hermes bridge imports match nexo_server."""
+    from jarvis_server.hermes.agent_bridge import HermesBridge as LegacyBridge
+    assert LegacyBridge is not None

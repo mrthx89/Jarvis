@@ -93,3 +93,82 @@ def test_systemd_nexo_service_unit():
     assert "ExecStart=/data/home/Jarvis/server/.venv/bin/python -m nexo_server.main" in content
     assert "Environment=PYTHONPATH=/data/home/Jarvis/server/src" in content
     assert "WorkingDirectory=/data/home/Jarvis/server" in content
+
+
+def test_nexo_server_config_and_constants():
+    """Verify Nexo server configuration defaults and protocol constants."""
+    from nexo_server.config import ServerSettings, HermesSettings, STTSettings, TTSSettings
+    from nexo_server.models.messages import ServerHello, NexoState, JarvisState
+
+    srv = ServerSettings()
+    assert srv.ws_path == "/ws/appliance"
+    assert srv.port == 8765
+
+    hermes = HermesSettings()
+    assert hermes.session_name == "nexo"
+
+    stt = STTSettings()
+    assert stt.language == "id"
+
+    tts = TTSSettings()
+    assert "id-ID" in tts.voice
+
+    hello = ServerHello(session_id="nexo_test_01")
+    assert hello.agent_name == "Nexo"
+    assert hello.status == NexoState.IDLE
+    assert JarvisState is NexoState
+
+
+def test_nexo_pyproject_toml():
+    """Verify pyproject.toml defines nexo-server package."""
+    import tomllib
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    assert pyproject_path.exists()
+    data = tomllib.loads(pyproject_path.read_text())
+    assert data["project"]["name"] == "nexo-server"
+    assert "Nexo" in data["project"]["description"]
+
+
+def test_nexo_dual_compatibility_all_modules():
+    """Verify all legacy jarvis_server modules and nexo_server modules can be imported and are functional."""
+    import jarvis_server
+    import jarvis_server.config
+    import jarvis_server.auth
+    import jarvis_server.mascot
+    import jarvis_server.models.messages
+    import jarvis_server.pipeline.vad
+    import jarvis_server.pipeline.stt
+    import jarvis_server.pipeline.tts
+    import jarvis_server.hermes.agent_bridge
+    import jarvis_server.gateway.websocket_handler
+    import jarvis_server.telegram_command
+    import jarvis_server.telegram_provision
+    import jarvis_server.main
+
+    import nexo_server
+    import nexo_server.config
+    import nexo_server.auth
+    import nexo_server.mascot
+    import nexo_server.models.messages
+    import nexo_server.pipeline.vad
+    import nexo_server.pipeline.stt
+    import nexo_server.pipeline.tts
+    import nexo_server.hermes.agent_bridge
+    import nexo_server.gateway.websocket_handler
+    import nexo_server.telegram_command
+    import nexo_server.telegram_provision
+    import nexo_server.main
+
+    assert jarvis_server.__version__ == nexo_server.__version__
+    assert hasattr(jarvis_server.config, "AppConfig")
+    assert hasattr(jarvis_server.auth, "DeviceRegistry")
+    assert hasattr(jarvis_server.mascot, "MascotExpression")
+    assert hasattr(jarvis_server.models.messages, "ClientHello")
+    assert hasattr(jarvis_server.pipeline.vad, "EnergyVAD")
+    assert hasattr(jarvis_server.pipeline.stt, "FasterWhisperSTT")
+    assert hasattr(jarvis_server.pipeline.tts, "EdgeTTS")
+    assert hasattr(jarvis_server.hermes.agent_bridge, "HermesBridge")
+    assert hasattr(jarvis_server.gateway.websocket_handler, "ApplianceSession")
+    assert hasattr(jarvis_server.telegram_command, "read_settings")
+    assert hasattr(jarvis_server.telegram_provision, "handle_command")
+    assert hasattr(jarvis_server.main, "app")

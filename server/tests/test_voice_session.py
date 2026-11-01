@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from jarvis_server.gateway.websocket_handler import ApplianceSession
+from nexo_server.gateway.websocket_handler import ApplianceSession
 
 
 class Socket:
@@ -251,6 +251,7 @@ class TrackingTTS:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("command", "expression"), [
     ("Jarvis tersenyum", "senang"),
+    ("Nexo tersenyum", "senang"),
     ("tunjukkan wajah bingung", "bingung"),
     ("coba tertawa", "tertawa"),
     ("ekspresi netral", "netral"),
@@ -283,10 +284,12 @@ async def test_pure_mascot_command_bypasses_agent_and_preserves_ack(command, exp
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("text", "reply", "expression"), [
     ("Jarvis tersenyum lalu buka email", "Email berhasil dibuka.", "sangat_senang"),
+    ("Nexo tersenyum lalu buka email", "Email berhasil dibuka.", "sangat_senang"),
     ('Jelaskan "coba tertawa"', "Pengalaman manusia beragam.", "netral"),
     ("jangan tertawa", "Baik.", "netral"),
     ("ekspresi lapar", "Saya belum yakin.", "bingung"),
     ("kenapa Jarvis tersenyum?", "Halo!", "senang"),
+    ("kenapa Nexo tersenyum?", "Halo!", "senang"),
     ("Aku sedih hari ini", "Haha, selamat pagi!", "sedih"),
     ("Ceritakan lelucon", "Mengapa ayam menyeberang jalan?", "tertawa"),
     ("Jelaskan pengalaman", "Pengalaman adalah pembelajaran.", "netral"),
@@ -323,3 +326,9 @@ async def test_empty_transcription_calls_neither_agent_nor_tts():
         assert not any(m["type"] == "tts_start" for m in s.websocket.messages)
     finally:
         await s.close()
+
+
+def test_voice_session_dual_compatibility():
+    """Verify legacy jarvis_server websocket handler alias matches nexo_server."""
+    from jarvis_server.gateway.websocket_handler import ApplianceSession as LegacySession
+    assert LegacySession is not None

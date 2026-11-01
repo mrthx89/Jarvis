@@ -1,30 +1,47 @@
 """Unit tests for models and VAD engine using standard library unittest."""
 
 import unittest
-from jarvis_server.models.messages import (
+from nexo_server.models.messages import (
     ClientHello,
     ServerHello,
     StateChange,
     VisualTelemetry,
     TranscriptionMessage,
+    NexoState,
     JarvisState,
 )
-from jarvis_server.pipeline.vad import EnergyVAD
+from nexo_server.pipeline.vad import EnergyVAD
 
 
-class TestJarvisServer(unittest.TestCase):
+class TestNexoServer(unittest.TestCase):
     def test_models_serialization(self):
         hello = ClientHello(device_id="test_tablet_01")
         serialized = hello.model_dump_json()
         self.assertIn("test_tablet_01", serialized)
         self.assertIn("client_hello", serialized)
 
-        state = StateChange(state=JarvisState.LISTENING)
+        server_hello = ServerHello(session_id="sess_01")
+        self.assertEqual(server_hello.agent_name, "Nexo")
+        self.assertEqual(server_hello.status, NexoState.IDLE)
+
+        state = StateChange(state=NexoState.LISTENING)
         self.assertEqual(state.state, "LISTENING")
+
+        # Test dual-compatibility alias
+        state_jarvis = StateChange(state=JarvisState.LISTENING)
+        self.assertEqual(state_jarvis.state, "LISTENING")
+        self.assertIs(JarvisState, NexoState)
 
         telemetry = VisualTelemetry(amplitude=0.85, frequency_bands=[0.1, 0.5, 0.9])
         self.assertEqual(telemetry.amplitude, 0.85)
         self.assertEqual(len(telemetry.frequency_bands), 3)
+
+    def test_dual_compatibility_imports(self):
+        import jarvis_server.models.messages as legacy_msgs
+        import jarvis_server.pipeline.vad as legacy_vad
+        self.assertTrue(issubclass(legacy_msgs.ClientHello, object))
+        self.assertIsNotNone(legacy_msgs.JarvisState)
+        self.assertIsNotNone(legacy_vad.EnergyVAD)
 
     def test_energy_vad_silence_and_signal(self):
         vad = EnergyVAD(threshold_db=-30.0)

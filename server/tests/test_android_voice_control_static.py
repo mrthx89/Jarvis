@@ -5,9 +5,22 @@ These checks inspect service wiring, not actual Android microphone/FGS behavior.
 from pathlib import Path
 import re
 
-SERVICE = Path(__file__).resolve().parents[2] / (
-    'android/app/src/main/java/id/my/yhdev/jarvis/service/JarvisKioskService.kt'
-)
+
+def _get_service_file():
+    candidates = [
+        'android/app/src/main/java/id/my/yhdev/nexo/service/NexoKioskService.kt',
+        'android/app/src/main/java/id/my/yhdev/nexo/service/JarvisKioskService.kt',
+        'android/app/src/main/java/id/my/yhdev/jarvis/service/NexoKioskService.kt',
+        'android/app/src/main/java/id/my/yhdev/jarvis/service/JarvisKioskService.kt',
+    ]
+    for c in candidates:
+        p = Path(__file__).resolve().parents[2] / c
+        if p.exists():
+            return p
+    raise FileNotFoundError(f"None found from {candidates}")
+
+
+SERVICE = _get_service_file()
 
 
 def source():
@@ -33,7 +46,10 @@ def test_voice_choice_is_private_persisted_default_off_and_public_read_only():
     created = body('override fun onCreate()')
     assert 'getBoolean("enabled", false)' in created
     assert 'if (isVoiceEnabled)' in created
-    assert 'publish(JarvisState.DISCONNECTED, "Menunggu endpoint server...")' in created
+    assert (
+        'publish(NexoState.DISCONNECTED, "Menunggu endpoint server...")' in created or
+        'publish(JarvisState.DISCONNECTED, "Menunggu endpoint server...")' in created
+    )
     assert 'fun startVoice()' in text
     assert 'fun stopVoice()' in text
     assert 'fun onVoiceEnabledChanged(enabled: Boolean)' in text
@@ -62,16 +78,17 @@ def test_stopped_endpoint_and_credential_refresh_cannot_read_tokens_or_connect()
 
 def test_stop_persists_before_teardown_fences_callbacks_and_publishes_paused_idle():
     stop = body('fun stopVoice()')
+    publish_idle = 'publish(NexoState.IDLE' if 'publish(NexoState.IDLE' in stop else 'publish(JarvisState.IDLE'
     ordered = ['putBoolean("enabled", false).commit()', 'voiceEnabled = false',
                '++generation', '++audioGeneration', 'duplex.disconnected()',
                'audioRecorder.stopRecording()', 'audioPlayer.stop()',
                'webSocketClient?.disconnect()', 'webSocketClient = null',
-               'onVoiceEnabledChanged(false)', 'publish(JarvisState.IDLE',
+               'onVoiceEnabledChanged(false)', publish_idle,
                'startForegroundNotification()']
     positions = [stop.index(fragment) for fragment in ordered]
     assert positions == sorted(positions)
     assert 'dijeda' in stop
-    assert 'JarvisState.ERROR' not in stop
+    assert 'JarvisState.ERROR' not in stop and 'NexoState.ERROR' not in stop
     assert 'menghubungkan ulang' not in stop
     assert 'connectionKey = null' not in stop
 
@@ -125,7 +142,11 @@ def test_socket_events_and_playback_completion_are_fenced_while_stopped():
 def test_playback_events_preserve_speaking_expression_until_audio_drains():
     started = body('override fun onTTSStarted() {')
     assert 'currentExpression)' in started
-    changed = body('override fun onStateChanged(state: JarvisState, message: String?, expression: String?) {')
+    text = source()
+    changed_pattern = r'override fun onStateChanged\(state:\s*(?:NexoState|JarvisState),\s*message:\s*String\?,\s*expression:\s*String\?\)\s*\{'
+    match = re.search(changed_pattern, text)
+    assert match is not None
+    changed = body(match.group())
     assert 'mikrofon dijeda", currentExpression)' in changed
 
 
@@ -142,3 +163,12 @@ def test_notification_is_truthful_about_paused_and_actual_capture():
     assert 'voiceEnabled = false' in destroy
     assert '++audioGeneration' in destroy
     assert 'putBoolean' not in destroy  # Service destruction must not erase user choice.
+
+
+def test_nexo_voice_pipeline_constants():
+    """Verify Nexo STT/TTS and audio constants match voice session contract."""
+    from nexo_server.config import STTSettings, TTSSettings
+    stt = STTSettings()
+    tts = TTSSettings()
+    assert stt.language == "id"
+    assert "id-ID" in tts.voice
