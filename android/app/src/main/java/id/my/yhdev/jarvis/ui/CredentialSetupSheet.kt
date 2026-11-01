@@ -1,0 +1,136 @@
+package id.my.yhdev.jarvis.ui
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.view.LayoutInflater
+import android.view.View
+import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
+import android.widget.CheckBox
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.widget.doAfterTextChanged
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
+import id.my.yhdev.jarvis.R
+
+/** Local UI only: never fetches, logs, restores, or copies a bearer token. */
+class CredentialSetupSheet(
+    private val activity: AppCompatActivity,
+    private val deviceId: String,
+    private val origin: String,
+    private val isCurrentOrigin: () -> Boolean,
+    private val onSave: (String) -> Unit,
+    private val onReset: () -> Unit,
+    private val onDismiss: () -> Unit
+) {
+    private val dialog = BottomSheetDialog(activity, R.style.ThemeOverlay_Jarvis_CredentialSheet)
+    private var resetConfirmation: androidx.appcompat.app.AlertDialog? = null
+
+    fun show() {
+        val content = LayoutInflater.from(dialog.context).inflate(R.layout.sheet_credential_setup, null)
+        val input = content.findViewById<TextInputEditText>(R.id.setupToken)
+        val field = content.findViewById<TextInputLayout>(R.id.setupTokenLayout)
+        val trust = content.findViewById<CheckBox>(R.id.setupTrustOrigin)
+        val save = content.findViewById<MaterialButton>(R.id.setupSave)
+        val help = content.findViewById<TextView>(R.id.setupHelpBody)
+        content.findViewById<TextView>(R.id.setupDeviceId).text = deviceId
+        content.findViewById<TextView>(R.id.setupOrigin).text = origin
+        // Defense in depth: do not persist credential text in hierarchy state/autofill.
+        input.isSaveEnabled = false
+        input.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+        fun updateSave() {
+            save.isEnabled = trust.isChecked && !input.text.isNullOrBlank()
+        }
+        input.doAfterTextChanged { field.error = null; updateSave() }
+        trust.setOnCheckedChangeListener { _, _ -> updateSave() }
+        updateSave()
+        content.findViewById<MaterialButton>(R.id.setupCopyId).setOnClickListener {
+            val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis device ID", deviceId))
+            Toast.makeText(activity, R.string.setup_id_copied, Toast.LENGTH_SHORT).show()
+        }
+        content.findViewById<MaterialButton>(R.id.setupHelp).setOnClickListener {
+            help.visibility = if (help.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+        save.setOnClickListener {
+            val token = input.text?.toString()?.trim().orEmpty()
+            when {
+                !isCurrentOrigin() -> field.error = activity.getString(R.string.setup_stale_origin)
+                !token.matches(Regex("[A-Za-z0-9_-]{43,128}")) ->
+                    field.error = activity.getString(R.string.setup_invalid_token)
+                !trust.isChecked -> trust.requestFocus()
+                else -> try {
+                    onSave(token)
+                    Toast.makeText(activity, R.string.setup_saved, Toast.LENGTH_SHORT).show()
+                    dismiss()
+                } catch (_: Exception) {
+                    field.error = activity.getString(R.string.setup_save_failed)
+                }
+            }
+        }
+        input.setOnEditorActionListener { _, action, _ ->
+            if (action == EditorInfo.IME_ACTION_DONE) {
+                if (save.isEnabled) save.performClick()
+                true
+            } else false
+        }
+        content.findViewById<MaterialButton>(R.id.setupCancel).setOnClickListener { dismiss() }
+        content.findViewById<MaterialButton>(R.id.setupReset).setOnClickListener {
+            if (resetConfirmation?.isShowing == true) return@setOnClickListener
+            resetConfirmation = MaterialAlertDialogBuilder(dialog.context)
+                .setTitle(R.string.setup_reset_title)
+                .setMessage(R.string.setup_reset_body)
+                .setNegativeButton(R.string.setup_back, null)
+                .setPositiveButton(R.string.setup_reset_confirm) { _, _ ->
+                    try {
+                        onReset()
+                        dismiss()
+                    } catch (_: Exception) {
+                        field.error = activity.getString(R.string.setup_reset_failed)
+                    }
+                }.create().also { confirmation ->
+                    confirmation.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    confirmation.show()
+                }
+        }
+        val bottomPadding = content.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, bottomPadding + bars.bottom)
+            insets
+        }
+        dialog.setContentView(content)
+        dialog.window?.apply {
+            addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
+        dialog.setOnShowListener {
+            dialog.behavior.apply {
+                skipCollapsed = true
+                state = BottomSheetBehavior.STATE_EXPANDED
+            }
+            // Keep token field unfocused until deliberately tapped, preserving context.
+            content.isFocusableInTouchMode = true
+            content.requestFocus()
+        }
+        dialog.setOnDismissListener {
+            input.text?.clear()
+            resetConfirmation?.dismiss()
+            resetConfirmation = null
+            onDismiss()
+        }
+        dialog.show()
+        ViewCompat.requestApplyInsets(content)
+    }
+
+    fun dismiss() { dialog.dismiss() }
+}

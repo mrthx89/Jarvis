@@ -59,6 +59,10 @@ bypass exists; an empty/missing/invalid/insecure registry denies every device.
    **not** evidence of Kotlin compilation, APK installation, Keystore behavior or
    working microphone/speaker audio. None of those gates were run for this change.
 
+## Native setup sheet
+
+Long-press the status text to open the native Material bottom sheet. The dark sheet separates device ID/server details from the masked token field. “Salin ID perangkat” copies only the non-secret device ID; “Dari mana saya mendapat token?” explains provisioning. Verify the server and check the confirmation before saving. Saving stores the token locally, not proof of successful server authorization. “Hapus token lokal” requires a confirmation dialog and does not revoke the server registry entry. The sheet clears token input on dismissal and does not save it in view state. No web content or new dependency is used. Compilation, layout/keyboard behavior and Keystore behavior remain unverified until owner device testing; only XML/source checks were run.
+
 ## Endpoint changes, reset and recovery
 
 - Saved credentials are bound to normalized `wss://host:port` (default port 443) and
