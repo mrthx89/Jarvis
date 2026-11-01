@@ -1,0 +1,16 @@
+[Unit]
+Description=Jarvis Dedicated Appliance - Audio Gateway & Hermes Bridge
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/home/Jarvis/server
+Environment=PYTHONPATH=/data/home/Jarvis/server/src
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/root
+ExecStart=/data/home/Jarvis/server/.venv/bin/python -m jarvis_server.main
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

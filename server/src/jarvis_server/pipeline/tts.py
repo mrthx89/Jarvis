@@ -30,8 +30,27 @@ class MockTTS(BaseTTS):
             yield b"\x00\x01" * (chunk_size // 2)
 
 
-def create_tts_engine(provider: str = "mock", voice: str = "id-ID-ArdiNeural") -> BaseTTS:
+class EdgeTTS(BaseTTS):
+    """Microsoft Edge Neural TTS (Indonesian natural voices)."""
+
+    def __init__(self, default_voice: str = "id-ID-ArdiNeural"):
+        self.default_voice = default_voice
+
+    async def synthesize_stream(
+        self, text: str, voice: str = "id-ID-ArdiNeural"
+    ) -> AsyncGenerator[bytes, None]:
+        import edge_tts
+        target_voice = voice or self.default_voice
+        communicate = edge_tts.Communicate(text, target_voice)
+        async for chunk in communicate.stream():
+            if chunk.get("type") == "audio":
+                yield chunk["data"]
+
+
+def create_tts_engine(provider: str = "edge-tts", voice: str = "id-ID-ArdiNeural") -> BaseTTS:
     """Factory to create configured TTS engine."""
     if provider == "mock":
         return MockTTS()
-    return MockTTS()
+    if provider in ("edge-tts", "edge"):
+        return EdgeTTS(default_voice=voice)
+    return EdgeTTS(default_voice=voice)

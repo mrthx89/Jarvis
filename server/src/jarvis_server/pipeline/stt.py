@@ -25,9 +25,40 @@ class MockSTT(BaseSTT):
         return self.response_text
 
 
-def create_stt_engine(provider: str = "mock", model: str = "base") -> BaseSTT:
+class FasterWhisperSTT(BaseSTT):
+    """Local high-performance STT using faster-whisper (CTranslate2)."""
+
+    def __init__(self, model_size: str = "base"):
+        self.model_size = model_size
+        self._model = None
+
+    def _get_model(self):
+        if self._model is None:
+            from faster_whisper import WhisperModel
+            self._model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+        return self._model
+
+    async def transcribe(self, pcm_audio: bytes, language: str = "id") -> str:
+        import numpy as np
+
+        if len(pcm_audio) < 1600:
+            return ""
+
+        audio_array = np.frombuffer(pcm_audio, dtype=np.int16).astype(np.float32) / 32768.0
+
+        def _run_transcribe():
+            model = self._get_model()
+            segments, _ = model.transcribe(audio_array, language=language, beam_size=1)
+            return " ".join([seg.text.strip() for seg in segments if seg.text.strip()])
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _run_transcribe)
+
+
+def create_stt_engine(provider: str = "faster-whisper", model: str = "base") -> BaseSTT:
     """Factory to create configured STT engine."""
     if provider == "mock":
         return MockSTT()
-    # Placeholder for faster-whisper or external cloud providers
-    return MockSTT()
+    if provider in ("faster-whisper", "whisper", "local"):
+        return FasterWhisperSTT(model_size=model)
+    return FasterWhisperSTT(model_size=model)
