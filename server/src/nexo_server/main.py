@@ -4,10 +4,12 @@ from contextlib import asynccontextmanager
 import asyncio
 import json
 import logging
+import os
+from pathlib import Path
 import time
 from typing import Optional
 import uuid
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
@@ -43,9 +45,34 @@ async def lifespan(app: FastAPI):
     hub.set_hermes_bridge(hermes_bridge)
     hub.set_tts_engine(tts_engine)
     hub.set_stt_engine(stt_engine)
-    hub.set_session_thread(getattr(config.hermes, "session_name", "nexo"))
-    yield
-    logger.info("Shutting down Nexo Server...")
+    hub.set_session_thread(config.hermes.session_name)
+    mirror_task = None
+    if config.hermes.bridge_mode == "cli":
+        from .answer_mirror import AnswerMirror
+        from .session_store import HermesAnswerReader, resolve_pinned_session
+
+        home = Path(config.hermes.hermes_home or os.getenv("HERMES_HOME") or Path.home() / ".hermes").expanduser().resolve()
+        binding = Path(config.hermes.session_binding_path or Path.home() / ".config/nexo/session_binding.json").expanduser()
+        session_id = await asyncio.to_thread(
+            resolve_pinned_session, home / "state.db", binding, config.hermes.session_id,
+        )
+        hermes_bridge.bind_session_id(session_id)
+        hermes_bridge.hermes_home = str(home)
+        hermes_bridge.timeout = config.hermes.timeout_seconds
+        reader = HermesAnswerReader(home / "state.db", session_id)
+        await asyncio.to_thread(reader.initialize)
+        mirror = AnswerMirror(reader, hub, hermes_bridge)
+        hermes_bridge.on_reply = mirror.on_bridge_reply
+        mirror_task = asyncio.create_task(mirror.run(), name="nexo-terminal-mirror")
+        logger.info("Nexo dedicated session pinned: %s", session_id)
+    try:
+        yield
+    finally:
+        if mirror_task is not None:
+            mirror_task.cancel()
+            await asyncio.gather(mirror_task, return_exceptions=True)
+            hermes_bridge.on_reply = None
+        logger.info("Shutting down Nexo Server...")
 
 
 app = FastAPI(
@@ -88,11 +115,14 @@ async def health_check():
 @app.post("/session/send")
 async def session_send_endpoint(payload: SessionSendPayload):
     """Send text instruction to Nexo session, optionally triggering audio output on appliance."""
-    res = await hub.inject_message(
-        payload.message,
-        speak=payload.speak,
-        session_name=payload.session_name,
-    )
+    try:
+        res = await hub.inject_message(
+            payload.message,
+            speak=payload.speak,
+            session_name=payload.session_name,
+        )
+    except ValueError:
+        raise HTTPException(409, "Nexo is locked to its dedicated session") from None
     return JSONResponse(res)
 
 
@@ -106,7 +136,10 @@ async def session_speak_endpoint(payload: SessionSpeakPayload):
 @app.post("/session/link")
 async def session_link_endpoint(payload: SessionLinkPayload):
     """Link Hermes session thread (nexo / appliance / active local session) with Nexo."""
-    name = hub.set_session_thread(payload.session_name)
+    try:
+        name = hub.set_session_thread(payload.session_name)
+    except ValueError:
+        raise HTTPException(409, "Nexo is locked to its dedicated session") from None
     return JSONResponse({"status": "ok", "session_name": name})
 
 
@@ -167,11 +200,15 @@ async def websocket_session_stream_endpoint(websocket: WebSocket):
             data = await websocket.receive_json()
             msg_type = data.get("type")
             if msg_type == "send":
-                res = await hub.inject_message(
-                    data.get("message", ""),
-                    speak=data.get("speak", False),
-                    session_name=data.get("session_name"),
-                )
+                try:
+                    res = await hub.inject_message(
+                        data.get("message", ""),
+                        speak=data.get("speak", False),
+                        session_name=data.get("session_name"),
+                    )
+                except ValueError:
+                    await websocket.send_json({"type": "error", "code": "session_locked"})
+                    continue
                 await websocket.send_json({"type": "send_response", **res})
             elif msg_type == "speak":
                 res = await hub.trigger_speech(
@@ -180,7 +217,11 @@ async def websocket_session_stream_endpoint(websocket: WebSocket):
                 )
                 await websocket.send_json({"type": "speak_response", **res})
             elif msg_type == "link":
-                res = hub.set_session_thread(data.get("session_name", "nexo"))
+                try:
+                    res = hub.set_session_thread(data.get("session_name", "nexo"))
+                except ValueError:
+                    await websocket.send_json({"type": "error", "code": "session_locked"})
+                    continue
                 await websocket.send_json({"type": "link_response", "session_name": res})
             elif msg_type == "status":
                 await websocket.send_json({"type": "status", "status": hub.get_status()})

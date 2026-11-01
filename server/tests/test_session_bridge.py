@@ -74,17 +74,17 @@ def test_session_hub_session_registration():
 
 
 def test_session_hub_linking():
-    """SessionHub sets session thread and broadcasts session_linked event."""
+    """SessionHub acknowledges the fixed Nexo thread and broadcasts session_linked."""
     sh = SessionHub()
     q = sh.subscribe()
 
-    name = sh.set_session_thread("dev_thread")
-    assert name == "dev_thread"
-    assert sh.current_session_thread == "dev_thread"
+    name = sh.set_session_thread("nexo")
+    assert name == "nexo"
+    assert sh.current_session_thread == "nexo"
 
     event = q.get_nowait()
     assert event["type"] == "session_linked"
-    assert event["session_name"] == "dev_thread"
+    assert event["session_name"] == "nexo"
 
     sh.unsubscribe(q)
 
@@ -100,10 +100,10 @@ async def test_session_hub_inject_message():
 
     q = sh.subscribe()
 
-    res = await sh.inject_message("Halo Nexo", session_name="test_session")
+    res = await sh.inject_message("Halo Nexo", session_name="nexo")
     assert res["status"] == "ok"
     assert res["reply"] == "Halo dari Nexo!"
-    assert res["session_name"] == "test_session"
+    assert res["session_name"] == "nexo"
 
     events = []
     while not q.empty():
@@ -174,14 +174,14 @@ def test_endpoint_session_status():
 
 
 def test_endpoint_session_link():
-    """POST /session/link updates session thread."""
+    """POST /session/link acknowledges the fixed Nexo thread."""
     client = TestClient(app)
-    resp = client.post("/session/link", json={"session_name": "custom_thread"})
+    resp = client.post("/session/link", json={"session_name": "nexo"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
-    assert data["session_name"] == "custom_thread"
-    assert hub.current_session_thread == "custom_thread"
+    assert data["session_name"] == "nexo"
+    assert hub.current_session_thread == "nexo"
 
 
 def test_endpoint_session_send_and_transcript():
@@ -231,7 +231,7 @@ def test_endpoint_websocket_stream():
         assert pong["timestamp"] == 12345
 
         # Link
-        ws.send_json({"type": "link", "session_name": "ws_thread"})
+        ws.send_json({"type": "link", "session_name": "nexo"})
         link_res = ws.receive_json()
         assert link_res["type"] in ("session_linked", "link_response")
 

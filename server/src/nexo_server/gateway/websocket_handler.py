@@ -40,6 +40,7 @@ class ApplianceSession:
     MAX_AUDIO_BYTES = 30 * 32000
     MAX_FRAME_BYTES = 32000 * 2
     PREROLL_BYTES = 8000  # 250 ms at 16 kHz, bounded even in hours of silence
+    ECHO_GUARD_SECONDS = 0.6  # Preserve echo protection, only after speaker output.
 
     def __init__(
         self,
@@ -73,6 +74,7 @@ class ApplianceSession:
         self._cooldown_until = 0.0
         self._playback_until = 0.0
         self._tts_started = False
+        self._external_speech = False
         self._gap_handle = None
         self._preroll = bytearray()
         if self.hub:
@@ -106,7 +108,7 @@ class ApplianceSession:
         self.is_recording = False
 
     def _busy(self):
-        return self._closed or time.monotonic() < self._cooldown_until or (
+        return self._closed or self._external_speech or time.monotonic() < self._cooldown_until or (
             self._processing_task is not None and not self._processing_task.done()
         )
 
@@ -145,11 +147,36 @@ class ApplianceSession:
             StateChange(state=state, message=message, expression=expression)
         )
 
+    async def _resume_listening(self):
+        """Advertise readiness only after estimated speaker drain and echo guard.
+
+        Empty STT produces no audio and must not create a deaf cooldown.
+        The Android client independently waits for actual AudioTrack drain.
+        """
+        if self._closed:
+            return
+        if self._playback_until:
+            self._cooldown_until = max(time.monotonic(), self._playback_until) + self.ECHO_GUARD_SECONDS
+            await asyncio.sleep(max(0.0, self._cooldown_until - time.monotonic()))
+        self._playback_until = 0.0
+        self._cooldown_until = 0.0
+        self._preroll.clear()
+        await self.send_state(NexoState.IDLE, expression="netral")
+
     async def speak_text(self, text: str, expression: Optional[str] = None) -> bool:
         """Stream TTS audio to the appliance speaker and animate the mascot."""
-        if self._closed or not self.ready:
+        if self._busy() or not self.ready or self.is_recording:
             return False
+        self._external_speech = True
+        try:
+            await self.send_json_message(
+                TranscriptionMessage(role="assistant", text=text, is_final=True)
+            )
+            return await self._speak_text_owned(text, expression)
+        finally:
+            self._external_speech = False
 
+    async def _speak_text_owned(self, text: str, expression: Optional[str]) -> bool:
         speech_expr = expression or "senang"
         await self.send_state(NexoState.SPEAKING, expression=speech_expr)
         await self.send_json_message(TTSStart())
@@ -174,9 +201,8 @@ class ApplianceSession:
                 except Exception:
                     pass
                 self._tts_started = False
-            self._cooldown_until = max(time.monotonic(), self._playback_until) + 0.6
             try:
-                await self.send_state(NexoState.IDLE, expression="netral")
+                await self._resume_listening()
             except Exception:
                 pass
 
@@ -250,7 +276,7 @@ class ApplianceSession:
         if not data_bytes or len(data_bytes) % 2 or len(data_bytes) > self.MAX_FRAME_BYTES:
             logger.warning("Dropping invalid PCM frame (%d bytes)", len(data_bytes))
             return
-        speech = self.vad.is_speech(data_bytes)
+        speech = self.vad.is_speech(data_bytes, continuing=self.is_recording)
         if not self.is_recording:
             if not speech:
                 self._preroll.extend(data_bytes)
@@ -297,13 +323,12 @@ class ApplianceSession:
                 except Exception:
                     logger.debug("Unable to send pipeline error")
         finally:
-            self._cooldown_until = max(time.monotonic(), self._playback_until) + 0.6
             if not self._closed:
                 try:
                     if self._tts_started:
                         await self.send_json_message(TTSEnd())
                         self._tts_started = False
-                    await self.send_state(NexoState.IDLE, expression="netral")
+                    await self._resume_listening()
                 except Exception:
                     logger.debug("Unable to send idle state")
 

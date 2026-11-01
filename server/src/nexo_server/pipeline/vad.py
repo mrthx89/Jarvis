@@ -33,9 +33,14 @@ class EnergyVAD:
         db = 20 * math.log10(rms / 32767.0)
         return db
 
-    def is_speech(self, pcm_bytes: bytes) -> bool:
-        """Determine if audio chunk contains speech based on energy threshold."""
-        return self.calculate_rms_db(pcm_bytes) >= self.threshold_db
+    def is_speech(self, pcm_bytes: bytes, *, continuing: bool = False) -> bool:
+        """Use hysteresis to retain softer syllables after speech has started.
+
+        The onset threshold is unchanged; this does not make idle room noise
+        start a turn more easily. Energy VAD cannot identify a speaker.
+        """
+        threshold = self.threshold_db - 8.0 if continuing else self.threshold_db
+        return self.calculate_rms_db(pcm_bytes) >= threshold
 
     def get_normalized_amplitude(self, pcm_bytes: bytes) -> float:
         """Normalized amplitude from 0.0 to 1.0 for visualizer telemetry."""

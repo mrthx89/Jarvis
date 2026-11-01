@@ -39,6 +39,9 @@ class HermesSettings:
     hermes_binary: str = "hermes"
     timeout_seconds: int = 60
     session_name: str = "nexo"
+    session_id: str = ""  # First binding only; later changes fail closed.
+    hermes_home: str = ""  # Defaults to service HERMES_HOME or ~/.hermes.
+    session_binding_path: str = ""  # Private persistent canonical ID binding.
 
 
 @dataclass

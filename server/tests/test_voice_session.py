@@ -176,7 +176,7 @@ async def test_failed_tts_still_ends_stream_and_recovers():
     try:
         await s.handle_binary_frame(SPEECH * 10)
         await s.handle_text_frame('{"type":"voice_end"}')
-        await asyncio.wait_for(s._processing_task, 0.5)
+        await asyncio.wait_for(s._processing_task, 1.5)
         assert sum(m["type"] == "tts_start" for m in s.websocket.messages) == 1
         assert sum(m["type"] == "tts_end" for m in s.websocket.messages) == 1
         assert any(m.get("state") == "ERROR" for m in s.websocket.messages)
@@ -195,7 +195,7 @@ async def test_empty_transcription_skips_hermes_and_speech():
     try:
         await s.handle_binary_frame(SPEECH * 10)
         await s.handle_text_frame('{"type":"voice_end"}')
-        await asyncio.wait_for(s._processing_task, 0.5)
+        await asyncio.wait_for(s._processing_task, 1.5)
         assert not s.websocket.audio
         assert not any(m["type"] == "transcription" for m in s.websocket.messages)
         assert s.websocket.messages[-1]["state"] == "IDLE"
@@ -210,13 +210,18 @@ async def test_cooldown_covers_queued_playback_and_echo():
     try:
         await s.handle_binary_frame(SPEECH * 10)
         await s.handle_text_frame('{"type":"voice_end"}')
-        await asyncio.wait_for(s._processing_task, 0.5)
-        assert s.websocket.audio == [bytes(960)]
-        assert sum(m["type"] == "tts_end" for m in s.websocket.messages) == 1
-        await s.handle_text_frame('{"type":"voice_start"}')
+        # While hardware audio/echo can still be pending, capture remains gated.
+        while not s.websocket.audio:
+            await asyncio.sleep(0)
         await s.handle_binary_frame(SPEECH)
         assert not s.audio_buffer
         assert not s.is_recording
+        await asyncio.wait_for(s._processing_task, 1.5)
+        assert s.websocket.audio == [bytes(960)]
+        assert sum(m["type"] == "tts_end" for m in s.websocket.messages) == 1
+        # IDLE is now advertised only after that guard has elapsed.
+        await s.handle_binary_frame(SPEECH)
+        assert s.is_recording
     finally:
         await s.close()
 

@@ -25,6 +25,15 @@ class SessionHub:
         self._stt_engine: Optional[Any] = None
         self._current_session_thread: str = "nexo"
         self._lock = asyncio.Lock()
+        self._session_listeners = set()
+
+    def add_session_listener(self, listener) -> None:
+        """Observe synchronous connection boundaries, including between ticks."""
+        self._session_listeners.add(listener)
+
+    def _notify_session_change(self) -> None:
+        for listener in self._session_listeners:
+            listener()
 
     def set_hermes_bridge(self, bridge: Any) -> None:
         self._hermes_bridge = bridge
@@ -40,20 +49,18 @@ class SessionHub:
         return self._current_session_thread
 
     def set_session_thread(self, name: str) -> str:
-        name = name.strip()
-        if name:
-            self._current_session_thread = name
-            if self._hermes_bridge and hasattr(self._hermes_bridge, "session_name"):
-                self._hermes_bridge.session_name = name
-            self.publish_event({
-                "type": "session_linked",
-                "session_name": name,
-                "timestamp": int(time.time() * 1000),
-            })
+        if not isinstance(name, str) or name.strip() != "nexo":
+            raise ValueError("Session routing is locked to nexo")
+        self.publish_event({
+            "type": "session_linked",
+            "session_name": "nexo",
+            "timestamp": int(time.time() * 1000),
+        })
         return self._current_session_thread
 
     def register_session(self, session: Any) -> None:
         self._active_sessions[session.session_id] = session
+        self._notify_session_change()
         self.publish_event({
             "type": "appliance_connected",
             "session_id": session.session_id,
@@ -65,6 +72,7 @@ class SessionHub:
     def unregister_session(self, session: Any) -> None:
         if session.session_id in self._active_sessions:
             del self._active_sessions[session.session_id]
+            self._notify_session_change()
             self.publish_event({
                 "type": "appliance_disconnected",
                 "session_id": session.session_id,
@@ -102,6 +110,11 @@ class SessionHub:
     def unsubscribe(self, q: asyncio.Queue) -> None:
         self._subscribers.discard(q)
 
+    def _get_hermes_session_id(self) -> Optional[str]:
+        getter = getattr(self._hermes_bridge, "get_session_id", None)
+        session_id = getter() if callable(getter) else None
+        return session_id if isinstance(session_id, str) and session_id else None
+
     def get_status(self) -> Dict[str, Any]:
         appliance = self.get_active_appliance()
         state_raw = getattr(appliance, "state", "IDLE") if appliance else "IDLE"
@@ -110,6 +123,8 @@ class SessionHub:
             "appliance_connected": appliance is not None,
             "active_sessions_count": len(self._active_sessions),
             "session_thread": self._current_session_thread,
+            "session_locked": True,
+            "hermes_session_id": self._get_hermes_session_id(),
             "device_id": getattr(appliance, "authenticated_device_id", None) if appliance else None,
             "state": str(state_val),
             "hermes_mode": getattr(self._hermes_bridge, "mode", "cli") if self._hermes_bridge else "unknown",
@@ -129,7 +144,13 @@ class SessionHub:
         speak: bool = False,
         session_name: Optional[str] = None,
     ) -> Dict[str, Any]:
-        target_session = session_name or self._current_session_thread
+        target_session = "nexo" if session_name is None else session_name
+        if not isinstance(target_session, str):
+            raise ValueError("Session routing is locked to nexo")
+        target_session = target_session.strip()
+        bound_id = self._get_hermes_session_id()
+        if target_session != "nexo" and (bound_id is None or target_session != bound_id):
+            raise ValueError("Session routing is locked to nexo")
 
         # 1. Publish user transcription event
         self.publish_event({
