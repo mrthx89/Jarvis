@@ -70,3 +70,7 @@ keystore.properties
 *.credentials.json
 # Private installed plugin deployment settings
 /server/hermes-plugin/**/settings.json
+
+# Hermes local workspace
+.hermes/
+.agents/

@@ -144,13 +144,15 @@ Health endpoint: `http://127.0.0.1:8765/health`. Koneksi klien: `wss://<domain-a
 android/     Klien Kotlin, audio, service, maskot, dan resource UI
 resource/    Artwork dan sumber maskot
 server/      Gateway FastAPI, STT/TTS, autentikasi, dan jembatan Hermes
+skills/      Paket Skill Hermes resmi (skills/nexo/SKILL.md) untuk otomasi agen
 docs/        Panduan perangkat, protokol, keamanan, dan verifikasi
-scripts/     Alat probe suara dan reproduksi aset maskot
+scripts/     Alat probe suara, CLI nexo, dan reproduksi aset maskot
 artifact/sreenshoot/  Screenshot UI yang dikirim pengembang
 ```
 
 ## Dokumentasi
 
+- [Skill Hermes Resmi Nexo](skills/nexo/SKILL.md) · [Panduan Sesi Terminal](docs/TERMINAL_SESSION_BRIDGE.md)
 - [Instalasi teknis dan pemakaian](docs/INSTALLATION.md)
 - [Versioning, kompatibilitas dan checklist rilis](docs/VERSIONING.md) · [Changelog](CHANGELOG.md)
 
