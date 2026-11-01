@@ -158,7 +158,7 @@ Health endpoint: `http://127.0.0.1:8765/health`. Koneksi klien: `wss://<domain-a
 
 1. Buka `android/` di Android Studio dengan full JDK 17 dan Android SDK 34.
 2. Sediakan konfigurasi Firebase lokal untuk paket `id.my.yhdev.nexo` (atau `id.my.yhdev.nexo`) dan atur endpoint WSS sesuai [panduan Remote Config](docs/REMOTE_CONFIG_SETUP.md).
-3. Ikuti [panduan build dan signing](docs/BUILDING.md). Build dilakukan pada komputer pengembang; tidak perlu membuild Android di server gateway.
+3. Ikuti [panduan build lokal Android](docs/BUILDING.md). Seluruh proses kompilasi dan build APK dilakukan secara lokal pada komputer pengembang (Android Studio / Gradle local); DILARANG KERAS menjalankan Gradle atau membuild Android di server VPS.
 4. Jalankan aplikasi, izinkan mikrofon, lalu tekan lama status untuk membuka pengaturan kredensial perangkat.
 5. Tekan **Mulai mikrofon** dan tunggu status kesiapan sebelum berbicara. Tekan **Berhenti** untuk menghentikan audio/koneksi. Ketuk status untuk melihat detail gangguan.
 

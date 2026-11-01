@@ -6,7 +6,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+if [ -d "${SCRIPT_DIR}/../server" ]; then
+    REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+elif [ -d "${SCRIPT_DIR}/../../../server" ]; then
+    REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+else
+    REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
+
 SERVER_DIR="${REPO_ROOT}/server"
 CONFIG_FILE="${SERVER_DIR}/config.yaml"
 EXAMPLE_CONFIG="${SERVER_DIR}/config.example.yaml"
@@ -112,10 +119,10 @@ echo "Memasang dependensi server..."
 echo "✅ Seluruh dependensi Python terpasang."
 
 # ------------------------------------------------------------------------------
-# 5. Pre-download Faster-Whisper Model & Validate Edge-TTS
+# 5. Pre-download Faster-Whisper Model, Validate Edge-TTS & Generate Earcons
 # ------------------------------------------------------------------------------
 echo ""
-echo "[5/10] Mengunduh dan memvalidasi model STT / TTS..."
+echo "[5/10] Mengunduh/memvalidasi model STT/TTS & audio assets..."
 "${SERVER_DIR}/.venv/bin/python" - << 'EOF'
 import sys
 try:
@@ -141,6 +148,12 @@ try:
 except Exception as e:
     print(f"  ⚠️  Peringatan Edge-TTS: {e}")
 EOF
+
+if [ -f "${REPO_ROOT}/scripts/generate_earcons.py" ]; then
+    echo "  -> Menghasilkan file audio earcons lokal Android (chime_*.wav & earcon_*.wav)..."
+    python3 "${REPO_ROOT}/scripts/generate_earcons.py"
+    echo "  ✅ Aset audio earcons terverifikasi di android/app/src/main/res/raw/."
+fi
 
 # ------------------------------------------------------------------------------
 # 6. Prepare Auth Directory, Binding Directory & Registry
@@ -195,6 +208,10 @@ hermes:
   session_name: "nexo"
   hermes_home: "${HERMES_HOME}"
   session_binding_path: "${BINDING_DIR}/session_binding.json"
+
+telemetry:
+  frequency_bands_count: 5
+  emit_interval_ms: 40
 EOF
 echo "✅ ${CONFIG_FILE} berhasil dikonfigurasi."
 
@@ -209,7 +226,7 @@ SERVICE_DEST="${SYSTEMD_USER_DIR}/${SERVICE_NAME}"
 cat > "${SERVICE_DEST}" << EOF
 [Unit]
 Description=Nexo Dedicated Appliance - Audio Gateway & Hermes Bridge
-After=network.target
+After=network.target hermes-gateway.service
 
 [Service]
 Type=simple
@@ -224,7 +241,7 @@ RestartSec=3
 
 [Install]
 WantedBy=default.target
-Alias=nexo-appliance.service
+Alias=jarvis-appliance.service
 EOF
 
 systemctl --user daemon-reload
@@ -282,10 +299,13 @@ EOF
     fi
 fi
 
-# Setup CLI Symlink
+# Setup CLI Symlink & Permissions
 mkdir -p "${HOME}/.local/bin"
+chmod +x "${REPO_ROOT}/scripts/nexo" "${REPO_ROOT}/scripts/nexo_session.py" "${REPO_ROOT}/scripts/generate_earcons.py" "${REPO_ROOT}/scripts/setup_host.sh"
+if [ -f "${REPO_ROOT}/skills/nexo/scripts/verify_appliance.sh" ]; then
+    chmod +x "${REPO_ROOT}/skills/nexo/scripts/verify_appliance.sh"
+fi
 ln -sf "${REPO_ROOT}/scripts/nexo" "${HOME}/.local/bin/nexo"
-chmod +x "${REPO_ROOT}/scripts/nexo" "${REPO_ROOT}/scripts/nexo_session.py"
 echo "✅ CLI 'nexo' ditautkan ke ${HOME}/.local/bin/nexo"
 
 # ------------------------------------------------------------------------------
@@ -321,23 +341,25 @@ echo ""
 echo "=========================================================="
 echo "🎉 Setup Host Nexo Berhasil!"
 echo "=========================================================="
-echo "Antarmuka Pengguna (User Interfaces) yang Siap Digunakan:"
+echo "Antarmuka Pengguna & Utilitas yang Siap Digunakan:"
 echo ""
 echo "1. Layar Kios Android (Visual Maskot & Suara Interaktif):"
-echo "   - Pasang APK Nexo (id.my.yhdev.nexo) di tablet / smart screen."
+echo "   - ⚠️ PERINGATAN: DILARANG MEMBUILD APK DI SERVER! Kompilasi APK Android HANYA"
+echo "     dilakukan di komputer lokal developer menggunakan Android Studio / Gradle."
+echo "     Lihat panduan lengkap di: docs/BUILDING.md"
+echo "   - Pasang APK Nexo (id.my.yhdev.nexo) hasil build lokal ke tablet Android."
 echo "   - Tekan lama status koneksi pada layar untuk melihat Device ID."
-echo "   - Terbitkan token akses:"
-echo "     nexo-token provision --device-id '<DEVICE_ID>' --origin 'wss://domain-anda/ws/appliance'"
-echo "     (atau: PYTHONPATH=${SERVER_DIR}/src ${SERVER_DIR}/.venv/bin/python -m nexo_server.auth provision ...)"
+echo "   - Terbitkan token akses (via Telegram /nexo-token atau CLI Python):"
+echo "     PYTHONPATH=${SERVER_DIR}/src ${SERVER_DIR}/.venv/bin/python -m nexo_server.auth provision --device-id '<DEVICE_ID>' --origin 'wss://domain-anda/ws/appliance'"
 echo "   - Masukkan token ke layar tablet dan simpan."
 echo ""
 echo "2. Hermes Telegram Bot (Remote Control & Status UI):"
-echo "   - Isi 'owner_user_id' & 'owner_chat_id' di ${HERMES_HOME}/plugins/nexo-device-access/settings.json"
+echo "   - Lengkapi 'owner_user_id' & 'owner_chat_id' di ${HERMES_HOME}/plugins/nexo-device-access/settings.json"
 echo "   - Perintah bot: /nexo_status, /nexo_say <teks>, /nexo_token <device_id>, /nexo_help"
 echo ""
-echo "3. Terminal Console Bridge (Interactive CLI UI):"
+echo "3. Terminal Console Bridge & Stream Watcher (Interactive CLI UI):"
 echo "   - Buka sesi percakapan: HERMES_HOME=${HERMES_HOME} hermes chat -c nexo"
-echo "   - Konsol interaktif:   nexo bridge"
-echo "   - Cognitive stream:     nexo watch"
-echo "   - Cek status:           nexo status"
+echo "   - Konsol interaktif 2 arah: nexo bridge"
+echo "   - Cognitive stream watcher: nexo watch"
+echo "   - Cek status appliance:     nexo status"
 echo "=========================================================="
