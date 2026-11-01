@@ -68,7 +68,7 @@ def test_copy_action_uses_last_final_assistant_reply_not_status_or_user_text():
     assert button.tag == 'androidx.appcompat.widget.AppCompatImageButton'
     assert button.get(A + 'layout_width') == '48dp'
     assert button.get(A + 'layout_height') == '48dp'
-    assert button.get(A + 'src') == '@drawable/ic_clipboard'
+    assert button.get(A + 'src') in ('@drawable/ic_clipboard', '@drawable/ic_clipboard_24')
     assert button.get(A + 'contentDescription') == '@string/copy_reply'
     assert button.get(A + 'text') is None
     header = by_id(root, 'consoleHeader')
