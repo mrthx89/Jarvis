@@ -21,12 +21,11 @@ class RemoteConfigManager(private val context: Context) {
     private var closed = false
     private val preferences = context.getSharedPreferences("jarvis_endpoint", Context.MODE_PRIVATE)
 
-    private fun safeFallback(): String {
-        val bundled = context.getString(R.string.default_server_url)
-        check(ServerEndpointPolicy.isValid(bundled)) { "Bundled endpoint must use WSS" }
-        return preferences.getString("last_valid_url", null)
-            ?.takeIf(ServerEndpointPolicy::isValid) ?: bundled
-    }
+    private fun safeFallback(): String? = ServerEndpointPolicy.fallback(
+        preferences.getString("last_valid_url", null),
+        context.getString(R.string.default_server_url)
+    )
+
 
     private fun validated(value: String): String? {
         if (ServerEndpointPolicy.isValid(value)) {
@@ -64,18 +63,18 @@ class RemoteConfigManager(private val context: Context) {
      * Resolves the server WebSocket URL.
      * Fetches from Firebase Remote Config asynchronously and falls back to local default.
      */
-    fun fetchServerUrl(onResolved: (String) -> Unit) {
+    fun fetchServerUrl(onUnavailable: () -> Unit, onResolved: (String) -> Unit) {
         val defaultUrl = safeFallback()
         val config = remoteConfig
 
         if (config == null) {
-            onResolved(defaultUrl)
+            if (defaultUrl != null) onResolved(defaultUrl) else onUnavailable()
             return
         }
 
         // Return current active cached value first for instantaneous startup
         val cachedUrl = validated(config.getString(KEY_SERVER_URL)) ?: defaultUrl
-        onResolved(cachedUrl)
+        if (cachedUrl != null) onResolved(cachedUrl) else onUnavailable()
 
         // Asynchronously fetch latest values from Firebase
         config.fetchAndActivate()
