@@ -24,9 +24,12 @@ import android.view.WindowManager
 import android.widget.TextView
 import android.widget.Button
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import id.my.yhdev.nexo.config.RemoteConfigManager
 import id.my.yhdev.nexo.security.DeviceCredentialStore
 import id.my.yhdev.nexo.service.NexoKioskService
@@ -126,8 +129,24 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        val mainRoot = findViewById<View>(R.id.mainRoot)
+        ViewCompat.setOnApplyWindowInsetsListener(mainRoot) { view, windowInsets ->
+            val insets = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or
+                WindowInsetsCompat.Type.displayCutout()
+            )
+            view.setPadding(insets.left, insets.top, insets.right, insets.bottom)
+            windowInsets
+        }
 
         remoteConfigManager = RemoteConfigManager(this)
 

@@ -20,11 +20,9 @@ class RemoteConfigManager(private val context: Context) {
     private var registration: ConfigUpdateListenerRegistration? = null
     private var closed = false
     private val preferences = context.getSharedPreferences("nexo_endpoint", Context.MODE_PRIVATE)
-    private val legacyPreferences = context.getSharedPreferences("nexo_endpoint", Context.MODE_PRIVATE)
 
     private fun safeFallback(): String? {
         val lastValid = preferences.getString("last_valid_url", null)
-            ?: legacyPreferences.getString("last_valid_url", null)
         return ServerEndpointPolicy.fallback(
             lastValid,
             context.getString(R.string.default_server_url)
