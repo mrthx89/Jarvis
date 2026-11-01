@@ -36,7 +36,8 @@ data class VoiceEnd(
 data class StateChange(
     @SerializedName("type") val type: String,
     @SerializedName("state") val state: String,
-    @SerializedName("message") val message: String? = null
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("expression") val expression: String? = null
 )
 
 data class VisualTelemetry(
