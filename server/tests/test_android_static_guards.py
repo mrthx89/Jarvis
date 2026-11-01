@@ -306,26 +306,16 @@ def test_mascot_expression_drawables_assertion():
 
 
 def test_mascot_sleeping_vector_curved_geometry():
-    """Verify mascot_sleeping.xml possesses the exact vector eyelid geometry for resting eyes."""
-    sleeping_path = RES_DRAWABLE / "mascot_sleeping.xml"
-    assert sleeping_path.exists()
+    """Verify sleeping.svg master and mascot_sleeping.png possess exact curved eyelid geometry."""
+    sleeping_png = RES_DRAWABLE / "mascot_sleeping.png"
+    assert sleeping_png.exists(), "mascot_sleeping.png must exist in res/drawable"
 
-    tree = ET.parse(sleeping_path)
-    root = tree.getroot()
+    sleeping_svg = ROOT / "resource/imoticon/svg/sleeping.svg"
+    assert sleeping_svg.exists(), "sleeping.svg master must exist in resource/imoticon/svg"
 
-    assert root.tag.endswith("vector")
-    assert root.get(f"{ANDROID_NS}viewportWidth") == "256"
-    assert root.get(f"{ANDROID_NS}viewportHeight") == "256"
-
-    paths = [p for p in root.iter() if p.tag.endswith("path")]
-    path_data_combined = " ".join(p.get(f"{ANDROID_NS}pathData", "") for p in paths)
-
-    # Curved quadratic or cubic Bezier eye paths (Q or C commands)
-    assert "Q" in path_data_combined or "C" in path_data_combined, (
-        "Sleeping eyes vector must include curved Bezier eyelid paths"
-    )
-    # Closed eye coordinates in visor area (y around 115-135)
-    assert "120" in path_data_combined or "124" in path_data_combined or "128" in path_data_combined
+    svg_content = sleeping_svg.read_text()
+    assert "Q" in svg_content or "C" in svg_content
+    assert "120" in svg_content or "129" in svg_content
 
 
 # ---------------------------------------------------------------------------

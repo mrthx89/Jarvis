@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="resource/imoticon/svg/senang.svg" width="200" alt="Maskot Nexo dengan ekspresi senang" />
+  <img src="android/app/src/main/res/drawable/mascot_senang.png" width="200" alt="Maskot Nexo dengan ekspresi senang" />
 </p>
 
 <h1 align="center">Nexo Dedicated Appliance</h1>

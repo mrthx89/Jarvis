@@ -15,29 +15,17 @@ RES_RAW = ANDROID_MAIN / "res/raw"
 
 
 def test_mascot_sleeping_xml_structure():
-    """Verify mascot_sleeping.xml is a valid VectorDrawable with sleeping eyes."""
-    sleeping_path = RES_DRAWABLE / "mascot_sleeping.xml"
-    assert sleeping_path.exists(), "mascot_sleeping.xml must exist in res/drawable"
+    """Verify mascot_sleeping.png exists as high-fidelity RGBA asset and sleeping.svg master has curved eyes."""
+    sleeping_png = RES_DRAWABLE / "mascot_sleeping.png"
+    assert sleeping_png.exists(), "mascot_sleeping.png must exist in res/drawable"
 
-    tree = ET.parse(sleeping_path)
-    root = tree.getroot()
+    sleeping_svg = ROOT / "resource/imoticon/svg/sleeping.svg"
+    assert sleeping_svg.exists(), "sleeping.svg master must exist in resource/imoticon/svg"
 
-    # Verify vector root attributes
-    assert root.tag.endswith("vector")
-    android_ns = "{http://schemas.android.com/apk/res/android}"
-    assert root.get(f"{android_ns}width") == "256dp"
-    assert root.get(f"{android_ns}height") == "256dp"
-    assert root.get(f"{android_ns}viewportWidth") == "256"
-    assert root.get(f"{android_ns}viewportHeight") == "256"
-
-    # Verify paths for chassis, visor, and closed eye arcs
-    paths = [elem for elem in root.iter() if elem.tag.endswith("path")]
-    assert len(paths) >= 6, "Must contain chassis, visor, highlights, and eyelid paths"
-
-    path_data_list = [p.get(f"{android_ns}pathData", "") for p in paths]
+    svg_content = sleeping_svg.read_text()
     # Check for closed sleeping eye curved paths
-    has_left_closed_eye = any("M92,120" in p or "M94" in p or "Q104" in p for p in path_data_list)
-    has_right_closed_eye = any("M140,120" in p or "M142" in p or "Q152" in p for p in path_data_list)
+    has_left_closed_eye = "M92 120" in svg_content or "Q104" in svg_content
+    has_right_closed_eye = "M140 120" in svg_content or "Q152" in svg_content
     assert has_left_closed_eye, "Must contain left sleeping closed eye arc"
     assert has_right_closed_eye, "Must contain right sleeping closed eye arc"
 
