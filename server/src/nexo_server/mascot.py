@@ -129,14 +129,15 @@ def is_wake_command(text: str) -> bool:
     return False
 
 EMOTIONAL_TAG_PATTERN = re.compile(r"\[expr:\s*([a-zA-Z0-9_\s-]+?)\s*\]", re.IGNORECASE)
+EMOJI_PATTERN = re.compile(r"[\U00010000-\U0010FFFF\u2600-\u27BF\u2300-\u23FF]", flags=re.UNICODE)
 
 
 def parse_and_strip_emotional_tags(text: str) -> tuple[Optional[MascotExpression], str]:
-    """Parse explicit emotional tags [expr:...] from text and strip them.
+    """Parse explicit emotional tags [expr:...] from text, strip them and emojis.
 
     Returns:
         (expression, clean_text): The first recognized MascotExpression (or None),
-        and the text with all [expr:...] tags removed and whitespace normalized.
+        and the text with all [expr:...] tags and stray emojis removed.
     """
     if not text:
         return None, ""
@@ -156,6 +157,7 @@ def parse_and_strip_emotional_tags(text: str) -> tuple[Optional[MascotExpression
         return ""
 
     cleaned = EMOTIONAL_TAG_PATTERN.sub(_replace_tag, text)
+    cleaned = EMOJI_PATTERN.sub("", cleaned)
     # Clean up whitespace: normalize intra-line spaces and remove spacing before punctuation
     lines = []
     for line in cleaned.splitlines():
