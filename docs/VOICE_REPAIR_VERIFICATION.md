@@ -3,7 +3,7 @@
 ## Verified on server/build host
 
 - All 16 SVG-derived RGBA512 expressions pass `scripts/render_mascots.py --check`; black contact sheet visually inspected (not a device screenshot).
-- Full Temurin JDK17 + Gradle8.7 + Android SDK34: `:app:assembleDebug :app:testDebugUnitTest` successful; 13 JVM tests, zero failures/errors (including playback failure recovery and bounded nonblocking PCM writes).
+- Full Temurin JDK17 + Gradle8.7 + Android SDK34: `:app:assembleDebug :app:testDebugUnitTest` successful; 15 JVM tests, zero failures/errors (including playback failure recovery and bounded nonblocking PCM writes).
 - `:app:assembleRelease` successful. Existing release configuration uses debug signing: this is an internal-test APK, not a production signing claim. Existing lint suppression was not added by this repair.
 - Server pytest: 15 passed. See `server/VOICE_VERIFICATION.md` for real-provider in-process evidence and limitations.
 - Backend restarted with repair. Public `wss://jarvis.yhdev.my.id/ws/appliance` probe used real Edge male Indonesian synthesis, PCM16 input, faster-whisper and Hermes. Final run: input `Halo halo.` -> transcript `Halo Halo` -> reply `Halo, Pak Yanto. Ada yang ingin dibahas?` -> 230400 bytes PCM24k mono; LISTENING -> THINKING -> SPEAKING -> IDLE, pong responsive; 7.82 seconds from connection to IDLE notification (not speaker completion).
