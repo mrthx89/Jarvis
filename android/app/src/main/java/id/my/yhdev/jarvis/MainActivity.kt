@@ -92,6 +92,7 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         visualizerView = findViewById(R.id.visualizerView)
         tvStatus = findViewById(R.id.tvStatus)
         tvSubtitle = findViewById(R.id.tvSubtitle)
+        tvSubtitle.movementMethod = android.text.method.ScrollingMovementMethod.getInstance()
         ivStatusLed = findViewById(R.id.ivStatusLed)
 
         checkAndRequestAudioPermission()
