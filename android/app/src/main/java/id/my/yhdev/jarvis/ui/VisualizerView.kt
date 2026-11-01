@@ -27,6 +27,8 @@ class VisualizerView @JvmOverloads constructor(
     private var voiceEnabled = false
     private var voiceReactionUntil = 0L
     private var stateExpression = MascotExpression.NETRAL
+    private var conversationExpression: MascotExpression? = null
+    private var conversationExpressionUntil = 0L
     private var currentState: JarvisState = JarvisState.IDLE
     private var targetAmplitude: Float = 0f
     private var smoothAmplitude: Float = 0f
@@ -102,10 +104,21 @@ class VisualizerView @JvmOverloads constructor(
     }
 
     fun setState(state: JarvisState, expressionName: String? = null) {
+        val now = SystemClock.uptimeMillis()
+        val previousState = currentState
+        if (voiceEnabled && (state == JarvisState.IDLE || state == JarvisState.LISTENING) &&
+            previousState == JarvisState.SPEAKING) {
+            // Preserve a reply emotion briefly after the server finishes sending audio.
+            conversationExpression = stateExpression.takeUnless { it == MascotExpression.NETRAL }
+            conversationExpressionUntil = now + 6000L
+        } else if (state != JarvisState.IDLE && state != JarvisState.LISTENING) {
+            conversationExpression = null
+            conversationExpressionUntil = 0L
+        }
         this.currentState = state
 
-        if (state == JarvisState.IDLE) {
-            idleStartTime = SystemClock.uptimeMillis()
+        if (state == JarvisState.IDLE && previousState != JarvisState.IDLE) {
+            idleStartTime = now
         }
 
         val targetExpr = if (expressionName != null) {
@@ -113,7 +126,7 @@ class VisualizerView @JvmOverloads constructor(
         } else {
             when (state) {
                 JarvisState.IDLE -> MascotExpression.NETRAL
-                JarvisState.LISTENING -> MascotExpression.TERKEJUT
+                JarvisState.LISTENING -> MascotExpression.NETRAL
                 JarvisState.THINKING -> MascotExpression.BINGUNG
                 JarvisState.SPEAKING -> MascotExpression.SENANG
                 JarvisState.ERROR -> MascotExpression.SEDIH
@@ -122,9 +135,6 @@ class VisualizerView @JvmOverloads constructor(
         }
 
         stateExpression = targetExpr
-        if (voiceEnabled && SystemClock.uptimeMillis() >= voiceReactionUntil) {
-            transitionToExpression(targetExpr)
-        }
         updateExpression(SystemClock.uptimeMillis())
         onStatePhysics(state)
         postInvalidateOnAnimation()
@@ -140,7 +150,11 @@ class VisualizerView @JvmOverloads constructor(
             !wasEnabled && animateReaction -> now + 2000L
             else -> voiceReactionUntil
         }
-        if (!enabled) setAmplitude(0f)
+        if (!enabled) {
+            conversationExpression = null
+            conversationExpressionUntil = 0L
+            setAmplitude(0f)
+        }
         updateExpression(now)
         postInvalidateOnAnimation()
     }
@@ -149,6 +163,9 @@ class VisualizerView @JvmOverloads constructor(
         val expression = when {
             !voiceEnabled -> MascotExpression.MENANGIS
             now < voiceReactionUntil -> MascotExpression.SANGAT_SENANG
+            (currentState == JarvisState.IDLE || currentState == JarvisState.LISTENING) &&
+                now < conversationExpressionUntil ->
+                conversationExpression ?: stateExpression
             currentState == JarvisState.IDLE && now - idleStartTime > 60000L &&
                 stateExpression == MascotExpression.NETRAL -> MascotExpression.MENGANTUK
             else -> stateExpression

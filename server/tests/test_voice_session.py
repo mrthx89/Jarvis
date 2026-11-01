@@ -219,3 +219,107 @@ async def test_cooldown_covers_queued_playback_and_echo():
         assert not s.is_recording
     finally:
         await s.close()
+
+
+class FixedSTT:
+    def __init__(self, text):
+        self.text = text
+
+    async def transcribe(self, pcm):
+        return self.text
+
+
+class TrackingHermes:
+    def __init__(self, reply="Halo, tes berhasil. Haha!"):
+        self.reply = reply
+        self.calls = []
+
+    async def query(self, text):
+        self.calls.append(text)
+        return self.reply
+
+
+class TrackingTTS:
+    def __init__(self):
+        self.texts = []
+
+    async def synthesize_stream(self, text):
+        self.texts.append(text)
+        yield bytes(960)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("command", "expression"), [
+    ("Jarvis tersenyum", "senang"),
+    ("tunjukkan wajah bingung", "bingung"),
+    ("coba tertawa", "tertawa"),
+    ("ekspresi netral", "netral"),
+    ("kembali normal", "netral"),
+    ("jangan sedih", "senang"),
+    ("ekspresi sedih", "sedih"),
+])
+async def test_pure_mascot_command_bypasses_agent_and_preserves_ack(command, expression):
+    s = await session()
+    s.stt = FixedSTT(command)
+    s.hermes = TrackingHermes()
+    s.tts = TrackingTTS()
+    try:
+        s.audio_buffer.extend(SPEECH * 10)
+        await s.process_recorded_audio()
+        assert s.hermes.calls == []
+        assistant = [m["text"] for m in s.websocket.messages
+                     if m["type"] == "transcription" and m["role"] == "assistant"]
+        assert assistant == ["Baik, ekspresi wajah sudah diubah."]
+        assert s.tts.texts == assistant
+        assert s.websocket.audio == [bytes(960)]
+        speaking = [m for m in s.websocket.messages if m.get("state") == "SPEAKING"]
+        assert [m["expression"] for m in speaking] == [expression]
+        assert sum(m["type"] == "tts_end" for m in s.websocket.messages) == 1
+        assert s.websocket.messages[-1]["state"] == "IDLE"
+    finally:
+        await s.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("text", "reply", "expression"), [
+    ("Jarvis tersenyum lalu buka email", "Email berhasil dibuka.", "sangat_senang"),
+    ('Jelaskan "coba tertawa"', "Pengalaman manusia beragam.", "netral"),
+    ("jangan tertawa", "Baik.", "netral"),
+    ("ekspresi lapar", "Saya belum yakin.", "bingung"),
+    ("kenapa Jarvis tersenyum?", "Halo!", "senang"),
+    ("Aku sedih hari ini", "Haha, selamat pagi!", "sedih"),
+    ("Ceritakan lelucon", "Mengapa ayam menyeberang jalan?", "tertawa"),
+    ("Jelaskan pengalaman", "Pengalaman adalah pembelajaran.", "netral"),
+])
+async def test_normal_tasks_use_agent_and_context_without_rewriting_reply(text, reply, expression):
+    s = await session()
+    s.stt = FixedSTT(text)
+    s.hermes = TrackingHermes(reply)
+    s.tts = TrackingTTS()
+    try:
+        s.audio_buffer.extend(SPEECH * 10)
+        await s.process_recorded_audio()
+        assert s.hermes.calls == [text]
+        assert s.tts.texts == [reply]
+        assert [m["text"] for m in s.websocket.messages
+                if m["type"] == "transcription" and m["role"] == "assistant"] == [reply]
+        assert [m["expression"] for m in s.websocket.messages
+                if m.get("state") == "SPEAKING"] == [expression]
+    finally:
+        await s.close()
+
+
+@pytest.mark.asyncio
+async def test_empty_transcription_calls_neither_agent_nor_tts():
+    s = await session()
+    s.stt = FixedSTT(" \n ")
+    s.hermes = TrackingHermes()
+    s.tts = TrackingTTS()
+    try:
+        s.audio_buffer.extend(SPEECH * 10)
+        await s.process_recorded_audio()
+        assert not s.hermes.calls
+        assert not s.tts.texts
+        assert not any(m["type"] == "tts_start" for m in s.websocket.messages)
+    finally:
+        await s.close()

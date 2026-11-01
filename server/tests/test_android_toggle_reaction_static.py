@@ -52,6 +52,22 @@ def test_console_starts_hidden_and_visibility_only_follows_voice_enable():
     assert 'consoleCard.visibility' not in transcript
 
 
+def test_conversation_expression_lingers_then_yields_to_listening_error_or_off():
+    view = (UI / 'VisualizerView.kt').read_text()
+    assert 'private var conversationExpression: MascotExpression? = null' in view
+    assert 'val previousState = currentState' in view
+    assert 'previousState == JarvisState.SPEAKING' in view
+    assert 'conversationExpressionUntil = now + 6000L' in view
+    assert '(currentState == JarvisState.IDLE || currentState == JarvisState.LISTENING)' in view
+    assert 'now < conversationExpressionUntil' in view
+    assert 'JarvisState.LISTENING -> MascotExpression.NETRAL' in view
+    assert 'state != JarvisState.IDLE && state != JarvisState.LISTENING' in view
+    assert 'conversationExpression = null' in view
+    assert 'if (state == JarvisState.IDLE && previousState != JarvisState.IDLE)' in view
+    # Repainting cached status must not extend a response emotion forever.
+    assert 'previousState != JarvisState.IDLE' in view
+
+
 def test_paused_mascot_cries_and_optimistic_reaction_expires_without_audio_side_effects():
     view = (UI / 'VisualizerView.kt').read_text()
     assert 'fun setVoiceEnabled(enabled: Boolean, animateReaction: Boolean)' in view

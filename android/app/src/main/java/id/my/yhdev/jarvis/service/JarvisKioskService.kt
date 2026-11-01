@@ -240,7 +240,7 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
         if (!isVoiceEnabled) return
         duplex.stateChanged(state)
         if (duplex.playbackPending && (state == JarvisState.IDLE || state == JarvisState.LISTENING)) {
-            publish(JarvisState.SPEAKING, "Menyelesaikan pemutaran • mikrofon dijeda", expression)
+            publish(JarvisState.SPEAKING, "Menyelesaikan pemutaran • mikrofon dijeda", currentExpression)
         } else if (state == JarvisState.IDLE || state == JarvisState.LISTENING) {
             if (audioRecorder.isRecording()) publishListening()
             else publish(JarvisState.ERROR, "Mikrofon tidak aktif. Periksa izin dan perangkat audio.")
@@ -272,7 +272,7 @@ class JarvisKioskService : Service(), JarvisWebSocketClient.WebSocketEventListen
     override fun onTTSStarted() {
         if (!isVoiceEnabled) return
         duplex.ttsStarted()
-        publish(JarvisState.SPEAKING, "Berbicara • mikrofon dijeda")
+        publish(JarvisState.SPEAKING, "Berbicara • mikrofon dijeda", currentExpression)
         audioPlayer.start()
     }
 

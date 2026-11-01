@@ -21,6 +21,7 @@ from ..pipeline.vad import EnergyVAD
 from ..pipeline.stt import BaseSTT
 from ..pipeline.tts import BaseTTS
 from ..hermes.agent_bridge import HermesBridge
+from ..mascot import contextual_expression, parse_expression_command
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +259,7 @@ class ApplianceSession:
                     logger.debug("Unable to send idle state")
 
     async def _run_pipeline(self, captured_pcm):
-        """Process captured speech through STT -> Hermes -> TTS."""
+        """Process STT -> local mascot command or Hermes -> TTS."""
 
         # Step 1: Thinking / Transcribing
         await self.send_state(JarvisState.THINKING, expression="bingung")
@@ -274,26 +275,22 @@ class ApplianceSession:
             TranscriptionMessage(role="user", text=transcription, is_final=True)
         )
 
-        # Step 2: Query Hermes Agent
-        agent_reply = await self.hermes.query(transcription)
-        logger.info("Agent complete for %s (%d characters)", self.session_id, len(agent_reply))
+        # Step 2: Only a whole supported mascot command bypasses Hermes.
+        # Explicit expressions win over any words in the static acknowledgement.
+        command_expression = parse_expression_command(transcription)
+        if command_expression is not None:
+            agent_reply = "Baik, ekspresi wajah sudah diubah."
+            speech_expr = command_expression.value
+        else:
+            agent_reply = await self.hermes.query(transcription)
+            logger.info("Agent complete for %s (%d characters)", self.session_id, len(agent_reply))
+            speech_expr = contextual_expression(transcription, agent_reply).value
 
         await self.send_json_message(
             TranscriptionMessage(role="assistant", text=agent_reply, is_final=True)
         )
 
-        # Step 3: Speaking / Streaming TTS with appropriate emotional expression
-        reply_lower = agent_reply.lower()
-        if any(w in reply_lower for w in ["haha", "lucu", "wkwk"]):
-            speech_expr = "tertawa"
-        elif any(w in reply_lower for w in ["luar biasa", "selamat", "berhasil", "hebat"]):
-            speech_expr = "sangat_senang"
-        elif any(w in reply_lower for w in ["siap", "tentu", "aman"]):
-            speech_expr = "keren"
-        elif any(w in reply_lower for w in ["maaf", "kendala", "gagal"]):
-            speech_expr = "sedih"
-        else:
-            speech_expr = "senang"
+        # Step 3: Speaking / Streaming TTS with bounded expression heuristics
 
         await self.send_state(JarvisState.SPEAKING, expression=speech_expr)
         await self.send_json_message(TTSStart())
