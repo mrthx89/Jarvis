@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Jarvis</string>
+    <string name="default_server_url">ws://192.168.1.100:8765/ws/appliance</string>
+    <string name="status_connecting">Menghubungkan ke Jarvis Server...</string>
+    <string name="status_idle">Jarvis Siaga</string>
+    <string name="status_listening">Menyimak...</string>
+    <string name="status_thinking">Memproses...</string>
+    <string name="status_speaking">Berbicara...</string>
+    <string name="status_disconnected">Koneksi Terputus. Menghubungkan ulang...</string>
+</resources>

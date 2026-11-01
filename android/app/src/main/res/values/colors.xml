@@ -1,0 +1,16 @@
+<resources>
+    <!-- Background: Deep Pure Black for OLED/Monitor focus -->
+    <color name="bg_black">#08080A</color>
+    
+    <!-- Accent colors: Calm Sci-Fi Cyan/Blue & Warm Amber -->
+    <color name="jarvis_cyan">#00E5FF</color>
+    <color name="jarvis_cyan_glow">#3300E5FF</color>
+    <color name="jarvis_blue">#0077FF</color>
+    <color name="jarvis_amber">#FFB300</color>
+    <color name="jarvis_emerald">#00E676</color>
+    <color name="jarvis_red">#FF5252</color>
+
+    <!-- Subtitles and typography -->
+    <color name="text_primary">#E0E6ED</color>
+    <color name="text_secondary">#8892B0</color>
+</resources>

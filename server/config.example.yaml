@@ -1,0 +1,24 @@
+server:
+  host: "0.0.0.0"
+  port: 8765
+  ws_path: "/ws/appliance"
+  ping_interval: 15
+  ping_timeout: 30
+
+stt:
+  provider: "faster-whisper" # "faster-whisper" | "groq" | "mock"
+  model: "base"
+  language: "id"
+
+tts:
+  provider: "edge-tts" # "edge-tts" | "elevenlabs" | "mock"
+  voice: "id-ID-ArdiNeural" # Bahasa Indonesia natural male voice
+
+hermes:
+  bridge_mode: "cli" # "cli" | "socket" | "mock"
+  hermes_binary: "hermes"
+  timeout_seconds: 60
+
+telemetry:
+  frequency_bands_count: 5
+  emit_interval_ms: 40
