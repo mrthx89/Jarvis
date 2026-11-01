@@ -65,20 +65,20 @@ def test_nexo_auth_fallback_to_nexo_auth():
 
 
 def test_nexo_auth_fallback_custom_dirs(tmp_path):
-    """Registry path resolver must fallback from nexo-auth to peer nexo-auth."""
+    """Registry path resolver must fallback from nexo-auth to peer jarvis-auth."""
     from nexo_server.auth import resolve_registry_path
 
     base = tmp_path / "auth_test"
+    jarvis_dir = base / "jarvis-auth"
     nexo_dir = base / "nexo-auth"
-    nexo_dir = base / "nexo-auth"
-    nexo_dir.mkdir(parents=True, mode=0o700)
-    nexo_file = nexo_dir / "devices.json"
-    nexo_file.write_text('{"version":1,"devices":{}}')
+    jarvis_dir.mkdir(parents=True, mode=0o700)
+    jarvis_file = jarvis_dir / "devices.json"
+    jarvis_file.write_text('{"version":1,"devices":{}}')
 
-    # Target under nexo-auth should resolve to peer nexo-auth when nexo devices.json doesn't exist
+    # Target under nexo-auth should resolve to peer jarvis-auth when nexo devices.json doesn't exist
     target = nexo_dir / "devices.json"
     resolved = resolve_registry_path(target)
-    assert resolved == nexo_file
+    assert resolved == jarvis_file
 
     # Once nexo devices.json exists, it should resolve to nexo
     nexo_dir.mkdir(parents=True, mode=0o700)

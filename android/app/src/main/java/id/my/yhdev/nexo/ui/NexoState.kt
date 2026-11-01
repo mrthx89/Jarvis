@@ -8,5 +8,3 @@ enum class NexoState {
     ERROR,
     DISCONNECTED
 }
-
-typealias NexoState = NexoState

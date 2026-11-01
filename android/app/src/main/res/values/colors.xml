@@ -10,14 +10,6 @@
     <color name="nexo_emerald">#00E676</color>
     <color name="nexo_red">#FF5252</color>
 
-    <!-- Backward compatibility aliases -->
-    <color name="nexo_cyan">@color/nexo_cyan</color>
-    <color name="nexo_cyan_glow">@color/nexo_cyan_glow</color>
-    <color name="nexo_blue">@color/nexo_blue</color>
-    <color name="nexo_amber">@color/nexo_amber</color>
-    <color name="nexo_emerald">@color/nexo_emerald</color>
-    <color name="nexo_red">@color/nexo_red</color>
-
     <!-- Subtitles and typography -->
     <color name="text_primary">#E0E6ED</color>
     <color name="text_secondary">#8892B0</color>

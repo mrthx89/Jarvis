@@ -6,16 +6,13 @@ import org.junit.Test
 class ServerEndpointPolicyTest {
     @Test fun fallbackSkipsInvalidCandidatesWithoutThrowing() {
         val secureNexo = "wss://nexo.yhdev.my.id/ws/appliance"
-        val secureNexo = "wss://nexo.yhdev.my.id/ws/appliance"
         assertEquals(secureNexo, ServerEndpointPolicy.fallback(secureNexo, "ws://invalid/ws"))
         assertEquals(secureNexo, ServerEndpointPolicy.fallback("ws://invalid/ws", secureNexo))
-        assertEquals(secureNexo, ServerEndpointPolicy.fallback(secureNexo, "ws://invalid/ws"))
         assertNull(ServerEndpointPolicy.fallback(null, "ws://invalid/ws"))
         assertNull(ServerEndpointPolicy.fallback(null, ""))
     }
 
     @Test fun acceptsOnlyTlsWebSocketWithoutCredentialsOrFragments() {
-        assertTrue(ServerEndpointPolicy.isValid("wss://nexo.yhdev.my.id/ws/appliance"))
         assertTrue(ServerEndpointPolicy.isValid("wss://nexo.yhdev.my.id/ws/appliance"))
         assertTrue(ServerEndpointPolicy.isValid("wss://example.org:8443/ws/appliance"))
         listOf("", "ws://example.org/ws", "https://example.org/ws", "wss://user:pass@example.org/ws",

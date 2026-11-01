@@ -217,5 +217,3 @@ class NexoWebSocketClient(
         client.dispatcher.executorService.shutdown()
     }
 }
-
-typealias NexoWebSocketClient = NexoWebSocketClient
