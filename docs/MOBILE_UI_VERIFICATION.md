@@ -5,7 +5,7 @@ Source changes only. No Gradle invocation, APK build, emulator run, or remote bu
 ## Changes
 
 - Credential sheet uses an expanded window-height scroll viewport, with system bar/cutout padding and `ADJUST_RESIZE` for the keyboard.
-- Token label/helper are external wrapping TextViews rather than the single-line floating hint/helper area. Validation errors allow multiple lines.
+- Token label/helper are external wrapping TextViews rather than the single-line floating hint/helper area. Validation errors use the Material 1.11.0 default indicator; their wrapping remains a device acceptance check.
 - Actions use full-width wrapping labels and content-based heights; cancel/reset no longer compete in weighted columns.
 - The console has an explicit “Salin jawaban terakhir” action, initially disabled. It copies the full last final assistant reply, not the six visible lines, current user transcription, or connection status. It retains the previous reply while a new user utterance is displayed. Nothing is automatically copied. The reply remains only in Activity memory; recreation clears the copy state. Clipboard contents can be visible to the OS or other permitted apps, so copy sensitive replies deliberately.
 

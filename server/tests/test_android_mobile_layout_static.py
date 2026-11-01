@@ -39,6 +39,12 @@ def test_token_label_and_helper_wrap_outside_the_single_line_input():
     assert 'bars.left' in sheet and 'bars.right' in sheet
 
 
+def test_sheet_does_not_use_error_max_lines_api_absent_in_material_1_11():
+    sheet = (MAIN / 'java/id/my/yhdev/jarvis/ui/CredentialSetupSheet.kt').read_text()
+    assert '.errorMaxLines' not in sheet
+    assert 'setErrorMaxLines(' not in sheet
+
+
 def test_copy_action_uses_last_final_assistant_reply_not_status_or_user_text():
     root = ET.parse(MAIN / 'res/layout/activity_main.xml').getroot()
     button = by_id(root, 'copyReply')
