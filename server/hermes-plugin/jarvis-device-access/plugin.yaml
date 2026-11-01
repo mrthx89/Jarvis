@@ -1,0 +1,4 @@
+name: jarvis-device-access
+version: 1.0.0
+description: Owner-only private Telegram provisioning for Jarvis appliance devices.
+author: YH Dev

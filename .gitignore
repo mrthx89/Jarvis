@@ -68,3 +68,5 @@ GoogleService-Info.plist
 keystore.properties
 .auth/
 *.credentials.json
+# Private installed plugin deployment settings
+/server/hermes-plugin/**/settings.json
