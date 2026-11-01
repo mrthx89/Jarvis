@@ -57,6 +57,10 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-config-ktx")
     implementation("com.google.firebase:firebase-analytics-ktx")
+    implementation("com.google.firebase:firebase-messaging-ktx")
+
+    // AndroidSVG: High-fidelity W3C SVG rendering with gradient and filter support
+    implementation("com.caverock:androidsvg-aar:1.4")
 
     // Networking: OkHttp for low-latency WebSocket connection
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

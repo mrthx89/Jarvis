@@ -6,46 +6,92 @@
     android:background="@color/bg_black"
     android:keepScreenOn="true">
 
-    <!-- Top Status Indicator -->
-    <TextView
-        android:id="@+id/tvStatus"
+    <!-- Top 3D Glassmorphic Status Pill -->
+    <LinearLayout
+        android:id="@+id/pillStatus"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
-        android:fontFamily="sans-serif-medium"
-        android:letterSpacing="0.15"
-        android:text="@string/status_idle"
-        android:textColor="@color/text_secondary"
-        android:textSize="14sp"
-        android:textAllCaps="true"
+        android:layout_marginTop="28dp"
+        android:background="@drawable/bg_hud_pill"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:elevation="6dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent">
 
-    <!-- Central Audioreactive Mascot Eyes (The Living Face of Jarvis) -->
+        <ImageView
+            android:id="@+id/ivStatusLed"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_marginEnd="10dp"
+            android:src="@drawable/led_dot"
+            android:contentDescription="Status LED" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.12"
+            android:text="@string/status_idle"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:textAllCaps="true" />
+    </LinearLayout>
+
+    <!-- Central Living 3D Mascot with Organic Physics & Transitions -->
     <id.my.yhdev.jarvis.ui.VisualizerView
         android:id="@+id/visualizerView"
-        android:layout_width="480dp"
-        android:layout_height="280dp"
-        app:layout_constraintBottom_toTopOf="@id/tvSubtitle"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginStart="32dp"
+        android:layout_marginEnd="32dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
+        app:layout_constraintBottom_toTopOf="@id/consoleCard"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/tvStatus" />
+        app:layout_constraintTop_toBottomOf="@id/pillStatus" />
 
-    <!-- Live Subtitle / Transcription Readout -->
-    <TextView
-        android:id="@+id/tvSubtitle"
+    <!-- Bottom 3D Cyberdeck Curved Glass Console Readout -->
+    <LinearLayout
+        android:id="@+id/consoleCard"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="64dp"
-        android:layout_marginEnd="64dp"
-        android:layout_marginBottom="48dp"
-        android:gravity="center"
-        android:lineSpacingExtra="4dp"
-        android:textColor="@color/text_primary"
-        android:textSize="18sp"
+        android:layout_marginStart="48dp"
+        android:layout_marginEnd="48dp"
+        android:layout_marginBottom="32dp"
+        android:background="@drawable/bg_console_glass"
+        android:orientation="vertical"
+        android:elevation="8dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintStart_toStartOf="parent">
+
+        <TextView
+            android:id="@+id/tvConsoleHeader"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.15"
+            android:text="JARVIS // COGNITIVE STREAM"
+            android:textColor="@color/jarvis_cyan"
+            android:textSize="11sp"
+            android:textAllCaps="true"
+            android:alpha="0.8" />
+
+        <!-- Subtitle & Live Transcription Readout -->
+        <TextView
+            android:id="@+id/tvSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="start|center_vertical"
+            android:lineSpacingExtra="4dp"
+            android:text="Menunggu instruksi suara..."
+            android:textColor="@color/text_primary"
+            android:textSize="16sp" />
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
