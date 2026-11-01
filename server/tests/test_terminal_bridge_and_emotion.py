@@ -129,7 +129,7 @@ async def test_gateway_streaming_with_emotional_tags():
     tts = MockTTSCollector()
     ws = MockWS()
     stt = AsyncMock()
-    stt.transcribe = AsyncMock(return_value="Halo Nexo")
+    stt.transcribe = AsyncMock(return_value="Bantu saya menyelesaikan tugas ini")
 
     session = ApplianceSession(
         websocket=cast(Any, ws),
