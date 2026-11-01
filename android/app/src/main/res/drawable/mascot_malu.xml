@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="256dp"
+    android:height="256dp"
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+  <group
+      android:scaleX="1.18"
+      android:scaleY="1.18"
+      android:pivotX="128"
+      android:pivotY="128">
+    <!-- Outer metallic chassis / Nusa Silver contour -->
+    <path
+        android:pathData="M43,120C39,95 45,70 59,46C68,29 79,29 92,48C103,63 112,64 128,64C144,64 154,63 165,48C178,29 189,29 198,46C212,70 218,96 213,121C221,151 211,184 184,195C157,206 100,206 73,195C45,184 35,153 43,120Z"
+        android:strokeWidth="1.5"
+        android:strokeColor="#818a96">
+      <aapt:attr name="android:fillColor">
+        <gradient
+            android:startX="40.33"
+            android:startY="33.49"
+            android:endX="82.42"
+            android:endY="203.25"
+            android:type="linear">
+          <item android:offset="0" android:color="#FF81868E"/>
+          <item android:offset="0.22" android:color="#FFFFFFFF"/>
+          <item android:offset="0.44" android:color="#FFB9BEC5"/>
+          <item android:offset="0.64" android:color="#FFF9FAFB"/>
+          <item android:offset="0.86" android:color="#FFAAB0B8"/>
+          <item android:offset="1" android:color="#FF79818B"/>
+        </gradient>
+      </aapt:attr>
+    </path>
+    <!-- Lower chin silver collar -->
+    <path
+        android:pathData="M43,132C45,171 60,188 82,194C105,201 153,202 178,194C200,187 213,171 213,132C211,160 196,173 174,179C143,186 111,186 82,179C59,174 46,160 43,132Z"
+        android:strokeAlpha="0.52"
+        android:fillAlpha="0.52">
+      <aapt:attr name="android:fillColor">
+        <gradient
+            android:startX="43"
+            android:startY="132"
+            android:endX="213"
+            android:endY="132"
+            android:type="linear">
+          <item android:offset="0" android:color="#CC777F89"/>
+          <item android:offset="0.1" android:color="#E0FFFFFF"/>
+          <item android:offset="0.25" android:color="#0CFFFFFF"/>
+          <item android:offset="0.54" android:color="#93FFFFFF"/>
+          <item android:offset="0.78" android:color="#0CFFFFFF"/>
+          <item android:offset="0.93" android:color="#D1FFFFFF"/>
+          <item android:offset="1" android:color="#7A848B95"/>
+        </gradient>
+      </aapt:attr>
+    </path>
+    <!-- Dark glass visor screen faceplate -->
+    <path
+        android:pathData="M43,120C39,95 45,70 59,46C68,29 79,29 92,48C103,63 112,64 128,64C144,64 154,63 165,48C178,29 189,29 198,46C212,70 218,96 213,121C211,140 201,149 183,157C153,171 104,171 73,157C55,150 45,141 43,120Z"
+        android:strokeWidth="1.8"
+        android:strokeColor="#334a72">
+      <aapt:attr name="android:fillColor">
+        <gradient
+            android:startX="41.78"
+            android:startY="33.49"
+            android:endX="155.94"
+            android:endY="167.5"
+            android:type="linear">
+          <item android:offset="0" android:color="#FF253B5D"/>
+          <item android:offset="0.22" android:color="#FF101C36"/>
+          <item android:offset="0.58" android:color="#FF050912"/>
+          <item android:offset="0.98" android:color="#FF02040B"/>
+        </gradient>
+      </aapt:attr>
+    </path>
+    <!-- Screen depth illumination -->
+    <path
+        android:pathData="M43,120C39,95 45,70 59,46C68,29 79,29 92,48C103,63 112,64 128,64C144,64 154,63 165,48C178,29 189,29 198,46C212,70 218,96 213,121C211,140 201,149 183,157C153,171 104,171 73,157C55,150 45,141 43,120Z">
+      <aapt:attr name="android:fillColor">
+        <gradient
+            android:centerX="116.16"
+            android:centerY="38.85"
+            android:gradientRadius="155.66"
+            android:type="radial">
+          <item android:offset="0" android:color="#35A9D4FF"/>
+          <item android:offset="0.54" android:color="#0C254E98"/>
+          <item android:offset="1" android:color="#00000000"/>
+        </gradient>
+      </aapt:attr>
+    </path>
+    <!-- Ear highlights -->
+    <path
+        android:pathData="M49,89C53,66 64,40 72,37C77,36 82,42 88,51"
+        android:strokeAlpha="0.56"
+        android:strokeWidth="2.1"
+        android:fillColor="#00000000"
+        android:strokeColor="#aed3ff"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M169,50C180,35 186,35 192,43C202,57 208,78 210,94"
+        android:strokeAlpha="0.22"
+        android:strokeWidth="1.7"
+        android:fillColor="#00000000"
+        android:strokeColor="#8dbdfd"
+        android:strokeLineCap="round"/>
+    <!-- Chin highlights -->
+    <path
+        android:pathData="M55,168Q64,185 85,190"
+        android:strokeAlpha="0.5"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:strokeColor="#ffffff"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M180,190Q200,184 204,167"
+        android:strokeAlpha="0.42"
+        android:strokeWidth="2.5"
+        android:fillColor="#00000000"
+        android:strokeColor="#ffffff"
+        android:strokeLineCap="round"/>
+        <!-- Malu Bashful Eyes & Pink Blush Hatching -->
+    <path
+        android:pathData="M 104,99 a 9,18 0 1,0 0,36 a 9,18 0 1,0 0,-36 Z"
+        android:fillColor="#FFF6FFFF"/>
+    <path
+        android:pathData="M 152,99 a 9,18 0 1,0 0,36 a 9,18 0 1,0 0,-36 Z"
+        android:fillColor="#FFF6FFFF"/>
+    <path
+        android:pathData="M70,140 L75,134 M79,141 L84,135 M88,142 L93,136"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFF91CC"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M167,136 L172,142 M176,135 L181,141 M185,134 L190,140"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFF91CC"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"/>
+  </group>
+</vector>
