@@ -84,6 +84,70 @@ def send_protected(text, settings):
         raise ValueError('Private Telegram delivery failed') from None
 
 
+def send_device_exists_card(device_id, settings):
+    from dotenv import dotenv_values
+    token = dotenv_values(settings['telegram_env_file']).get('TELEGRAM_BOT_TOKEN')
+    if not token:
+        return
+
+    delivery_file = Path(settings['delivery_dir']) / f"{device_id}.json"
+    existing_token = None
+    existing_origin = None
+    if delivery_file.exists():
+        try:
+            data = json.loads(delivery_file.read_text())
+            existing_token = data.get('token')
+            existing_origin = data.get('origin')
+        except Exception:
+            pass
+
+    buttons = []
+    if existing_token:
+        buttons.append([
+            {
+                "text": "📋 Salin Token",
+                "copy_text": {"text": existing_token}
+            }
+        ])
+    buttons.append([
+        {
+            "text": "🔄 Salin Perintah Rotasi",
+            "copy_text": {"text": f"/nexo_token rotate {device_id}"}
+        }
+    ])
+
+    formatted_text = (
+        f"📱 <b>Perangkat Sudah Terdaftar</b>\n\n"
+        f"<b>Device ID:</b>\n<code>{device_id}</code>\n\n"
+    )
+    if existing_token:
+        formatted_text += (
+            f"<b>Token Aktif:</b>\n<code>{existing_token}</code>\n\n"
+            f"<b>Origin:</b>\n<code>{existing_origin or settings.get('origin', '')}</code>\n\n"
+            f"<i>Ketuk token di atas atau gunakan tombol di bawah untuk menyalin langsung ke clipboard:</i>"
+        )
+    else:
+        formatted_text += (
+            f"<i>Gunakan tombol di bawah untuk menyalin perintah rotasi token baru:</i>"
+        )
+
+    msg_payload = {
+        'chat_id': str(settings['owner_chat_id']),
+        'text': formatted_text,
+        'parse_mode': 'HTML',
+        'reply_markup': {"inline_keyboard": buttons},
+        'disable_web_page_preview': True
+    }
+    payload = json.dumps(msg_payload).encode()
+    request = Request('https://api.telegram.org/bot' + token + '/sendMessage',
+                      data=payload, headers={'Content-Type': 'application/json'})
+    try:
+        with urlopen(request, timeout=15):
+            pass
+    except Exception:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--settings', required=True)
@@ -94,6 +158,11 @@ def main():
         request = json.loads(sys.stdin.read(8193))
         summary = handle_command(request['args'], request['source'], settings,
                                  lambda text: send_protected(text, settings))
+        if isinstance(summary, str) and 'Device exists; use deliver ' in summary:
+            parts = summary.split('Device exists; use deliver ', 1)[1].split(' ', 1)
+            if parts:
+                dev_id = parts[0].strip()
+                send_device_exists_card(dev_id, settings)
     except Exception:
         summary = 'Pengelolaan token gagal. Periksa konfigurasi privat; tidak ada token di log.'
     print(json.dumps({'summary': summary}))
