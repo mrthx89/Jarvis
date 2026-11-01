@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.*
 import android.os.SystemClock
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
 import androidx.core.content.ContextCompat
 import kotlin.math.cos
@@ -43,9 +44,13 @@ class VisualizerView @JvmOverloads constructor(
     private val auraPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
+    private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
 
     // Transformation Rects & Matrix
     private val drawRect = RectF()
+    private val shadowRect = RectF()
     private val animMatrix = Matrix()
 
     // Physics Animation Properties
@@ -273,6 +278,19 @@ class VisualizerView @JvmOverloads constructor(
         val finalScaleX = breathScale * squashStretchX * speechScale * listenScale
         val finalScaleY = breathScale * squashStretchY * speechScale * listenScale * blinkSquashY
 
+        // Draw 3D Perspective Floor Shadow under character
+        val floorY = cy + (mascotSize * 0.44f)
+        val shadowW = mascotSize * 0.38f * (1f / finalScaleY.coerceAtLeast(0.5f))
+        val shadowH = mascotSize * 0.08f * (1f / finalScaleY.coerceAtLeast(0.5f))
+        shadowRect.set(cx - shadowW, floorY - shadowH, cx + shadowW, floorY + shadowH)
+        shadowPaint.shader = RadialGradient(
+            cx, floorY, shadowW.coerceAtLeast(10f),
+            intArrayOf(0x66000000, 0x00000000),
+            floatArrayOf(0.15f, 1.0f),
+            Shader.TileMode.CLAMP
+        )
+        canvas.drawOval(shadowRect, shadowPaint)
+
         // Draw Ambient Lighting Aura behind mascot
         drawAmbientAura(canvas, cx, cy, mascotSize * 0.65f)
 
@@ -339,6 +357,28 @@ class VisualizerView @JvmOverloads constructor(
             Shader.TileMode.CLAMP
         )
         canvas.drawCircle(cx, cy, radius * 1.3f, auraPaint)
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_DOWN) {
+            performClick()
+            // Playful tactile spring squash & random happy expression
+            transitionToExpression(
+                listOf(
+                    MascotExpression.JAHIL,
+                    MascotExpression.SENANG,
+                    MascotExpression.KEREN,
+                    MascotExpression.SANGAT_SENANG
+                ).random()
+            )
+            return true
+        }
+        return super.onTouchEvent(event)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
     }
 
     private fun easeInOutCubic(x: Float): Float {
