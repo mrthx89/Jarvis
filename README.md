@@ -104,9 +104,33 @@ Lihat [dokumentasi resmi Hermes](https://hermes-agent.nousresearch.com/docs/gett
 
 ## Memulai
 
-Panduan teknis lengkap, systemd, provisioning, penggunaan sehari-hari dan troubleshooting: **[INSTALLATION](docs/INSTALLATION.md)**.
+Panduan instalasi lengkap, setup otomatis, konfigurasi Hermes, systemd, dan registrasi perangkat Android tersedia di:
+👉 **[Panduan Instalasi & Konfigurasi Hermes (docs/INSTALLATION.md)](docs/INSTALLATION.md)**
 
-### Server
+### Setup Cepat Host (Otomatis)
+
+Dari root repositori Nexo:
+
+```bash
+git clone https://github.com/mrthx89/Nexo.git
+cd Nexo
+chmod +x scripts/setup_host.sh
+./scripts/setup_host.sh
+```
+
+Skrip instalasi otomatis tersebut mengeksekusi:
+1. Verifikasi paket sistem (Python 3.11+, ffmpeg, curl, git, build-essential).
+2. Verifikasi & integrasi Hermes CLI.
+3. Inisialisasi sesi kanonis `nexo` di database Hermes (`~/.hermes/state.db`).
+4. Pembuatan virtual environment Python dan instalasi dependensi gateway.
+5. Pre-download model Faster-Whisper `base` dan pengujian sintesis suara Edge-TTS.
+6. Penyiapan direktori autentikasi perangkat bertoken bearer (`~/.config/nexo-auth/devices.json`).
+7. Pembuatan konfigurasi `server/config.yaml` dengan path host absolut.
+8. Pemasangan dan aktivasi systemd user service `nexo-appliance.service` beserta user linger 24/7.
+9. Pemasangan Skill Nexo dan Plugin Telegram ke direktori Hermes.
+10. Penautan executable CLI `nexo` ke `~/.local/bin/nexo` dan verifikasi health server.
+
+### Setup Manual Server
 
 Prasyarat: Python 3.11+, runtime Hermes Agent, dan konfigurasi layanan suara. Dari root repository:
 
