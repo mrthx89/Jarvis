@@ -198,14 +198,18 @@ class NexoWebSocketClient(
         val delaySec = minOf(30, (1 shl minOf(reconnectAttempt, 5)))
         Log.i(TAG, "Scheduling reconnect in $delaySec seconds...")
         val expr = if (reconnectAttempt <= 2) "bingung" else "sedih"
-        listener.onStateChanged(
-            NexoState.DISCONNECTED,
-            "Koneksi terputus • mencoba ulang dalam ${delaySec}s (ke-$reconnectAttempt)",
-            expr
-        )
         Thread({
             try {
-                Thread.sleep(delaySec * 1000L)
+                for (remaining in delaySec downTo 1) {
+                    if (!shouldRun.get() || isConnected.get()) break
+                    val msg = if (reconnectAttempt <= 2) {
+                        "Koneksi terputus • mencoba ulang dalam ${remaining}s (ke-$reconnectAttempt)"
+                    } else {
+                        "Server belum merespons • mencoba ulang dalam ${remaining}s (ke-$reconnectAttempt)"
+                    }
+                    listener.onStateChanged(NexoState.DISCONNECTED, msg, expr)
+                    Thread.sleep(1000L)
+                }
                 reconnectPending.set(false)
                 if (shouldRun.get() && !isConnected.get()) {
                     listener.onStateChanged(
