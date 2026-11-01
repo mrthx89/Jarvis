@@ -12,7 +12,7 @@ class BaseTTS(ABC):
     async def synthesize_stream(
         self, text: str, voice: str = "id-ID-ArdiNeural"
     ) -> AsyncGenerator[bytes, None]:
-        """Synthesize text into audio chunks (24kHz PCM or MP3)."""
+        """Yield raw signed little-endian PCM16, 24 kHz, mono chunks."""
         if False:
             yield b""
 
@@ -37,14 +37,60 @@ class EdgeTTS(BaseTTS):
         self.default_voice = default_voice
 
     async def synthesize_stream(
-        self, text: str, voice: str = "id-ID-ArdiNeural"
+        self, text: str, voice: str = ""
     ) -> AsyncGenerator[bytes, None]:
+        import av
         import edge_tts
-        target_voice = voice or self.default_voice
-        communicate = edge_tts.Communicate(text, target_voice)
-        async for chunk in communicate.stream():
-            if chunk.get("type") == "audio":
-                yield chunk["data"]
+
+        # Edge delivers MP3, not the PCM advertised by our wire protocol.
+        # A parser retains incomplete MP3 frames between transport messages.
+        decoder = av.CodecContext.create("mp3", "r")
+        resampler = av.AudioResampler(format="s16", layout="mono", rate=24000)
+
+        def pcm_chunks(frames):
+            for frame in frames:
+                for pcm in resampler.resample(frame):
+                    yield pcm.to_ndarray().astype("<i2", copy=False).tobytes()
+
+        communicate = edge_tts.Communicate(text, voice or self.default_voice)
+        prefix = bytearray()
+        header_checked = False
+        produced = False
+        async with asyncio.timeout(45):
+            async for chunk in communicate.stream():
+                if chunk.get("type") != "audio":
+                    continue
+                data = chunk["data"]
+                if not header_checked:
+                    prefix.extend(data)
+                    if len(prefix) < 10:
+                        continue
+                    if prefix[:3] == b"ID3":
+                        tag_size = 10 + sum((prefix[6 + i] & 0x7f) << (21 - 7 * i) for i in range(4))
+                        if tag_size > 65536:
+                            raise ValueError("Oversized MP3 ID3 header")
+                        if len(prefix) < tag_size:
+                            continue
+                        del prefix[:tag_size]
+                    data = bytes(prefix)
+                    prefix.clear()
+                    header_checked = True
+                for packet in decoder.parse(data):
+                    for pcm in pcm_chunks(decoder.decode(packet)):
+                        produced = True
+                        yield pcm
+            for packet in decoder.parse(b""):
+                for pcm in pcm_chunks(decoder.decode(packet)):
+                    produced = True
+                    yield pcm
+            for pcm in pcm_chunks(decoder.decode(None)):
+                produced = True
+                yield pcm
+            for pcm in resampler.resample(None):
+                produced = True
+                yield pcm.to_ndarray().astype("<i2", copy=False).tobytes()
+        if not produced:
+            raise RuntimeError("Edge TTS returned no decodable audio")
 
 
 def create_tts_engine(provider: str = "edge-tts", voice: str = "id-ID-ArdiNeural") -> BaseTTS:

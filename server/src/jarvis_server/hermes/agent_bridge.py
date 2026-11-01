@@ -2,7 +2,8 @@
 
 import asyncio
 import logging
-from typing import AsyncGenerator
+import os
+import signal
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class HermesBridge:
             await asyncio.sleep(0.3)
             return f"Sistem terhubung. Saya telah menerima instruksi Anda: '{prompt}'. Seluruh modul beroperasi normal."
 
+        proc = None
         try:
             # Query Hermes using continuous session thread
             cmd = [
@@ -45,6 +47,7 @@ class HermesBridge:
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
             )
 
             stdout, stderr = await asyncio.wait_for(
@@ -59,12 +62,22 @@ class HermesBridge:
             raw_output = stdout.decode().strip()
             return self._clean_hermes_output(raw_output)
 
+        except asyncio.CancelledError:
+            raise
         except asyncio.TimeoutError:
             logger.error("Hermes execution timed out")
             return "Waktu pemrosesan melebihi batas. Mohon ulangi instruksi Anda."
         except Exception as e:
             logger.error(f"Failed to communicate with Hermes: {e}")
             return "Terjadi kesalahan internal saat menghubungkan ke agen."
+        finally:
+            if proc is not None and proc.returncode is None:
+                # Cancel the agent and tool subprocesses, not only communicate().
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                await asyncio.shield(proc.communicate())
 
     def _clean_hermes_output(self, raw_output: str) -> str:
         """Strip Hermes session banners and session_id footer to get clean text for TTS."""

@@ -18,6 +18,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    testOptions { unitTests.isReturnDefaultValues = true }
+
     lint {
         checkReleaseBuilds = false
         abortOnError = false
@@ -52,6 +54,8 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
@@ -64,9 +68,6 @@ dependencies {
     implementation("com.google.firebase:firebase-config-ktx")
     implementation("com.google.firebase:firebase-analytics-ktx")
     implementation("com.google.firebase:firebase-messaging-ktx")
-
-    // AndroidSVG: High-fidelity W3C SVG rendering with gradient and filter support
-    implementation("com.caverock:androidsvg-aar:1.4")
 
     // Networking: OkHttp for low-latency WebSocket connection
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

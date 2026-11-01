@@ -84,6 +84,7 @@ async def websocket_appliance_endpoint(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Error in session {session_id}: {e}", exc_info=True)
     finally:
+        await session.close()
         logger.info(f"Cleaned up session {session_id}")
 
 

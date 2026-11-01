@@ -10,7 +10,7 @@ authors = [
     { name = "Yanto Hariyono (YH Dev)", email = "mrthx.89@gmail.com" }
 ]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.28.0",

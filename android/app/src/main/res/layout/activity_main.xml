@@ -37,7 +37,7 @@
             android:layout_height="wrap_content"
             android:fontFamily="sans-serif-medium"
             android:letterSpacing="0.12"
-            android:text="@string/status_idle"
+            android:text="@string/status_connecting"
             android:textColor="@color/text_primary"
             android:textSize="13sp"
             android:textAllCaps="true" />
@@ -94,7 +94,7 @@
             android:maxLines="6"
             android:scrollbars="vertical"
             android:lineSpacingExtra="4dp"
-            android:text="Menunggu instruksi suara..."
+            android:text="@string/status_connecting"
             android:textColor="@color/text_primary"
             android:textSize="16sp" />
     </LinearLayout>

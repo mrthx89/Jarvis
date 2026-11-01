@@ -10,90 +10,68 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class AudioRecorderManager(
     private val sampleRate: Int = 16000,
+    private val onError: (String) -> Unit = {},
     private val onChunkCaptured: (ByteArray, Int) -> Unit
 ) {
-    private val TAG = "AudioRecorderManager"
     private var audioRecord: AudioRecord? = null
     private var aec: AcousticEchoCanceler? = null
     private val isRecording = AtomicBoolean(false)
     private var recordingThread: Thread? = null
-
-    // Chunk of 100ms: 16000 samples/sec * 2 bytes/sample * 0.1 sec = 3200 bytes
-    private val bufferSize = 3200
+    private val bufferSize = 3200 // 100 ms of 16 kHz, PCM16, mono
 
     @SuppressLint("MissingPermission")
+    @Synchronized
     fun startRecording(): Boolean {
         if (isRecording.get()) return true
-
-        val minBufSize = AudioRecord.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-
-        val actualBufSize = maxOf(minBufSize, bufferSize * 2)
-
         try {
-            audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-                sampleRate,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                actualBufSize
-            )
-
-            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioRecord initialization failed.")
-                return false
-            }
-
-            // Enable Hardware Acoustic Echo Cancellation
-            audioRecord?.audioSessionId?.let { sessionId ->
-                aec = EchoCancellationHelper.attachAEC(sessionId)
-            }
-
-            audioRecord?.startRecording()
+            val minBuffer = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+            check(minBuffer > 0) { "Unsupported microphone PCM format" }
+            val record = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, sampleRate,
+                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuffer, bufferSize * 2))
+            audioRecord = record
+            check(record.state == AudioRecord.STATE_INITIALIZED) { "AudioRecord initialization failed" }
+            check(record.sampleRate == sampleRate && record.channelCount == 1 &&
+                record.audioFormat == AudioFormat.ENCODING_PCM_16BIT) { "Microphone PCM format mismatch" }
+            aec = EchoCancellationHelper.attachAEC(record.audioSessionId)
+            record.startRecording()
+            check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Microphone did not start" }
             isRecording.set(true)
-
             recordingThread = Thread({
                 val chunk = ByteArray(bufferSize)
-                while (isRecording.get()) {
-                    val readBytes = audioRecord?.read(chunk, 0, bufferSize) ?: -1
-                    if (readBytes > 0) {
-                        onChunkCaptured(chunk, readBytes)
+                try {
+                    while (isRecording.get()) {
+                        val count = record.read(chunk, 0, chunk.size)
+                        if (!isRecording.get()) break
+                        check(count > 0) { "AudioRecord.read returned $count" }
+                        onChunkCaptured(chunk, count)
                     }
+                } catch (e: Exception) {
+                    if (isRecording.getAndSet(false)) onError("Mikrofon terhenti: ${e.message}")
                 }
-            }, "Jarvis-AudioRecord-Thread").apply {
-                priority = Thread.MAX_PRIORITY
-                start()
-            }
-
-            Log.i(TAG, "Recording started at ${sampleRate}Hz.")
+            }, "Jarvis-AudioRecord-Thread").apply { start() }
             return true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start AudioRecord: ${e.message}", e)
+            Log.e("AudioRecorderManager", "Failed to start microphone: ${e.message}", e)
             stopRecording()
             return false
         }
     }
 
+    @Synchronized
     fun stopRecording() {
         isRecording.set(false)
-        try {
-            recordingThread?.join(500)
-        } catch (ignored: InterruptedException) {}
+        val record = audioRecord
+        audioRecord = null
+        // Stop first: read() can block, so joining before stop leaves a live reader.
+        try { record?.stop() } catch (_: Exception) {}
+        val thread = recordingThread
         recordingThread = null
-
-        try {
-            aec?.release()
-            aec = null
-            audioRecord?.stop()
-            audioRecord?.release()
-            audioRecord = null
-        } catch (e: Exception) {
-            Log.w(TAG, "Error cleaning up AudioRecord: ${e.message}")
+        if (thread != null && thread !== Thread.currentThread()) {
+            try { thread.join(1000) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
         }
-        Log.i(TAG, "Recording stopped.")
+        try { aec?.release() } catch (_: Exception) {}
+        aec = null
+        try { record?.release() } catch (_: Exception) {}
     }
 
     fun isRecording(): Boolean = isRecording.get()
