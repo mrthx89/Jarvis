@@ -26,6 +26,9 @@ from ..mascot import (
     parse_expression_command,
     parse_and_strip_emotional_tags,
     strip_emotional_tags,
+    is_sleep_command,
+    is_wake_command,
+    MascotExpression,
 )
 from .audio_buffer import CircularAudioBuffer, CircularRingBuffer
 from .mp3_frame import parse_audio_duration, parse_mp3_duration
@@ -85,6 +88,7 @@ class ApplianceSession:
         self._external_speech = False
         self._gap_handle = None
         self._preroll = CircularAudioBuffer(capacity=self.PREROLL_BYTES)
+        self.is_sleeping = False
         if self.hub:
             self.hub.register_session(self)
 
@@ -169,7 +173,8 @@ class ApplianceSession:
         self._playback_until = 0.0
         self._cooldown_until = 0.0
         self._preroll.clear()
-        await self.send_state(NexoState.IDLE, expression="netral")
+        target_expr = "sleeping" if self.is_sleeping else "netral"
+        await self.send_state(NexoState.IDLE, expression=target_expr)
 
     async def speak_text(self, text: str, expression: Optional[str] = None) -> bool:
         """Stream TTS audio to the appliance speaker and animate the mascot."""
@@ -297,7 +302,10 @@ class ApplianceSession:
             self.audio_buffer.clear()
             self.audio_buffer.extend(self._preroll.get_bytes())
             self._preroll.clear()
-            await self.send_state(NexoState.LISTENING)
+            if self.is_sleeping:
+                await self.send_state(NexoState.LISTENING, expression="sleeping")
+            else:
+                await self.send_state(NexoState.LISTENING)
 
         if self.is_recording:
             self._arm_gap_timeout()
@@ -342,13 +350,46 @@ class ApplianceSession:
                 except Exception:
                     logger.debug("Unable to send idle state")
 
+    async def _speak_canned_reply(self, reply: str, expression: str):
+        """Send transcription, publish event, and stream canned reply TTS audio."""
+        await self.send_json_message(
+            TranscriptionMessage(role="assistant", text=reply, is_final=True)
+        )
+        if self.hub:
+            self.hub.publish_event({
+                "type": "transcription",
+                "role": "assistant",
+                "text": reply,
+                "expression": expression,
+                "source": "nexo_hermes",
+            })
+        await self.send_state(NexoState.SPEAKING, expression=expression)
+        await self.send_json_message(TTSStart())
+        self._tts_started = True
+
+        async for chunk in self.tts.synthesize_stream(reply):
+            await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
+            self._playback_until = max(time.monotonic(), self._playback_until) + parse_audio_duration(chunk)
+            amp = self.vad.get_normalized_amplitude(chunk)
+            await self.send_json_message(
+                VisualTelemetry(
+                    amplitude=max(0.2, amp),
+                    frequency_bands=[amp * 0.9, amp * 1.1, amp * 0.7],
+                )
+            )
+
     async def _run_pipeline(self, captured_pcm):
         """Process STT -> local mascot command or Hermes -> TTS."""
         # Step 1: Thinking / Transcribing
-        await self.send_state(NexoState.THINKING, expression="bingung")
+        if self.is_sleeping:
+            await self.send_state(NexoState.THINKING, expression="sleeping")
+        else:
+            await self.send_state(NexoState.THINKING, expression="bingung")
         transcription = (await self.stt.transcribe(captured_pcm)).strip()
         if not transcription:
             logger.info("No speech transcribed for %s", self.session_id)
+            if self.is_sleeping:
+                await self.send_state(NexoState.IDLE, expression="sleeping")
             return
         logger.info("STT complete for %s (%d characters)", self.session_id, len(transcription))
 
@@ -364,37 +405,36 @@ class ApplianceSession:
                 "source": "appliance_voice",
             })
 
-        # Step 2: Only a whole supported mascot command bypasses Hermes.
+        # Step 2: Sleep & Wake Mode Handling
+        if is_wake_command(transcription):
+            self.is_sleeping = False
+            await self._speak_canned_reply(
+                "Halo, saya sudah bangun! Ada yang bisa dibantu?",
+                MascotExpression.SENANG.value
+            )
+            return
+
+        if self.is_sleeping:
+            # Standby Hening: Ignore other chatter while asleep
+            logger.info("Session %s is sleeping; ignoring non-wake input: %s", self.session_id, transcription)
+            await self.send_state(NexoState.IDLE, expression="sleeping")
+            return
+
+        if is_sleep_command(transcription):
+            self.is_sleeping = True
+            await self._speak_canned_reply(
+                "Baik, saya tidur dulu...",
+                MascotExpression.SLEEPING.value
+            )
+            return
+
+        # Step 3: Only a whole supported mascot command bypasses Hermes.
         command_expression = parse_expression_command(transcription)
         if command_expression is not None:
-            agent_reply = "Baik, ekspresi wajah sudah diubah."
-            speech_expr = command_expression.value
-            await self.send_json_message(
-                TranscriptionMessage(role="assistant", text=agent_reply, is_final=True)
+            await self._speak_canned_reply(
+                "Baik, ekspresi wajah sudah diubah.",
+                command_expression.value
             )
-            if self.hub:
-                self.hub.publish_event({
-                    "type": "transcription",
-                    "role": "assistant",
-                    "text": agent_reply,
-                    "expression": speech_expr,
-                    "source": "nexo_hermes",
-                })
-            # Speaking / Streaming TTS
-            await self.send_state(NexoState.SPEAKING, expression=speech_expr)
-            await self.send_json_message(TTSStart())
-            self._tts_started = True
-
-            async for chunk in self.tts.synthesize_stream(agent_reply):
-                await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
-                self._playback_until = max(time.monotonic(), self._playback_until) + parse_audio_duration(chunk)
-                amp = self.vad.get_normalized_amplitude(chunk)
-                await self.send_json_message(
-                    VisualTelemetry(
-                        amplitude=max(0.2, amp),
-                        frequency_bands=[amp * 0.9, amp * 1.1, amp * 0.7],
-                    )
-                )
             return
 
         # Step 3: Speaking / Streaming TTS from Hermes

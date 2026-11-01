@@ -31,10 +31,10 @@ class MascotExpression(str, Enum):
 
 
 # Filler may occur before/after one wakeword; the entire string must match.
-_FILLER = r"(?:tolong|mohon|coba)\s+"
+_FILLER = r"(?:tolong|mohon|coba|silakan|ayo)\s+"
 _COMMAND = re.compile(
-    rf"(?:{_FILLER})?(?:(?:nexo|nexo)[,]?\s+)?(?:{_FILLER})?"
-    r"(?P<body>.+?)(?:\s+(?:dong|ya))?[.!]?"
+    rf"(?:{_FILLER})?(?:(?:nexo|jarvis)[,]?\s+)?(?:{_FILLER})?"
+    r"(?P<body>.+?)(?:\s+(?:dong|ya|dulu))?[.!]?"
 )
 _TARGET = re.compile(
     r"(?:(?:tunjukkan|tampilkan)\s+(?:wajah|ekspresi)\s+"
@@ -54,6 +54,7 @@ _LABEL_ALIASES = {
     "optimis": "sangat_senang",
     "tidur": "sleeping",
     "sleep": "sleeping",
+    "bangun": "netral",
 }
 _ACTIONS = {
     "senyum": MascotExpression.SENANG,
@@ -65,7 +66,67 @@ _ACTIONS = {
     "kembali normal": MascotExpression.NETRAL,
     "jangan sedih": MascotExpression.SENANG,
     "tidur": MascotExpression.SLEEPING,
+    "bangun": MascotExpression.NETRAL,
 }
+
+_SLEEP_COMMANDS = {
+    "tidur",
+    "tidur dulu",
+    "masuk mode tidur",
+    "mode tidur",
+    "waktunya tidur",
+    "istirahat",
+    "istirahat dulu",
+    "selamat tidur",
+    "bobo",
+    "bobo dulu",
+    "sleep",
+    "go to sleep",
+}
+
+_WAKE_COMMANDS = {
+    "bangun",
+    "ayo bangun",
+    "bangun dong",
+    "bangun ya",
+    "bangun tidur",
+    "bangun nexo",
+    "bangun jarvis",
+    "mode bangun",
+    "masuk mode bangun",
+    "wake up",
+    "wake",
+    "halo nexo",
+    "hai nexo",
+    "halo jarvis",
+    "hai jarvis",
+}
+
+
+def is_sleep_command(text: str) -> bool:
+    """Return True if text is a standalone command to enter sleep mode."""
+    if not text:
+        return False
+    clean = " ".join(text.casefold().strip().split())
+    if clean in _SLEEP_COMMANDS:
+        return True
+    match = _COMMAND.fullmatch(clean)
+    if match and match["body"].strip() in _SLEEP_COMMANDS:
+        return True
+    return False
+
+
+def is_wake_command(text: str) -> bool:
+    """Return True if text is a standalone command to wake from sleep mode."""
+    if not text:
+        return False
+    clean = " ".join(text.casefold().strip().split())
+    if clean in _WAKE_COMMANDS:
+        return True
+    match = _COMMAND.fullmatch(clean)
+    if match and match["body"].strip() in _WAKE_COMMANDS:
+        return True
+    return False
 
 EMOTIONAL_TAG_PATTERN = re.compile(r"\[expr:\s*([a-zA-Z0-9_\s-]+?)\s*\]", re.IGNORECASE)
 

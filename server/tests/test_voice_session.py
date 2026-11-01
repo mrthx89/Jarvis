@@ -337,3 +337,67 @@ def test_voice_session_dual_compatibility():
     """Verify legacy nexo_server websocket handler alias matches nexo_server."""
     from nexo_server.gateway.websocket_handler import ApplianceSession as LegacySession
     assert LegacySession is not None
+
+
+@pytest.mark.asyncio
+async def test_sleep_and_wake_lifecycle():
+    s = await session()
+    s.tts = TrackingTTS()
+    s.hermes = TrackingHermes("Saya siap membantu.")
+
+    try:
+        assert s.is_sleeping is False
+
+        # 1. User says "Nexo, tidur dulu"
+        s.stt = FixedSTT("Nexo, tidur dulu")
+        s.audio_buffer.extend(SPEECH * 10)
+        await s.process_recorded_audio()
+
+        assert s.is_sleeping is True
+        assert s.hermes.calls == []
+        assert "Baik, saya tidur dulu..." in s.tts.texts
+        last_state = [m for m in s.websocket.messages if "state" in m][-1]
+        assert last_state["state"] == "IDLE"
+        assert last_state["expression"] == "sleeping"
+
+        # 2. In sleep mode: non-wake chatter e.g. "hari ini makan apa"
+        s.websocket.messages.clear()
+        s.tts.texts.clear()
+        s.stt = FixedSTT("hari ini makan apa")
+        s.audio_buffer.extend(SPEECH * 10)
+        await s.process_recorded_audio()
+
+        assert s.is_sleeping is True
+        assert s.hermes.calls == []
+        assert s.tts.texts == []
+        last_state = [m for m in s.websocket.messages if "state" in m][-1]
+        assert last_state["state"] == "IDLE"
+        assert last_state["expression"] == "sleeping"
+
+        # 3. User says "Nexo, bangun"
+        s.websocket.messages.clear()
+        s.tts.texts.clear()
+        s.stt = FixedSTT("Nexo, bangun")
+        s.audio_buffer.extend(SPEECH * 10)
+        await s.process_recorded_audio()
+
+        assert s.is_sleeping is False
+        assert s.hermes.calls == []
+        assert "Halo, saya sudah bangun! Ada yang bisa dibantu?" in s.tts.texts
+        speaking = [m for m in s.websocket.messages if m.get("state") == "SPEAKING"]
+        assert [m["expression"] for m in speaking] == ["senang"]
+        last_state = [m for m in s.websocket.messages if "state" in m][-1]
+        assert last_state["state"] == "IDLE"
+        assert last_state["expression"] == "netral"
+
+        # 4. Once awake, normal conversation queries work again
+        s.websocket.messages.clear()
+        s.tts.texts.clear()
+        s.stt = FixedSTT("buka email")
+        s.audio_buffer.extend(SPEECH * 10)
+        await s.process_recorded_audio()
+
+        assert s.hermes.calls == ["buka email"]
+        assert s.tts.texts == ["Saya siap membantu."]
+    finally:
+        await s.close()

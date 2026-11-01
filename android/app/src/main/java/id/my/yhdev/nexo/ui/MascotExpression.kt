@@ -26,6 +26,7 @@ enum class MascotExpression(val drawableRes: Int, val idName: String) {
             if (name == null) return NETRAL
             val normalized = name.lowercase().replace("-", "_")
             if (normalized == "tidur") return SLEEPING
+            if (normalized == "bangun") return NETRAL
             return entries.find { it.idName == normalized } ?: NETRAL
         }
     }

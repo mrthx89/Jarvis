@@ -128,3 +128,55 @@ def test_parse_and_strip_emotional_tags():
     assert expr_none is None
     assert text_clean == "Halo tanpa tag emosi."
 
+
+
+@pytest.mark.parametrize("text", [
+    "Nexo, tidur",
+    "tidur dulu",
+    "masuk mode tidur",
+    "waktunya tidur",
+    "selamat tidur",
+    "mode tidur",
+    "tidur",
+    "jarvis tidur",
+    "jarvis, tidur dulu",
+])
+def test_is_sleep_command(text):
+    from nexo_server.mascot import is_sleep_command
+    assert is_sleep_command(text) is True
+
+
+@pytest.mark.parametrize("text", [
+    "Nexo, bangun",
+    "bangun",
+    "bangun dong",
+    "bangun nexo",
+    "halo nexo",
+    "halo jarvis",
+    "mode bangun",
+    "masuk mode bangun",
+    "jarvis bangun",
+])
+def test_is_wake_command(text):
+    from nexo_server.mascot import is_wake_command
+    assert is_wake_command(text) is True
+
+
+@pytest.mark.parametrize("text", [
+    "apa arti tidur",
+    "kenapa kamu bangun pagi",
+    "tidur siang itu sehat",
+    "membangun rumah",
+    "buka email dan tidur",
+])
+def test_non_sleep_wake_commands(text):
+    from nexo_server.mascot import is_sleep_command, is_wake_command
+    assert is_sleep_command(text) is False
+    assert is_wake_command(text) is False
+
+
+def test_mascot_sleep_wake_dual_compatibility():
+    import jarvis_server.mascot as j_mascot
+    import nexo_server.mascot as n_mascot
+    assert j_mascot.is_sleep_command("Nexo tidur") == n_mascot.is_sleep_command("Nexo tidur") == True
+    assert j_mascot.is_wake_command("Nexo bangun") == n_mascot.is_wake_command("Nexo bangun") == True
