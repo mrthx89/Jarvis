@@ -35,8 +35,8 @@ class ApplianceSession:
 
     PROCESSING_TIMEOUT = 120.0
     SEND_TIMEOUT = 5.0
-    AUDIO_GAP_TIMEOUT = 1.2
-    SILENCE_BYTES = 25600  # 800 ms PCM16 mono at 16 kHz
+    AUDIO_GAP_TIMEOUT = 2.0
+    SILENCE_BYTES = 48000  # 1500 ms PCM16 mono at 16 kHz
     MAX_AUDIO_BYTES = 30 * 32000
     MAX_FRAME_BYTES = 32000 * 2
     PREROLL_BYTES = 8000  # 250 ms at 16 kHz, bounded even in hours of silence

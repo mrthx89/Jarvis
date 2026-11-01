@@ -45,6 +45,8 @@ _LABEL_ALIASES = {
     "bahagia": "senang",
     "ngantuk": "mengantuk",
     "kaget": "terkejut",
+    "seti": "sedih",
+    "optimis": "sangat_senang",
 }
 _ACTIONS = {
     "senyum": MascotExpression.SENANG,

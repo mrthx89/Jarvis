@@ -48,7 +48,16 @@ class FasterWhisperSTT(BaseSTT):
 
         def _run_transcribe():
             model = self._get_model()
-            segments, _ = model.transcribe(audio_array, language=language, beam_size=1)
+            segments, _ = model.transcribe(
+                audio_array,
+                language=language,
+                beam_size=1,
+                initial_prompt=(
+                    "Halo Nexo, asisten cerdas AI. Nexo tolong tampilkan ekspresi "
+                    "wajah normal, senang, sedih, tertawa, marah, terkejut, "
+                    "mengantuk, keren, optimis. Repositori Nexo, kode, sistem."
+                ),
+            )
             return " ".join([seg.text.strip() for seg in segments if seg.text.strip()])
 
         loop = asyncio.get_running_loop()

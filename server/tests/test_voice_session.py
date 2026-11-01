@@ -61,13 +61,13 @@ async def test_continuous_pcm_endpoints_without_voice_end():
     s = await session()
     for _ in range(15):
         await s.handle_binary_frame(SPEECH)
-    for _ in range(50):
+    for _ in range(80):
         await s.handle_binary_frame(SILENCE)
     try:
         await asyncio.wait_for(s.stt.started.wait(), 0.2)
         assert len(s.stt.received) == 1
         assert s.stt.received[0].startswith(SPEECH)
-        assert len(s.stt.received[0]) <= 32000 * 2
+        assert len(s.stt.received[0]) <= 32000 * 3
         assert not s.audio_buffer
         # While STT is blocked, heartbeat still works and echo is discarded.
         await s.handle_text_frame('{"type":"ping","timestamp":123}')
