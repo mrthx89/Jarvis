@@ -40,7 +40,11 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
             kioskService?.serviceCallback = this@MainActivity
             isBound = true
 
-            val deviceId = "jarvis_appliance_${Build.SERIAL.takeIf { it != "unknown" } ?: "tablet_01"}"
+            val androidId = android.provider.Settings.Secure.getString(
+                contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID
+            ) ?: "appliance_01"
+            val deviceId = "jarvis_appliance_$androidId"
             
             // Dynamically resolve server URL via Firebase Remote Config with fallback
             remoteConfigManager.fetchServerUrl { serverUrl ->
