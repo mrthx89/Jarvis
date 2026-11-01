@@ -61,10 +61,13 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
         }
     }
 
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
+    private val requestMultiplePermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val audioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: (
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+        if (audioGranted) {
             bindKioskService()
         } else {
             tvStatus.text = "Izin mikrofon diperlukan untuk mendengarkan."
@@ -89,14 +92,28 @@ class MainActivity : AppCompatActivity(), JarvisKioskService.ServiceCallback {
     }
 
     private fun checkAndRequestAudioPermission() {
+        val permissionsToRequest = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
         if (ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             bindKioskService()
+            if (permissionsToRequest.size > 1) {
+                requestMultiplePermissionsLauncher.launch(permissionsToRequest.toTypedArray())
+            }
         } else {
-            requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            requestMultiplePermissionsLauncher.launch(permissionsToRequest.toTypedArray())
         }
     }
 
