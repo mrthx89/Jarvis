@@ -88,3 +88,11 @@ class PingMessage(BaseModel):
 class PongMessage(BaseModel):
     type: Literal["pong"] = "pong"
     timestamp: int
+
+
+class VoiceprintDialog(BaseModel):
+    type: Literal["voiceprint_dialog"] = "voiceprint_dialog"
+    action: str = "manage"
+    is_enrolled: bool = False
+    message: Optional[str] = None
+    metadata: Optional[dict] = None

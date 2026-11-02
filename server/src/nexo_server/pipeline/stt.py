@@ -57,14 +57,23 @@ class FasterWhisperSTT(BaseSTT):
             segments, _ = model.transcribe(
                 audio_array,
                 language=language,
-                beam_size=3,
-                no_speech_threshold=0.35,
+                beam_size=1,
+                no_speech_threshold=0.5,
                 condition_on_previous_text=False,
                 repetition_penalty=1.2,
                 no_repeat_ngram_size=3,
-                initial_prompt="Nexo.",
+                initial_prompt="Halo Nexo. Daftarkan suara, hapus sidik suara, rekam suara.",
             )
-            return " ".join([seg.text.strip() for seg in segments if seg.text.strip()])
+            raw = " ".join([seg.text.strip() for seg in segments if seg.text.strip()])
+            # Suppress direct prompt echo artifacts
+            prompt_echoes = {
+                "nexo", "nexo.", "halo nexo", "halo nexo.",
+                "halo nexo, daftarkan suara, hapus sidik suara, rekam suara.",
+                "ini adalah percakapan santai bahasa indonesia dengan asisten pintar",
+            }
+            if raw.lower().strip() in prompt_echoes:
+                return ""
+            return raw
 
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _run_transcribe)

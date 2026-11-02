@@ -15,6 +15,7 @@ from ..models.messages import (
     TTSStart,
     TTSEnd,
     PongMessage,
+    VoiceprintDialog,
     NexoState,
 )
 from ..pipeline.vad import EnergyVAD
@@ -141,9 +142,10 @@ class ApplianceSession:
         self._processing_task = asyncio.create_task(self.process_recorded_audio())
 
     async def send_json_message(self, model):
-        """Send a Pydantic model serialized as JSON text frame."""
+        """Send a Pydantic model or dict serialized as JSON text frame."""
+        text = model.model_dump_json() if hasattr(model, "model_dump_json") else json.dumps(model)
         await asyncio.wait_for(
-            self.websocket.send_text(model.model_dump_json()), self.SEND_TIMEOUT
+            self.websocket.send_text(text), self.SEND_TIMEOUT
         )
 
     async def send_state(
@@ -285,6 +287,31 @@ class ApplianceSession:
             if type(ts) is not int or not 0 <= ts <= 2**63 - 1:
                 raise ProtocolViolation("Invalid ping")
             await self.send_json_message(PongMessage(timestamp=ts))
+
+        elif msg_type == "voiceprint_query":
+            is_enrolled = bool(self.speaker_verifier and self.speaker_verifier.is_enrolled("owner"))
+            meta = self.speaker_verifier.get_metadata("owner") if self.speaker_verifier else None
+            await self.send_json_message(
+                VoiceprintDialog(
+                    action="query",
+                    is_enrolled=is_enrolled,
+                    metadata=meta,
+                )
+            )
+
+        elif msg_type == "voiceprint_unenroll":
+            if self.speaker_verifier:
+                ok, msg = self.speaker_verifier.unenroll("owner")
+            else:
+                ok, msg = False, "Modul verifikasi suara tidak aktif."
+            await self.send_json_message(
+                VoiceprintDialog(
+                    action="unenroll",
+                    is_enrolled=False,
+                    message=msg,
+                )
+            )
+            await self._speak_canned_reply(msg, MascotExpression.SENANG.value if ok else MascotExpression.BINGUNG.value)
         else:
             raise ProtocolViolation("Unknown control type")
 
@@ -414,16 +441,39 @@ class ApplianceSession:
 
         # Step 2: Voiceprint Enrollment & Unenrollment Handling
         if self.speaker_verifier is not None:
-            if is_voice_enroll_command(transcription):
-                ok, msg = self.speaker_verifier.enroll(captured_pcm, speaker_name="owner")
-                expr = MascotExpression.SENANG.value if ok else MascotExpression.BINGUNG.value
-                await self._speak_canned_reply(msg, expr)
-                return
-
             if is_voice_unenroll_command(transcription):
                 ok, msg = self.speaker_verifier.unenroll(speaker_name="owner")
+                # Trigger dialog popup on Android screen
+                await self.send_json_message(
+                    VoiceprintDialog(
+                        action="unenroll",
+                        is_enrolled=False,
+                        message=msg,
+                    )
+                )
                 expr = MascotExpression.SENANG.value if ok else MascotExpression.BINGUNG.value
-                await self._speak_canned_reply(msg, expr)
+                await self._speak_canned_reply(f"{msg} Menu sidik suara dibuka di layar.", expr)
+                return
+
+            if is_voice_enroll_command(transcription):
+                is_enrolled = self.speaker_verifier.is_enrolled("owner")
+                # Trigger dialog popup on Android screen
+                await self.send_json_message(
+                    VoiceprintDialog(
+                        action="enroll",
+                        is_enrolled=is_enrolled,
+                    )
+                )
+                # If audio is already long enough (>= 1.2s), enroll it immediately as well
+                if len(captured_pcm) >= 38400:
+                    ok, msg = self.speaker_verifier.enroll(captured_pcm, speaker_name="owner")
+                    expr = MascotExpression.SENANG.value if ok else MascotExpression.BINGUNG.value
+                    await self._speak_canned_reply(f"{msg} Menu sidik suara dibuka di layar.", expr)
+                else:
+                    await self._speak_canned_reply(
+                        "Menu pendaftaran sidik suara dibuka di layar. Silakan bicara minimal 2 detik.",
+                        MascotExpression.SENANG.value
+                    )
                 return
 
         # Step 3: Speaker Verification (if enrolled)

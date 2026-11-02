@@ -52,6 +52,7 @@ def test_compute_fbank_dimensions():
 
 def test_voice_command_patterns():
     assert is_voice_enroll_command("daftarkan suara saya")
+    assert is_voice_enroll_command("Nexo dapetakan suara saya.")
     assert is_voice_enroll_command("tolong daftarkan suara")
     assert is_voice_enroll_command("rekam suara pemilik")
     assert is_voice_enroll_command("register voice")
@@ -209,4 +210,46 @@ async def test_websocket_speaker_gating(tmp_path):
     await session._run_pipeline(owner_pcm)
     assert not verifier.is_enrolled("owner")
     assert any("berhasil dihapus" in s for s in spoken)
+
+
+@pytest.mark.asyncio
+async def test_websocket_voiceprint_control_frames(tmp_path):
+    """Test voiceprint_query and voiceprint_unenroll control text frames."""
+    from unittest.mock import AsyncMock, MagicMock
+    from nexo_server.gateway.websocket_handler import ApplianceSession
+
+    mock_ws = AsyncMock()
+    verifier = SpeakerVerifier(voiceprints_dir=str(tmp_path))
+    session = ApplianceSession(
+        websocket=mock_ws,
+        session_id="test_ctrl",
+        stt=AsyncMock(),
+        tts=MagicMock(),
+        hermes=AsyncMock(),
+        authenticated_device_id="dev1",
+        speaker_verifier=verifier,
+    )
+    session.ready = True
+
+    # 1. Query unenrolled
+    await session.handle_text_frame('{"type": "voiceprint_query"}')
+    mock_ws.send_text.assert_called()
+    msg = json.loads(mock_ws.send_text.call_args[0][0])
+    assert msg["type"] == "voiceprint_dialog"
+    assert msg["is_enrolled"] is False
+
+    # 2. Query enrolled
+    verifier.enroll(_generate_pcm(2.0), "owner")
+    await session.handle_text_frame('{"type": "voiceprint_query"}')
+    msg = json.loads(mock_ws.send_text.call_args[0][0])
+    assert msg["is_enrolled"] is True
+
+    # 3. Unenroll via control frame
+    await session.handle_text_frame('{"type": "voiceprint_unenroll"}')
+    assert not verifier.is_enrolled("owner")
+    dialogs = [json.loads(c[0][0]) for c in mock_ws.send_text.call_args_list if "voiceprint_dialog" in c[0][0]]
+    assert len(dialogs) >= 1
+    assert dialogs[-1]["action"] == "unenroll"
+    assert dialogs[-1]["is_enrolled"] is False
+
 

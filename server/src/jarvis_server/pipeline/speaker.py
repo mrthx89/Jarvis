@@ -294,14 +294,14 @@ class SpeakerVerifier:
 
 # Regexes for conversational voice registration flow
 _ENROLL_PATTERNS = [
-    r"\bdaftarkan\s+suara(\s+saya|\s+ku)?\b",
+    r"\b(daftar|daftarkan|daptar|daptarkan|dapetakan|daftarin|rekam|simpan|catat|register|registrasi)\s+(sidik\s+)?suara(ku)?(\s+saya|\s+ku|\s+pemilik)?\b",
+    r"\b(daftarkan|rekam|simpan|register)\s+sidik\s+suara\b",
     r"\bregister\s+voice\b",
-    r"\brekam\s+suara(\s+pemilik|\s+saya)?\b",
-    r"\bdaftarkan\s+sidik\s+suara\b",
+    r"\bdaftarkan\s+vokal\b",
 ]
 
 _UNENROLL_PATTERNS = [
-    r"\bhapus\s+(pendaftaran\s+)?suara(\s+saya)?\b",
+    r"\b(hapus|reset|unregister|hilangkan)\s+(pendaftaran\s+)?(sidik\s+)?suara(ku)?(\s+saya|\s+terdaftar|\s+pemilik)?\b",
     r"\bhapus\s+sidik\s+suara\b",
     r"\bunregister\s+voice\b",
     r"\breset\s+suara(\s+terdaftar)?\b",
