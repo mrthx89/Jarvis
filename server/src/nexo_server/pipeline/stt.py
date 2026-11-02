@@ -52,11 +52,7 @@ class FasterWhisperSTT(BaseSTT):
                 audio_array,
                 language=language,
                 beam_size=1,
-                initial_prompt=(
-                    "Halo Nexo, asisten cerdas AI. Nexo tolong tampilkan ekspresi "
-                    "wajah normal, senang, sedih, tertawa, marah, terkejut, "
-                    "mengantuk, keren, optimis. Repositori Nexo, kode, sistem."
-                ),
+                initial_prompt="Nexo, asisten cerdas YH Dev.",
             )
             return " ".join([seg.text.strip() for seg in segments if seg.text.strip()])
 
