@@ -52,7 +52,10 @@ class FasterWhisperSTT(BaseSTT):
                 audio_array,
                 language=language,
                 beam_size=1,
-                initial_prompt="Nexo, asisten cerdas YH Dev.",
+                condition_on_previous_text=False,
+                repetition_penalty=1.2,
+                no_repeat_ngram_size=3,
+                initial_prompt="Nexo",
             )
             return " ".join([seg.text.strip() for seg in segments if seg.text.strip()])
 
