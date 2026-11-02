@@ -5,6 +5,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
 import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -17,6 +18,7 @@ class AudioRecorderManager(
 ) {
     private var audioRecord: AudioRecord? = null
     private var aec: AcousticEchoCanceler? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
     @Volatile private var recordingActive = AtomicBoolean(false)
     private val recordingGeneration = AtomicInteger(0)
     private class RecoverableReadException(count: Int) : IllegalStateException("AudioRecord.read returned $count")
@@ -39,6 +41,7 @@ class AudioRecorderManager(
             require(record.sampleRate == sampleRate && record.channelCount == 1 &&
                 record.audioFormat == AudioFormat.ENCODING_PCM_16BIT) { "Microphone PCM format mismatch" }
             aec = EchoCancellationHelper.attachAEC(record.audioSessionId)
+            noiseSuppressor = EchoCancellationHelper.attachNoiseSuppressor(record.audioSessionId)
             record.startRecording()
             check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Microphone did not start" }
             val active = AtomicBoolean(true)
@@ -88,6 +91,8 @@ class AudioRecorderManager(
         }
         try { aec?.release() } catch (_: Exception) {}
         aec = null
+        try { noiseSuppressor?.release() } catch (_: Exception) {}
+        noiseSuppressor = null
         try { record?.release() } catch (_: Exception) {}
     }
 

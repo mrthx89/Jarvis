@@ -1,6 +1,7 @@
 package id.my.yhdev.nexo.audio
 
 import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
 import android.util.Log
 
 object EchoCancellationHelper {
@@ -23,6 +24,27 @@ object EchoCancellationHelper {
             aec
         } catch (e: Exception) {
             Log.e(TAG, "Exception while enabling AcousticEchoCanceler: ${e.message}", e)
+            null
+        }
+    }
+
+    fun attachNoiseSuppressor(audioSessionId: Int): NoiseSuppressor? {
+        if (!NoiseSuppressor.isAvailable()) {
+            Log.w(TAG, "Hardware NoiseSuppressor is NOT available on this device.")
+            return null
+        }
+
+        return try {
+            val ns = NoiseSuppressor.create(audioSessionId)
+            if (ns != null) {
+                ns.enabled = true
+                Log.i(TAG, "Hardware NoiseSuppressor enabled successfully for session $audioSessionId.")
+            } else {
+                Log.w(TAG, "Failed to create NoiseSuppressor instance.")
+            }
+            ns
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception while enabling NoiseSuppressor: ${e.message}", e)
             null
         }
     }

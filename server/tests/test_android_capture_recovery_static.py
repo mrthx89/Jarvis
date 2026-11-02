@@ -55,6 +55,11 @@ class CaptureRecoveryStaticTests(unittest.TestCase):
         self.assertIn("MediaRecorder.AudioSource.VOICE_COMMUNICATION", recorder)
         self.assertIn("private val bufferSize = 3200", recorder)
         self.assertIn("EchoCancellationHelper.attachAEC", recorder)
+        self.assertIn("EchoCancellationHelper.attachNoiseSuppressor", recorder)
+        self.assertIn("noiseSuppressor?.release()", recorder)
+        echo_helper = source("audio/EchoCancellationHelper.kt")
+        self.assertIn("fun attachNoiseSuppressor", echo_helper)
+        self.assertIn("NoiseSuppressor.isAvailable()", echo_helper)
 
     def test_recorder_recovery_is_bounded_cancelled_and_session_fenced(self):
         service = source("service/NexoKioskService.kt")
