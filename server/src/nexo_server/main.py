@@ -9,7 +9,7 @@ from pathlib import Path
 import time
 from typing import Optional
 import uuid
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
@@ -19,6 +19,7 @@ from .auth import DeviceRegistry
 from .gateway.websocket_handler import ApplianceSession, ProtocolViolation
 from .pipeline.stt import create_stt_engine
 from .pipeline.tts import create_tts_engine
+from .pipeline.speaker import SpeakerVerifier
 from .hermes.agent_bridge import create_hermes_bridge
 from .session_hub import hub
 
@@ -35,6 +36,15 @@ tts_engine = create_tts_engine(provider=config.tts.provider, voice=config.tts.vo
 hermes_bridge = create_hermes_bridge(
     mode=config.hermes.bridge_mode, hermes_binary=config.hermes.hermes_binary
 )
+speaker_engine = (
+    SpeakerVerifier(
+        model_path=config.speaker.model_path,
+        voiceprints_dir=config.speaker.voiceprints_dir,
+        threshold=config.speaker.threshold,
+    )
+    if config.speaker.enabled
+    else None
+)
 
 
 @asynccontextmanager
@@ -42,6 +52,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing Nexo Dedicated Appliance Server...")
     logger.info(f"STT Provider: {config.stt.provider} | TTS Provider: {config.tts.provider}")
     logger.info(f"Hermes Mode: {config.hermes.bridge_mode}")
+    logger.info(f"Speaker Verification: {'enabled' if config.speaker.enabled else 'disabled'}")
     hub.set_hermes_bridge(hermes_bridge)
     hub.set_tts_engine(tts_engine)
     hub.set_stt_engine(stt_engine)
@@ -112,9 +123,31 @@ async def health_check():
     )
 
 
+def verify_local_request(request: Request):
+    """Enforce that operator session endpoints are only accessible from the local host."""
+    if request.headers.get("cf-connecting-ip") or request.headers.get("cf-ray"):
+        raise HTTPException(status_code=403, detail="Endpoint restricted to local terminal CLI")
+    if request.headers.get("x-forwarded-for") and request.headers.get("x-forwarded-for") != "127.0.0.1":
+        raise HTTPException(status_code=403, detail="Endpoint restricted to local terminal CLI")
+    client_host = request.client.host if request.client else ""
+    if client_host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+        raise HTTPException(status_code=403, detail="Endpoint restricted to local terminal CLI")
+
+
+def is_local_websocket(websocket: WebSocket) -> bool:
+    """Enforce that operator WebSocket endpoints are only accessible from the local host."""
+    if websocket.headers.get("cf-connecting-ip") or websocket.headers.get("cf-ray"):
+        return False
+    if websocket.headers.get("x-forwarded-for") and websocket.headers.get("x-forwarded-for") != "127.0.0.1":
+        return False
+    client_host = websocket.client.host if websocket.client else ""
+    return client_host in ("127.0.0.1", "::1", "localhost", "testclient")
+
+
 @app.post("/session/send")
-async def session_send_endpoint(payload: SessionSendPayload):
+async def session_send_endpoint(payload: SessionSendPayload, request: Request):
     """Send text instruction to Nexo session, optionally triggering audio output on appliance."""
+    verify_local_request(request)
     try:
         res = await hub.inject_message(
             payload.message,
@@ -127,15 +160,17 @@ async def session_send_endpoint(payload: SessionSendPayload):
 
 
 @app.post("/session/speak")
-async def session_speak_endpoint(payload: SessionSpeakPayload):
+async def session_speak_endpoint(payload: SessionSpeakPayload, request: Request):
     """Trigger audio response / speech on connected appliance screen/speaker."""
+    verify_local_request(request)
     res = await hub.trigger_speech(payload.text, expression=payload.expression)
     return JSONResponse(res)
 
 
 @app.post("/session/link")
-async def session_link_endpoint(payload: SessionLinkPayload):
+async def session_link_endpoint(payload: SessionLinkPayload, request: Request):
     """Link Hermes session thread (nexo / appliance / active local session) with Nexo."""
+    verify_local_request(request)
     try:
         name = hub.set_session_thread(payload.session_name)
     except ValueError:
@@ -144,14 +179,16 @@ async def session_link_endpoint(payload: SessionLinkPayload):
 
 
 @app.get("/session/status")
-async def session_status_endpoint():
+async def session_status_endpoint(request: Request):
     """Return status of appliance connectivity and session hub."""
+    verify_local_request(request)
     return JSONResponse(hub.get_status())
 
 
 @app.get("/session/transcript")
-async def session_transcript_endpoint(limit: int = 50):
+async def session_transcript_endpoint(request: Request, limit: int = 50):
     """Retrieve recent transcript entries for the Nexo session."""
+    verify_local_request(request)
     return JSONResponse({
         "session_name": hub.current_session_thread,
         "transcript": hub.get_transcript(limit=limit),
@@ -159,8 +196,9 @@ async def session_transcript_endpoint(limit: int = 50):
 
 
 @app.get("/session/stream")
-async def session_stream_endpoint():
+async def session_stream_endpoint(request: Request):
     """Server-Sent Events stream for cognitive events, state changes, and transcripts."""
+    verify_local_request(request)
     q = hub.subscribe()
 
     async def event_generator():
@@ -180,6 +218,9 @@ async def session_stream_endpoint():
 @app.websocket("/ws/session/stream")
 async def websocket_session_stream_endpoint(websocket: WebSocket):
     """Full-duplex WebSocket stream for terminal sessions to interact and listen to Nexo."""
+    if not is_local_websocket(websocket):
+        await websocket.close(code=1008, reason="Local access only")
+        return
     await websocket.accept()
     q = hub.subscribe()
     await websocket.send_json({"type": "status", "status": hub.get_status()})
@@ -267,6 +308,7 @@ async def websocket_appliance_endpoint(websocket: WebSocket):
         authenticated_device_id=device_id, max_json_bytes=config.server.max_json_bytes,
         agent_name="Nexo",
         session_hub=hub,
+        speaker_verifier=speaker_engine,
     )
     try:
         await websocket.accept()

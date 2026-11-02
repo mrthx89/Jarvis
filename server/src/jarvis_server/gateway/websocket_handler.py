@@ -33,6 +33,11 @@ from ..mascot import (
 from .audio_buffer import CircularAudioBuffer, CircularRingBuffer
 from .mp3_frame import parse_audio_duration, parse_mp3_duration
 from ..hermes.sentence_chunker import split_into_sentences
+from ..pipeline.speaker import (
+    SpeakerVerifier,
+    is_voice_enroll_command,
+    is_voice_unenroll_command,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +69,7 @@ class ApplianceSession:
         max_json_bytes: int = 4096,
         agent_name: str = "Nexo",
         session_hub: Optional[Any] = None,
+        speaker_verifier: Optional[Any] = None,
     ):
         self.authenticated_device_id = authenticated_device_id
         self.agent_name = agent_name
@@ -75,6 +81,7 @@ class ApplianceSession:
         self.tts = tts
         self.hermes = hermes
         self.hub = session_hub
+        self.speaker_verifier = speaker_verifier
         self.vad = EnergyVAD()
         self.state = NexoState.IDLE
         self.audio_buffer = bytearray()
@@ -405,7 +412,38 @@ class ApplianceSession:
                 "source": "appliance_voice",
             })
 
-        # Step 2: Sleep & Wake Mode Handling
+        # Step 2: Voiceprint Enrollment & Unenrollment Handling
+        if self.speaker_verifier is not None:
+            if is_voice_enroll_command(transcription):
+                ok, msg = self.speaker_verifier.enroll(captured_pcm, speaker_name="owner")
+                expr = MascotExpression.SENANG.value if ok else MascotExpression.BINGUNG.value
+                await self._speak_canned_reply(msg, expr)
+                return
+
+            if is_voice_unenroll_command(transcription):
+                ok, msg = self.speaker_verifier.unenroll(speaker_name="owner")
+                expr = MascotExpression.SENANG.value if ok else MascotExpression.BINGUNG.value
+                await self._speak_canned_reply(msg, expr)
+                return
+
+        # Step 3: Speaker Verification (if enrolled)
+        if self.speaker_verifier is not None and self.speaker_verifier.is_enrolled("owner"):
+            is_match, similarity = self.speaker_verifier.verify(captured_pcm, speaker_name="owner")
+            if not is_match:
+                logger.warning(
+                    "Speaker verification rejected speech for session %s (similarity: %.3f < %.3f)",
+                    self.session_id, similarity, self.speaker_verifier.threshold
+                )
+                if self.is_sleeping:
+                    await self.send_state(NexoState.IDLE, expression="sleeping")
+                    return
+                await self._speak_canned_reply(
+                    "Maaf, suara tidak dikenali sebagai pemilik.",
+                    MascotExpression.BINGUNG.value
+                )
+                return
+
+        # Step 4: Sleep & Wake Mode Handling
         if is_wake_command(transcription):
             self.is_sleeping = False
             await self._speak_canned_reply(

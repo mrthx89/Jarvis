@@ -39,6 +39,17 @@ class HermesSettings:
     hermes_binary: str = "hermes"
     timeout_seconds: int = 60
     session_name: str = "nexo"
+    session_id: str = ""  # First binding only; later changes fail closed.
+    hermes_home: str = ""  # Defaults to service HERMES_HOME or ~/.hermes.
+    session_binding_path: str = ""  # Private persistent canonical ID binding.
+
+
+@dataclass
+class SpeakerSettings:
+    enabled: bool = True
+    model_path: str = "/root/.config/nexo-auth/models/speaker_campplus.onnx"
+    voiceprints_dir: str = "/root/.config/nexo-auth/voiceprints"
+    threshold: float = 0.65
 
 
 @dataclass
@@ -47,6 +58,7 @@ class AppConfig:
     stt: STTSettings = field(default_factory=STTSettings)
     tts: TTSSettings = field(default_factory=TTSSettings)
     hermes: HermesSettings = field(default_factory=HermesSettings)
+    speaker: SpeakerSettings = field(default_factory=SpeakerSettings)
 
 
 def load_config(config_path: str | Path | None = None) -> AppConfig:
@@ -73,12 +85,14 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
             stt_data = raw.get("stt", {})
             tts_data = raw.get("tts", {})
             hermes_data = raw.get("hermes", {})
+            speaker_data = raw.get("speaker", {})
 
             return AppConfig(
                 server=ServerSettings(**server_data),
                 stt=STTSettings(**stt_data),
                 tts=TTSSettings(**tts_data),
                 hermes=HermesSettings(**hermes_data),
+                speaker=SpeakerSettings(**speaker_data),
             )
 
     return AppConfig()

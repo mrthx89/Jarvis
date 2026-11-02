@@ -46,16 +46,23 @@ class FasterWhisperSTT(BaseSTT):
 
         audio_array = np.frombuffer(pcm_audio, dtype=np.int16).astype(np.float32) / 32768.0
 
+        # Digital gain normalization: boost soft/distant speech so Whisper hears clearly
+        peak = float(np.max(np.abs(audio_array)))
+        if peak > 0.005:
+            gain = min(0.95 / peak, 8.0)  # Up to +18 dB digital gain boost
+            audio_array = audio_array * gain
+
         def _run_transcribe():
             model = self._get_model()
             segments, _ = model.transcribe(
                 audio_array,
                 language=language,
-                beam_size=1,
+                beam_size=3,
+                no_speech_threshold=0.35,
                 condition_on_previous_text=False,
                 repetition_penalty=1.2,
                 no_repeat_ngram_size=3,
-                initial_prompt="Nexo",
+                initial_prompt="Halo Nexo. Ini adalah percakapan santai bahasa Indonesia dengan asisten pintar Nexo.",
             )
             return " ".join([seg.text.strip() for seg in segments if seg.text.strip()])
 
