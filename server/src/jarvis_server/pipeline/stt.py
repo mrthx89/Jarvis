@@ -62,7 +62,7 @@ class FasterWhisperSTT(BaseSTT):
                 condition_on_previous_text=False,
                 repetition_penalty=1.2,
                 no_repeat_ngram_size=3,
-                initial_prompt="Halo Nexo. Ini adalah percakapan santai bahasa Indonesia dengan asisten pintar Nexo.",
+                initial_prompt="Nexo.",
             )
             return " ".join([seg.text.strip() for seg in segments if seg.text.strip()])
 
