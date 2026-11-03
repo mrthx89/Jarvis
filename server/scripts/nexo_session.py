@@ -1,1 +1,1 @@
-/data/home/Nexo/scripts/nexo_session.py
+../../scripts/nexo_session.py

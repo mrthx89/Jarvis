@@ -12,8 +12,9 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_PATH = "/root/.config/nexo-auth/models/speaker_campplus.onnx"
-DEFAULT_VOICEPRINTS_DIR = "/root/.config/nexo-auth/voiceprints"
+DEFAULT_AUTH_DIR = Path.home() / ".config" / "nexo-auth"
+DEFAULT_MODEL_PATH = str(DEFAULT_AUTH_DIR / "models" / "speaker_campplus.onnx")
+DEFAULT_VOICEPRINTS_DIR = str(DEFAULT_AUTH_DIR / "voiceprints")
 DEFAULT_THRESHOLD = 0.65
 MIN_AUDIO_BYTES_FOR_ENROLL = 38400  # 1.2s of 16kHz, 16-bit PCM mono
 MIN_AUDIO_BYTES_FOR_VERIFY = 16000  # 0.5s of 16kHz, 16-bit PCM mono
@@ -123,7 +124,12 @@ class SpeakerVerifier:
     def _get_session(self):
         if self._session is None and not self._model_tested:
             self._model_tested = True
-            if Path(self.model_path).exists():
+            model_exists = False
+            try:
+                model_exists = Path(self.model_path).exists()
+            except (PermissionError, OSError):
+                model_exists = False
+            if model_exists:
                 try:
                     import onnxruntime as ort
                     opts = ort.SessionOptions()
@@ -146,7 +152,7 @@ class SpeakerVerifier:
         try:
             npy_path, _ = self._get_paths(speaker_name)
             return npy_path.exists()
-        except ValueError:
+        except (ValueError, PermissionError, OSError):
             return False
 
     def get_metadata(self, speaker_name: str = "owner") -> Optional[dict]:
@@ -270,7 +276,10 @@ class SpeakerVerifier:
         except ValueError:
             return False, 0.0
 
-        if not npy_path.exists():
+        try:
+            if not npy_path.exists():
+                return True, 1.0
+        except (PermissionError, OSError):
             return True, 1.0
 
         current_emb = self.extract_embedding(pcm_audio)

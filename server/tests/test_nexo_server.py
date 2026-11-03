@@ -56,10 +56,20 @@ def test_nexo_auth_fallback_to_nexo_auth():
     """Registry path resolver must support /root/.config/nexo-auth/ with fallback to nexo-auth."""
     from nexo_server.auth import resolve_registry_path, JARVIS_DEFAULT_REGISTRY, NEXO_DEFAULT_REGISTRY
 
-    if NEXO_DEFAULT_REGISTRY.exists():
+    try:
+        nexo_exists = NEXO_DEFAULT_REGISTRY.exists()
+    except (PermissionError, OSError):
+        nexo_exists = False
+
+    try:
+        jarvis_exists = JARVIS_DEFAULT_REGISTRY.exists()
+    except (PermissionError, OSError):
+        jarvis_exists = False
+
+    if nexo_exists:
         assert resolve_registry_path("/root/.config/nexo-auth/") == NEXO_DEFAULT_REGISTRY
         assert resolve_registry_path("/root/.config/nexo-auth/devices.json") == NEXO_DEFAULT_REGISTRY
-    elif JARVIS_DEFAULT_REGISTRY.exists():
+    elif jarvis_exists:
         resolved_dir = resolve_registry_path("/root/.config/nexo-auth/")
         assert resolved_dir == JARVIS_DEFAULT_REGISTRY
 
@@ -107,7 +117,7 @@ def test_nexo_server_config_and_constants():
 
     srv = ServerSettings()
     assert srv.ws_path == "/ws/appliance"
-    assert srv.port == 8765
+    assert srv.port == 8766
 
     hermes = HermesSettings()
     assert hermes.session_name == "nexo"

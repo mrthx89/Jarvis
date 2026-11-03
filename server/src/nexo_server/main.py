@@ -10,7 +10,7 @@ import time
 from typing import Optional
 import uuid
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse, Response
 from pydantic import BaseModel
 import uvicorn
 
@@ -22,6 +22,7 @@ from .pipeline.tts import create_tts_engine
 from .pipeline.speaker import SpeakerVerifier
 from .hermes.agent_bridge import create_hermes_bridge
 from .session_hub import hub
+from .portal import render_portal_html, load_mascot_svg
 
 logging.basicConfig(
     level=logging.INFO,
@@ -107,6 +108,19 @@ class SessionSpeakPayload(BaseModel):
 
 class SessionLinkPayload(BaseModel):
     session_name: str
+
+
+@app.get("/", response_class=HTMLResponse)
+async def portal_root():
+    """Interactive web dashboard and system status for Nexo Dedicated Appliance."""
+    return HTMLResponse(render_portal_html())
+
+
+@app.get("/mascot/{expression}.svg")
+async def mascot_svg_endpoint(expression: str):
+    """Serve mascot vector graphic for given expression."""
+    svg_content = load_mascot_svg(expression)
+    return Response(content=svg_content, media_type="image/svg+xml")
 
 
 @app.get("/health")

@@ -50,12 +50,14 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
     private var currentState = NexoState.IDLE
     private var currentMessage: String? = "Suara dijeda • tekan Mulai untuk mendengarkan"
     private var currentExpression: String? = null
+    private var lastVoiceprintDialog: id.my.yhdev.nexo.network.VoiceprintDialog? = null
 
     var serviceCallback: ServiceCallback? = null
         set(value) {
             field = value
             value?.onVoiceEnabledChanged(isVoiceEnabled)
             value?.onStateChanged(currentState, currentMessage, currentExpression)
+            lastVoiceprintDialog?.let { value?.onVoiceprintDialogReceived(it) }
         }
 
     interface ServiceCallback {
@@ -63,6 +65,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         fun onStateChanged(state: NexoState, message: String?, expression: String?)
         fun onTelemetryReceived(amplitude: Float, bands: List<Float>?)
         fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean)
+        fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog)
     }
 
     inner class LocalBinder : Binder() {
@@ -298,9 +301,24 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
                 dispatch { this@NexoKioskService.onAudioChunkReceived(audioData) }
             override fun onTTSStarted() = dispatch { this@NexoKioskService.onTTSStarted() }
             override fun onTTSEnded() = dispatch { this@NexoKioskService.onTTSEnded() }
+            override fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog) =
+                dispatch { this@NexoKioskService.onVoiceprintDialogReceived(dialog) }
         }
         webSocketClient = NexoWebSocketClient(serverUrl, deviceId, bearerToken, events)
         webSocketClient?.connect()
+    }
+
+    fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog) {
+        lastVoiceprintDialog = dialog
+        serviceCallback?.onVoiceprintDialogReceived(dialog)
+    }
+
+    fun queryVoiceprint() {
+        webSocketClient?.queryVoiceprint()
+    }
+
+    fun unenrollVoiceprint() {
+        webSocketClient?.unenrollVoiceprint()
     }
 
     private fun foregroundDenied() {
@@ -362,6 +380,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         val started = audioRecorder.startRecording()
         duplex.microphoneReady(started)
         if (started) {
+            webSocketClient?.queryVoiceprint()
             val wasDisconnected = currentState == NexoState.DISCONNECTED
             if (wasDisconnected) {
                 // Joyful reconnect greeting before settling into neutral listening

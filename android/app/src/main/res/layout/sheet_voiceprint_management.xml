@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:clipToPadding="false">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="28dp">
+
+        <View
+            android:layout_width="36dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:background="@drawable/bg_sheet_handle"
+            android:importantForAccessibility="no" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/voiceprint_sheet_eyebrow"
+            android:textSize="11sp"
+            android:letterSpacing="0.12"
+            android:textColor="@color/setup_accent" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/voiceprint_sheet_title"
+            android:textSize="24sp"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="@color/setup_text" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/voiceprint_sheet_desc"
+            android:textSize="13sp"
+            android:lineSpacingExtra="3dp"
+            android:textColor="@color/setup_secondary" />
+
+        <!-- Living Status Card with Glassmorphic Style -->
+        <LinearLayout
+            android:id="@+id/cardVoiceprintStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:padding="16dp"
+            android:orientation="vertical"
+            android:background="@drawable/bg_voiceprint_card">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:id="@+id/ivSheetStatusLed"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_marginEnd="10dp"
+                    android:src="@drawable/led_dot"
+                    android:contentDescription="Voice Status LED" />
+
+                <TextView
+                    android:id="@+id/tvVoiceprintCount"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="@string/voiceprint_count_open"
+                    android:textColor="@color/setup_text"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvVoiceprintDetails"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/voiceprint_info_open"
+                android:textColor="@color/setup_secondary"
+                android:textSize="12sp"
+                android:lineSpacingExtra="2dp" />
+
+            <LinearLayout
+                android:id="@+id/layoutVoiceprintMeta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginBottom="8dp"
+                    android:background="@color/setup_border" />
+
+                <TextView
+                    android:id="@+id/tvVoiceprintMetaText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/setup_accent"
+                    android:textSize="11sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Voice Registration Instruction Box -->
+        <LinearLayout
+            android:id="@+id/cardEnrollHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:padding="14dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/bg_setup_identity">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="12dp"
+                android:src="@drawable/ic_fingerprint_24"
+                android:contentDescription="Biometric Icon" />
+
+            <TextView
+                android:id="@+id/tvEnrollHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/voiceprint_enroll_hint"
+                android:textColor="@color/setup_text"
+                android:textSize="12sp"
+                android:lineSpacingExtra="2dp" />
+        </LinearLayout>
+
+        <!-- Action Controls with Animations -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnVoiceprintUnenroll"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="16dp"
+            android:text="@string/voiceprint_btn_unenroll"
+            android:textColor="@color/voiceprint_danger"
+            app:strokeColor="@color/voiceprint_danger"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnVoiceprintClose"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:text="@string/voiceprint_btn_close"
+            android:textColor="@color/setup_secondary" />
+
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

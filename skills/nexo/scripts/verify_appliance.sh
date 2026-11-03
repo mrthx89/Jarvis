@@ -20,7 +20,8 @@ fi
 SERVER_DIR="${REPO_ROOT}/server"
 AUTH_DIR="${HOME}/.config/nexo-auth"
 REGISTRY_FILE="${AUTH_DIR}/devices.json"
-HEALTH_URL="http://127.0.0.1:8765/health"
+PORT="${NEXO_PORT:-8766}"
+HEALTH_URL="http://127.0.0.1:${PORT}/health"
 
 echo "=========================================================="
 echo "  Nexo Dedicated Appliance - System Verification Checklist"
@@ -57,7 +58,7 @@ check_item "Izin registry devices.json aman (0600)" "[ \"\$(stat -c '%a' '${REGI
 
 # 3. Service & Network Port
 check_item "Systemd unit nexo-appliance terpasang" "systemctl --user list-unit-files | grep -q 'nexo-appliance.service' || [ -f '${HOME}/.config/systemd/user/nexo-appliance.service' ]"
-check_item "Port 8765 sedang listening (Gateway aktif)" "ss -tulpn | grep -q ':8765' || netstat -tulpn 2>/dev/null | grep -q ':8765'"
+check_item "Port ${PORT} sedang listening (Gateway aktif)" "ss -tulpn | grep -q \":${PORT}\" || netstat -tulpn 2>/dev/null | grep -q \":${PORT}\""
 check_item "Health endpoint HTTP 200" "curl -fsS '${HEALTH_URL}'"
 
 # 4. CLI & Session Dispatcher

@@ -23,6 +23,24 @@ JARVIS_DEFAULT_DIR = Path("/root/.config/jarvis-auth")
 JARVIS_DEFAULT_REGISTRY = JARVIS_DEFAULT_DIR / "devices.json"
 
 
+def _safe_exists(path: Path | None) -> bool:
+    if path is None:
+        return False
+    try:
+        return path.exists()
+    except (PermissionError, OSError):
+        return False
+
+
+def _safe_is_dir(path: Path | None) -> bool:
+    if path is None:
+        return False
+    try:
+        return path.is_dir()
+    except (PermissionError, OSError):
+        return False
+
+
 def resolve_registry_path(path: str | Path | None = None) -> Path | None:
     """Resolve device registry path supporting /root/.config/nexo-auth/ with fallback to jarvis-auth.
 
@@ -32,20 +50,20 @@ def resolve_registry_path(path: str | Path | None = None) -> Path | None:
     if not path:
         return None
     p = Path(path)
-    if str(path).endswith("/") or p.is_dir() or (p.suffix == "" and p.name.endswith("-auth")):
+    if str(path).endswith("/") or _safe_is_dir(p) or (p.suffix == "" and p.name.endswith("-auth")):
         target = p / "devices.json"
     else:
         target = p
 
-    if target.exists():
+    if _safe_exists(target):
         return target
 
     # Fallback from nexo-auth to jarvis-auth
     if target.parent.name == "nexo-auth":
         peer = target.parent.parent / "jarvis-auth" / target.name
-        if peer.exists():
+        if _safe_exists(peer):
             return peer
-    if "nexo-auth" in str(target) and JARVIS_DEFAULT_REGISTRY.exists():
+    if "nexo-auth" in str(target) and _safe_exists(JARVIS_DEFAULT_REGISTRY):
         return JARVIS_DEFAULT_REGISTRY
 
     return target

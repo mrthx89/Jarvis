@@ -45,6 +45,46 @@
             android:textAllCaps="false" />
     </LinearLayout>
 
+    <!-- Voiceprint Biometric Status Pill -->
+    <LinearLayout
+        android:id="@+id/pillVoiceprint"
+        android:layout_width="wrap_content"
+        android:layout_gravity="center_horizontal"
+        app:layout_constrainedWidth="true"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_hud_pill"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:elevation="6dp"
+        android:clickable="true"
+        android:focusable="true"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/pillStatus">
+
+        <ImageView
+            android:id="@+id/ivVoiceprintLed"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_marginEnd="8dp"
+            android:src="@drawable/led_dot"
+            android:contentDescription="Voiceprint Status LED" />
+
+        <TextView
+            android:id="@+id/tvVoiceprintStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.02"
+            android:text="@string/voiceprint_hud_unregistered"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:textAllCaps="false" />
+    </LinearLayout>
+
     <Button
         android:id="@+id/toggleVoice"
         style="@style/Widget.AppCompat.Button.Borderless"
@@ -60,7 +100,7 @@
         android:textAllCaps="false"
         android:textColor="@color/nexo_cyan"
         app:layout_constrainedWidth="true"
-        app:layout_constraintTop_toBottomOf="@id/pillStatus"
+        app:layout_constraintTop_toBottomOf="@id/pillVoiceprint"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

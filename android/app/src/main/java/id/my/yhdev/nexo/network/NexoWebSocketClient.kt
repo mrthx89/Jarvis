@@ -43,6 +43,7 @@ class NexoWebSocketClient(
         fun onAudioChunkReceived(audioData: ByteArray)
         fun onTTSStarted()
         fun onTTSEnded()
+        fun onVoiceprintDialogReceived(dialog: VoiceprintDialog)
     }
 
     fun connect() {
@@ -162,10 +163,24 @@ class NexoWebSocketClient(
                     val ts = json.get("timestamp")?.asLong ?: System.currentTimeMillis()
                     sendJson(PongMessage(type = "pong", timestamp = ts))
                 }
+                "voiceprint_dialog" -> {
+                    val dialog = runCatching { gson.fromJson(jsonString, VoiceprintDialog::class.java) }.getOrNull()
+                    if (dialog != null) {
+                        listener.onVoiceprintDialogReceived(dialog)
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Invalid server control frame")
         }
+    }
+
+    fun queryVoiceprint() {
+        sendJson(VoiceprintQuery())
+    }
+
+    fun unenrollVoiceprint() {
+        sendJson(VoiceprintUnenroll())
     }
 
     fun sendJson(obj: Any) {

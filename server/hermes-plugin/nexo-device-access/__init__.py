@@ -45,7 +45,8 @@ def _handle_status(raw_args, *, source=None, platform=None):
     if source is None or platform != 'telegram':
         return 'Perintah ini hanya tersedia melalui chat privat Telegram pemilik.'
     try:
-        with urlopen('http://127.0.0.1:8765/session/status', timeout=5) as resp:
+        server_url = os.environ.get('NEXO_SERVER_URL', 'http://127.0.0.1:8766')
+        with urlopen(f'{server_url}/session/status', timeout=5) as resp:
             data = json.load(resp)
         online = data.get('server_online', True)
         appliance = data.get('appliance_connected', False)
@@ -74,8 +75,9 @@ def _handle_say(raw_args, *, source=None, platform=None):
     if not text:
         return "Penggunaan: <code>/nexo_say &lt;pesan teks&gt;</code>\nContoh: <code>/nexo_say Halo, saya Nexo.</code>"
     try:
+        server_url = os.environ.get('NEXO_SERVER_URL', 'http://127.0.0.1:8766')
         req_data = json.dumps({'text': text}).encode()
-        req = Request('http://127.0.0.1:8765/session/speak', data=req_data, headers={'Content-Type': 'application/json'})
+        req = Request(f'{server_url}/session/speak', data=req_data, headers={'Content-Type': 'application/json'})
         with urlopen(req, timeout=10) as resp:
             data = json.load(resp)
         if data.get('status') == 'ok' and data.get('spoken'):

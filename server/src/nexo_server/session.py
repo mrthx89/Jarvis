@@ -21,41 +21,50 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SERVER_URL = os.getenv("NEXO_SERVER_URL") or os.getenv("JARVIS_SERVER_URL") or "http://127.0.0.1:8765"
+DEFAULT_SERVER_URL = os.getenv("NEXO_SERVER_URL") or os.getenv("JARVIS_SERVER_URL") or "http://127.0.0.1:8766"
 
 
 def _get_session_link_path() -> Path:
-    nexo_dir = Path(os.getenv("NEXO_CONFIG_DIR") or "/root/.config/nexo-auth")
-    if nexo_dir.exists():
-        return nexo_dir / "session_link.json"
-    nexo_dir = Path(os.getenv("JARVIS_CONFIG_DIR") or "/root/.config/nexo-auth")
-    if nexo_dir.exists():
-        return nexo_dir / "session_link.json"
-    return nexo_dir / "session_link.json"
+    config_dir = os.getenv("NEXO_CONFIG_DIR") or os.getenv("JARVIS_CONFIG_DIR")
+    if config_dir:
+        return Path(config_dir) / "session_link.json"
+    user_dir = Path.home() / ".config/nexo-auth"
+    try:
+        if user_dir.exists():
+            return user_dir / "session_link.json"
+    except (PermissionError, OSError):
+        pass
+    root_dir = Path("/root/.config/nexo-auth")
+    try:
+        if root_dir.exists():
+            return root_dir / "session_link.json"
+    except (PermissionError, OSError):
+        pass
+    return user_dir / "session_link.json"
 
 
 def get_persisted_session(default: str = "nexo") -> str:
     env_val = os.getenv("NEXO_SESSION_NAME") or os.getenv("JARVIS_SESSION_NAME")
     if env_val and env_val.strip():
         return env_val.strip()
-    link_path = _get_session_link_path()
-    if link_path.exists():
-        try:
+    try:
+        link_path = _get_session_link_path()
+        if link_path.exists():
             data = json.loads(link_path.read_text(encoding="utf-8"))
             val = data.get("session_name")
             if val and isinstance(val, str) and val.strip():
                 return val.strip()
-        except Exception:
-            pass
-    peer_path = Path("/root/.config/nexo-auth/session_link.json")
-    if peer_path.exists() and peer_path != link_path:
-        try:
+    except (PermissionError, OSError, Exception):
+        pass
+    try:
+        peer_path = Path.home() / ".config/nexo/session_link.json"
+        if peer_path.exists():
             data = json.loads(peer_path.read_text(encoding="utf-8"))
             val = data.get("session_name")
             if val and isinstance(val, str) and val.strip():
                 return val.strip()
-        except Exception:
-            pass
+    except (PermissionError, OSError, Exception):
+        pass
     return default
 
 

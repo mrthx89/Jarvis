@@ -56,6 +56,11 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
     private var lastAssistantReply = ""
     private lateinit var ivStatusLed: android.widget.ImageView
     private lateinit var pillStatus: View
+    private lateinit var pillVoiceprint: View
+    private lateinit var ivVoiceprintLed: android.widget.ImageView
+    private lateinit var tvVoiceprintStatus: TextView
+    private var voiceprintSheet: id.my.yhdev.nexo.ui.VoiceprintManagementSheet? = null
+    private var lastVoiceprintDialog: id.my.yhdev.nexo.network.VoiceprintDialog? = null
     private lateinit var remoteConfigManager: RemoteConfigManager
 
     // HUD Pixel-Shifting for OLED/IPS Burn-In Protection (2-3px every 3-5 minutes)
@@ -70,6 +75,9 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             val (dx, dy) = hudShiftOffsets[hudShiftIndex]
             if (::pillStatus.isInitialized) {
                 pillStatus.animate().translationX(dx).translationY(dy).setDuration(2200).start()
+            }
+            if (::pillVoiceprint.isInitialized) {
+                pillVoiceprint.animate().translationX(dx).translationY(dy).setDuration(2200).start()
             }
             if (::toggleVoice.isInitialized) {
                 toggleVoice.animate().translationX(dx).translationY(dy).setDuration(2200).start()
@@ -95,6 +103,9 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             if (::pillStatus.isInitialized && pillStatus.alpha != targetAlpha) {
                 pillStatus.animate().alpha(targetAlpha).setDuration(1200).start()
             }
+            if (::pillVoiceprint.isInitialized && pillVoiceprint.alpha != targetAlpha) {
+                pillVoiceprint.animate().alpha(targetAlpha).setDuration(1200).start()
+            }
             uiHandler.postDelayed(this, 30_000L)
         }
     }
@@ -118,6 +129,11 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
                     if (isSleepingMode) pillStatus.visibility = View.GONE
                 }
             }
+            if (::pillVoiceprint.isInitialized) {
+                pillVoiceprint.animate().alpha(0f).setDuration(450).withEndAction {
+                    if (isSleepingMode) pillVoiceprint.visibility = View.GONE
+                }
+            }
             if (::consoleCard.isInitialized) {
                 consoleCard.animate().alpha(0f).setDuration(450).withEndAction {
                     if (isSleepingMode) consoleCard.visibility = View.GONE
@@ -127,6 +143,10 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             if (::pillStatus.isInitialized) {
                 pillStatus.visibility = View.VISIBLE
                 pillStatus.animate().alpha(1f).setDuration(350).start()
+            }
+            if (::pillVoiceprint.isInitialized) {
+                pillVoiceprint.visibility = View.VISIBLE
+                pillVoiceprint.animate().alpha(1f).setDuration(350).start()
             }
             if (::consoleCard.isInitialized && voiceEnabled) {
                 consoleCard.visibility = View.VISIBLE
@@ -151,6 +171,9 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         }
         if (::pillStatus.isInitialized && pillStatus.alpha < 0.95f) {
             pillStatus.animate().alpha(1.0f).setDuration(400).start()
+        }
+        if (::pillVoiceprint.isInitialized && pillVoiceprint.alpha < 0.95f) {
+            pillVoiceprint.animate().alpha(1.0f).setDuration(400).start()
         }
     }
 
@@ -251,12 +274,20 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemUI()
 
+        hudTopBar = findViewById(R.id.hudTopBar)
         pillStatus = findViewById(R.id.pillStatus)
         visualizerView = findViewById(R.id.visualizerView)
         tvStatus = findViewById(R.id.tvStatus)
         tvStatus.setOnLongClickListener { showCredentialSetup(); true }
         tvStatus.setOnClickListener {
             Toast.makeText(this, tvStatus.contentDescription, Toast.LENGTH_LONG).show()
+        }
+        pillVoiceprint = findViewById(R.id.pillVoiceprint)
+        ivVoiceprintLed = findViewById(R.id.ivVoiceprintLed)
+        tvVoiceprintStatus = findViewById(R.id.tvVoiceprintStatus)
+        pillVoiceprint.setOnClickListener {
+            resetActivity()
+            showVoiceprintManagement()
         }
         consoleCard = findViewById(R.id.consoleCard)
         voiceMood = findViewById(R.id.voiceMood)
@@ -309,6 +340,18 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
                 kioskService?.refreshCredentials()
             },
             onDismiss = { credentialSheet = null }
+        ).also { it.show() }
+    }
+
+    private fun showVoiceprintManagement() {
+        if (voiceprintSheet != null || isFinishing || isDestroyed) return
+        voiceprintSheet = id.my.yhdev.nexo.ui.VoiceprintManagementSheet(
+            activity = this,
+            currentDialog = lastVoiceprintDialog,
+            onUnenroll = {
+                kioskService?.unenrollVoiceprint()
+            },
+            onDismiss = { voiceprintSheet = null }
         ).also { it.show() }
     }
 
@@ -508,11 +551,30 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         }
     }
 
+    override fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog) {
+        runOnUiThread {
+            if (isDestroyed) return@runOnUiThread
+            lastVoiceprintDialog = dialog
+            voiceprintSheet?.updateDialog(dialog)
+            if (::tvVoiceprintStatus.isInitialized && ::ivVoiceprintLed.isInitialized) {
+                val isEnrolled = dialog.isEnrolled
+                tvVoiceprintStatus.setText(
+                    if (isEnrolled) R.string.voiceprint_hud_registered
+                    else R.string.voiceprint_hud_unregistered
+                )
+                val ledColor = if (isEnrolled) 0xFF00E676.toInt() else 0xFFFFB300.toInt()
+                ivVoiceprintLed.setColorFilter(ledColor)
+            }
+        }
+    }
+
     override fun onDestroy() {
         uiHandler.removeCallbacks(hideVoiceMood)
         uiHandler.removeCallbacks(pixelShiftRunnable)
         uiHandler.removeCallbacks(ambientCheckRunnable)
         super.onDestroy()
+        voiceprintSheet?.dismiss()
+        voiceprintSheet = null
         credentialSheet?.dismiss()
         credentialSheet = null
         remoteConfigManager.close()

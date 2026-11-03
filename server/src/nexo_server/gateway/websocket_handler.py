@@ -363,8 +363,8 @@ class ApplianceSession:
                     await self._run_pipeline(captured_pcm)
         except asyncio.CancelledError:
             raise
-        except Exception:
-            logger.error("Voice pipeline failed for %s", self.session_id)
+        except Exception as e:
+            logger.error("Voice pipeline failed for %s: %s", self.session_id, e, exc_info=True)
             if not self._closed:
                 try:
                     await self.send_state(

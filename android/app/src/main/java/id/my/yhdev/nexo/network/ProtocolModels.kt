@@ -62,3 +62,27 @@ data class PongMessage(
     @SerializedName("type") val type: String,
     @SerializedName("timestamp") val timestamp: Long
 )
+
+data class VoiceprintMetadata(
+    @SerializedName("speaker") val speaker: String? = null,
+    @SerializedName("enrolled_at") val enrolledAt: String? = null,
+    @SerializedName("duration_seconds") val durationSeconds: Float? = null,
+    @SerializedName("status") val status: String? = null,
+    @SerializedName("embedding_dim") val embeddingDim: Int? = null
+)
+
+data class VoiceprintDialog(
+    @SerializedName("type") val type: String = "voiceprint_dialog",
+    @SerializedName("action") val action: String = "manage",
+    @SerializedName("is_enrolled") val isEnrolled: Boolean = false,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("metadata") val metadata: VoiceprintMetadata? = null
+)
+
+data class VoiceprintQuery(
+    @SerializedName("type") val type: String = "voiceprint_query"
+)
+
+data class VoiceprintUnenroll(
+    @SerializedName("type") val type: String = "voiceprint_unenroll"
+)

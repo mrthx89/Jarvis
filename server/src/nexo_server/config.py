@@ -10,7 +10,7 @@ import yaml
 @dataclass
 class ServerSettings:
     host: str = "127.0.0.1"
-    port: int = 8765
+    port: int = 8766
     ws_path: str = "/ws/appliance"
     ping_interval: int = 15
     ping_timeout: int = 30
@@ -47,8 +47,8 @@ class HermesSettings:
 @dataclass
 class SpeakerSettings:
     enabled: bool = True
-    model_path: str = "/root/.config/nexo-auth/models/speaker_campplus.onnx"
-    voiceprints_dir: str = "/root/.config/nexo-auth/voiceprints"
+    model_path: str = str(Path.home() / ".config" / "nexo-auth" / "models" / "speaker_campplus.onnx")
+    voiceprints_dir: str = str(Path.home() / ".config" / "nexo-auth" / "voiceprints")
     threshold: float = 0.65
 
 
