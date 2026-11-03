@@ -339,7 +339,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         webSocketClient?.connect()
     }
 
-    fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog) {
+    override fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog) {
         lastVoiceprintDialog = dialog
         serviceCallback?.onVoiceprintDialogReceived(dialog)
     }

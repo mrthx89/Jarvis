@@ -274,7 +274,6 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemUI()
 
-        hudTopBar = findViewById(R.id.hudTopBar)
         pillStatus = findViewById(R.id.pillStatus)
         visualizerView = findViewById(R.id.visualizerView)
         tvStatus = findViewById(R.id.tvStatus)
