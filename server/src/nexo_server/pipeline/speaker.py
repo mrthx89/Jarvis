@@ -1,5 +1,6 @@
 """Speaker Verification and Voiceprint Biometrics using CAM++ ONNX model."""
 
+import hashlib
 import json
 import logging
 import os
@@ -16,6 +17,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_AUTH_DIR = Path.home() / ".config" / "nexo-auth"
 DEFAULT_MODEL_PATH = str(DEFAULT_AUTH_DIR / "models" / "speaker_campplus.onnx")
 DEFAULT_VOICEPRINTS_DIR = str(DEFAULT_AUTH_DIR / "voiceprints")
+MODEL_SHA256 = "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11"
+FRONTEND_ID = "sherpa-3dspeaker-knf-1.22.5-v1"
+MODEL_METADATA = {
+    "normalize_samples": "1", "output_dim": "192",
+    "feature_normalize_type": "global-mean", "sample_rate": "16000",
+    "framework": "3d-speaker", "language": "Chinese",
+}
+REENROLL_MESSAGE = "Sidik suara lama tidak kompatibel. Konfirmasi hapus lalu daftarkan ulang suara Anda."
 DEFAULT_THRESHOLD = 0.65
 MIN_AUDIO_BYTES_FOR_ENROLL = 64000  # 2s of 16kHz, 16-bit PCM mono
 MIN_AUDIO_BYTES_FOR_VERIFY = 16000  # 0.5s of 16kHz, 16-bit PCM mono
@@ -39,59 +48,56 @@ def compute_fbank(
     frame_length_ms: int = 25,
     frame_shift_ms: int = 10,
 ) -> np.ndarray:
-    """Compute 80-bin Kaldi-compatible Mel Filterbank (fbank) features using pure NumPy.
+    """Sherpa 3D-Speaker frontend: normalized float PCM to mean-centered log Mel.
 
-    Matches CAM++ and WeSpeaker Mel filterbank preprocessing for 16 kHz audio.
+    Pinned to kaldi-native-fbank 1.22.5; see docs/SPEAKER_MODEL.md for the
+    reference contract. Short clips remain empty for existing callers.
     """
-    frame_length = int(sample_rate * frame_length_ms / 1000)
-    frame_shift = int(sample_rate * frame_shift_ms / 1000)
-    if len(waveform) < frame_length:
-        return np.zeros((0, num_mel_bins), dtype=np.float32)
+    import kaldi_native_fbank as knf
 
-    # 1. Preemphasis (alpha = 0.97)
-    preemphasized = np.append(waveform[0], waveform[1:] - 0.97 * waveform[:-1])
+    if (sample_rate, num_mel_bins, frame_length_ms, frame_shift_ms) != (16000, 80, 25, 10):
+        raise ValueError("CAM++ requires 16 kHz, 80 bins and 25/10 ms frames")
+    waveform = np.asarray(waveform, dtype=np.float32)
+    if waveform.ndim != 1 or not np.isfinite(waveform).all():
+        raise ValueError("Expected finite mono waveform")
+    if len(waveform) < 400:
+        return np.zeros((0, 80), dtype=np.float32)
+    config = knf.FbankOptions()
+    config.frame_opts.samp_freq = 16000
+    config.frame_opts.frame_length_ms = 25
+    config.frame_opts.frame_shift_ms = 10
+    config.frame_opts.dither = 0
+    config.frame_opts.snip_edges = False
+    config.frame_opts.remove_dc_offset = True
+    config.frame_opts.preemph_coeff = 0.97
+    config.frame_opts.window_type = "povey"
+    config.frame_opts.round_to_power_of_two = True
+    config.mel_opts.num_bins = 80
+    config.mel_opts.low_freq = 20
+    config.mel_opts.high_freq = -400
+    config.mel_opts.is_librosa = False
+    config.use_energy = False
+    config.use_log_fbank = True
+    config.use_power = True
+    fbank = knf.OnlineFbank(config)
+    fbank.accept_waveform(16000, waveform.tolist())
+    fbank.input_finished()
+    features = np.stack([fbank.get_frame(i) for i in range(fbank.num_frames_ready)])
+    return (features - features.mean(axis=0, keepdims=True)).astype(np.float32)
 
-    # 2. Framing with Hamming window
-    num_samples = len(preemphasized)
-    num_frames = 1 + int((num_samples - frame_length) / frame_shift)
-    if num_frames <= 0:
-        return np.zeros((0, num_mel_bins), dtype=np.float32)
 
-    indices = (
-        np.tile(np.arange(0, frame_length), (num_frames, 1))
-        + np.tile(np.arange(0, num_frames * frame_shift, frame_shift), (frame_length, 1)).T
-    )
-    frames = preemphasized[indices] * np.hamming(frame_length)
-
-    # 3. FFT & Power spectrum
-    nfft = 512
-    mag_frames = np.absolute(np.fft.rfft(frames, nfft))
-    pow_frames = (1.0 / nfft) * (mag_frames ** 2)
-
-    # 4. Triangular Mel Filterbanks
-    low_freq_mel = 0
-    high_freq_mel = 2595 * np.log10(1 + (sample_rate / 2) / 700)
-    mel_points = np.linspace(low_freq_mel, high_freq_mel, num_mel_bins + 2)
-    hz_points = 700 * (10 ** (mel_points / 2595) - 1)
-    bins = np.floor((nfft + 1) * hz_points / sample_rate).astype(int)
-
-    fbank = np.zeros((num_mel_bins, int(np.floor(nfft / 2 + 1))))
-    for m in range(1, num_mel_bins + 1):
-        f_m_minus = bins[m - 1]
-        f_m = bins[m]
-        f_m_plus = bins[m + 1]
-        for k in range(f_m_minus, f_m):
-            fbank[m - 1, k] = (k - bins[m - 1]) / max(f_m - f_m_minus, 1)
-        for k in range(f_m, f_m_plus):
-            fbank[m - 1, k] = (bins[m + 1] - k) / max(f_m_plus - f_m, 1)
-
-    filter_banks = np.dot(pow_frames, fbank.T)
-    filter_banks = np.where(filter_banks == 0, np.finfo(float).eps, filter_banks)
-    filter_banks = np.log(filter_banks)
-
-    # 5. Cepstral Mean Subtraction (CMVN per utterance)
-    filter_banks -= np.mean(filter_banks, axis=0, keepdims=True)
-    return filter_banks.astype(np.float32)
+def validate_model_session(session) -> None:
+    """Reject tensor/metadata contracts other than the pinned Sherpa CAM++ export."""
+    metadata = session.get_modelmeta().custom_metadata_map
+    if any(metadata.get(key) != value for key, value in MODEL_METADATA.items()):
+        raise ValueError("Incompatible CAM++ model metadata")
+    inputs, outputs = session.get_inputs(), session.get_outputs()
+    if (len(inputs) != 1 or len(outputs) != 1
+            or inputs[0].name != "x" or inputs[0].type != "tensor(float)"
+            or len(inputs[0].shape) != 3 or inputs[0].shape[-1] != 80
+            or outputs[0].name != "embedding" or outputs[0].type != "tensor(float)"
+            or len(outputs[0].shape) != 2 or outputs[0].shape[-1] != 192):
+        raise ValueError("Incompatible CAM++ tensor contract")
 
 
 class SpeakerVerifier:
@@ -108,6 +114,7 @@ class SpeakerVerifier:
         self.threshold = threshold
         self._session = None
         self._model_tested = False
+        self._validated_model = False
 
     def _get_paths(self, speaker_name: str = "owner") -> Tuple[Path, Path]:
         valid_name = validate_speaker_name(speaker_name)
@@ -125,15 +132,21 @@ class SpeakerVerifier:
                 model_exists = False
             if model_exists:
                 try:
+                    if hashlib.sha256(Path(self.model_path).read_bytes()).hexdigest() != MODEL_SHA256:
+                        raise ValueError("Untrusted CAM++ model checksum; see docs/SPEAKER_MODEL.md")
+                    import kaldi_native_fbank  # Require the real frontend before enabling enrollment.
                     import onnxruntime as ort
                     opts = ort.SessionOptions()
                     opts.inter_op_num_threads = 1
                     opts.intra_op_num_threads = 2
-                    self._session = ort.InferenceSession(
+                    session = ort.InferenceSession(
                         self.model_path,
                         sess_options=opts,
                         providers=["CPUExecutionProvider"],
                     )
+                    validate_model_session(session)
+                    self._validated_model = True
+                    self._session = session
                     logger.info("Loaded speaker verification model: %s", self.model_path)
                 except Exception as e:
                     logger.warning("Failed to initialize speaker ONNX session: %s", e)
@@ -155,22 +168,38 @@ class SpeakerVerifier:
         except ValueError:
             return False
 
+    def _profile_contract(self) -> dict:
+        return {
+            "profile_version": 2, "frontend": FRONTEND_ID,
+            "model_sha256": MODEL_SHA256 if self._validated_model else "unvalidated-injected-session",
+            "embedding_dim": 192,
+        }
+
     def get_metadata(self, speaker_name: str = "owner") -> Optional[dict]:
-        """Read enrollment metadata JSON if available."""
+        """Read metadata; retain incompatible profiles and require explicit re-enrollment."""
+        try:
+            if not self.is_enrolled(speaker_name):
+                return None
+        except OSError:
+            return {"status": "reenrollment_required", "message": REENROLL_MESSAGE}
         try:
             _, json_path = self._get_paths(speaker_name)
-            if not json_path.exists():
-                return None
-            return json.loads(json_path.read_text(encoding="utf-8"))
+            meta = json.loads(json_path.read_text(encoding="utf-8"))
+            if not isinstance(meta, dict):
+                meta = {}
         except Exception:
-            return None
+            meta = {}
+        self._get_session()
+        if any(meta.get(key) != value for key, value in self._profile_contract().items()):
+            return {**meta, "status": "reenrollment_required", "message": REENROLL_MESSAGE}
+        return meta
 
     def extract_embedding(self, pcm_audio: bytes) -> Optional[np.ndarray]:
         """Extract a 192-dimensional normalized speaker embedding from PCM16 mono 16kHz audio."""
         if len(pcm_audio) < MIN_AUDIO_BYTES_FOR_VERIFY or len(pcm_audio) % 2:
             return None
 
-        waveform = np.frombuffer(pcm_audio, dtype=np.int16).astype(np.float32)
+        waveform = np.frombuffer(pcm_audio, dtype="<i2").astype(np.float32)
         # Check that audio is not silence
         max_amp = np.max(np.abs(waveform))
         if max_amp < 150:  # Silence threshold
@@ -181,14 +210,17 @@ class SpeakerVerifier:
             return None
 
         try:
-            fbank_feats = compute_fbank(waveform)
+            fbank_feats = compute_fbank(waveform / 32768.0)
             if fbank_feats.shape[0] < 5:
                 return None
             input_tensor = fbank_feats[np.newaxis, :, :].astype(np.float32)
             input_name = session.get_inputs()[0].name
             output_name = session.get_outputs()[0].name
             outputs = session.run([output_name], {input_name: input_tensor})
-            raw_emb = np.asarray(outputs[0])[0]
+            output = np.asarray(outputs[0])
+            if output.shape != (1, 192) or not np.isfinite(output).all():
+                return None
+            raw_emb = output[0]
             norm = np.linalg.norm(raw_emb)
             if norm == 0 or not np.isfinite(norm):
                 return None
@@ -222,7 +254,7 @@ class SpeakerVerifier:
         backup = None
         try:
             if (audio_bytes < MIN_AUDIO_BYTES_FOR_ENROLL or audio_bytes > 192000
-                    or not self.is_available() or embedding.ndim != 1
+                    or not self.is_available() or embedding.shape != (192,)
                     or not np.isfinite(embedding).all() or np.linalg.norm(embedding) == 0):
                 return False, "Sampel sidik suara tidak valid."
             self.voiceprints_dir.mkdir(parents=True, exist_ok=True)
@@ -240,7 +272,7 @@ class SpeakerVerifier:
                 "enrolled_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "duration_seconds": duration_s,
                 "status": "active",
-                "embedding_dim": int(embedding.shape[0]),
+                **self._profile_contract(),
             }
             staged[1].write_text(json.dumps(meta, indent=2), encoding="utf-8")
             os.chmod(staged[1], 0o600)
@@ -317,6 +349,11 @@ class SpeakerVerifier:
         except OSError:
             return False, 0.0
 
+        metadata = self.get_metadata(speaker_name)
+        if not metadata or metadata.get("status") == "reenrollment_required":
+            logger.warning(REENROLL_MESSAGE)
+            return False, 0.0
+
         current_emb = self.extract_embedding(pcm_audio)
         if current_emb is None:
             # Ambiguous audio or silence: fail-closed if enrolled
@@ -324,6 +361,8 @@ class SpeakerVerifier:
 
         try:
             enrolled_emb = np.load(str(npy_path), allow_pickle=False)
+            if enrolled_emb.shape != (192,) or not np.isfinite(enrolled_emb).all():
+                return False, 0.0
             enrolled_norm = np.linalg.norm(enrolled_emb)
             if enrolled_norm > 0:
                 enrolled_emb = enrolled_emb / enrolled_norm

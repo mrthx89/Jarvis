@@ -10,3 +10,4 @@ edge-tts>=7.0.0
 faster-whisper>=1.0.0
 av>=12.0.0
 onnxruntime>=1.18.0
+kaldi-native-fbank==1.22.5
