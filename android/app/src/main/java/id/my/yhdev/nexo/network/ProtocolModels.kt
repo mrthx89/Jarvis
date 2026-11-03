@@ -13,7 +13,8 @@ data class ClientHello(
     @SerializedName("type") val type: String = "client_hello",
     @SerializedName("protocol_version") val protocolVersion: String = "1.0",
     @SerializedName("device_id") val deviceId: String,
-    @SerializedName("audio_spec") val audioSpec: AudioSpec = AudioSpec()
+    @SerializedName("audio_spec") val audioSpec: AudioSpec = AudioSpec(),
+    @SerializedName("capabilities") val capabilities: List<String> = listOf("utterance_upload_v2", "exclusive_audio_v1")
 )
 
 data class ServerHello(

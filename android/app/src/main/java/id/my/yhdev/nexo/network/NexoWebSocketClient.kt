@@ -9,6 +9,11 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.Executors
+import android.os.SystemClock
+import id.my.yhdev.nexo.audio.core.UploadSession
+import id.my.yhdev.nexo.audio.core.UtteranceBuffer
 
 class NexoWebSocketClient(
     private val serverUrl: String,
@@ -33,6 +38,35 @@ class NexoWebSocketClient(
     private val connecting = AtomicBoolean(false)
     private val reconnectPending = AtomicBoolean(false)
     private var reconnectAttempt = 0
+    private val socketGeneration = AtomicLong()
+    private val sendLock = Any()
+    @Volatile var outdoorSession: OutdoorSession? = null
+        private set
+    @Volatile private var outputEpoch = 0L
+    @Volatile private var outputAllowed = false
+    private val uploadLifecycle = Any()
+    private val uploadWorker = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "Nexo-UtteranceUpload").apply { isDaemon = true }
+    }
+    val uploader = UploadSession(object : UploadSession.Transport {
+        override fun control(value: MutableMap<String, Any>): Boolean = sendV2Map(value)
+        override fun binary(value: ByteArray): Boolean = synchronized(sendLock) {
+            if (outdoorSession == null || !protocolReady.get()) false
+            else webSocket?.send(value.toByteString()) == true
+        }
+        override fun queuedBytes(): Long = webSocket?.queueSize() ?: 131072
+        override fun abort() { fenceOutput(); webSocket?.cancel() }
+    })
+    init {
+        uploadWorker.scheduleAtFixedRate({
+            runCatching {
+                synchronized(uploadLifecycle) {
+                    uploader.pump(SystemClock.elapsedRealtime())
+                    if (uploader.state() == "DISCONNECTED" && protocolReady.get()) webSocket?.cancel()
+                }
+            }.onFailure { fenceOutput(); webSocket?.cancel() }
+        }, 20, 20, TimeUnit.MILLISECONDS)
+    }
 
     interface WebSocketEventListener {
         fun onConnected()
@@ -44,6 +78,8 @@ class NexoWebSocketClient(
         fun onTTSStarted()
         fun onTTSEnded()
         fun onVoiceprintDialogReceived(dialog: VoiceprintDialog)
+        fun onOutdoorControl(message: JsonObject) {}
+        fun onOutdoorProtocolReady(session: OutdoorSession) {}
     }
 
     fun connect() {
@@ -59,10 +95,13 @@ class NexoWebSocketClient(
             listener.onStateChanged(NexoState.ERROR, "URL server tidak valid.", null)
             return
         }
+        val token = socketGeneration.incrementAndGet()
         val ended = AtomicBoolean(false)
         this.webSocket = client.newWebSocket(request, object : WebSocketListener() {
             private fun disconnected() {
-                if (!ended.compareAndSet(false, true)) return
+                if (token != socketGeneration.get() || !ended.compareAndSet(false, true)) return
+                synchronized(sendLock) { outdoorSession = null; fenceOutput() }
+                uploader.disconnected()
                 connecting.set(false)
                 isConnected.set(false)
                 protocolReady.set(false)
@@ -71,7 +110,7 @@ class NexoWebSocketClient(
             }
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "WebSocket connected successfully.")
-                if (!shouldRun.get()) { webSocket.cancel(); return }
+                if (!shouldRun.get() || token != socketGeneration.get()) { webSocket.cancel(); return }
                 this@NexoWebSocketClient.webSocket = webSocket
                 connecting.set(false)
                 isConnected.set(true)
@@ -86,16 +125,18 @@ class NexoWebSocketClient(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                if (shouldRun.get() && !ended.get()) handleTextMessage(text)
+                if (shouldRun.get() && !ended.get() && token == socketGeneration.get()) handleTextMessage(text, token)
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                if (shouldRun.get() && protocolReady.get() && acceptingPlayback.get() && !ended.get()) {
+                if (shouldRun.get() && protocolReady.get() && outputAllowed && acceptingPlayback.get() &&
+                    !ended.get() && token == socketGeneration.get()) {
                     listener.onAudioChunkReceived(bytes.toByteArray())
                 }
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                if (token != socketGeneration.get()) return
                 Log.w(TAG, "WebSocket closing: $code")
                 disconnected()
                 if (code == 1008) setupRequired()
@@ -103,6 +144,7 @@ class NexoWebSocketClient(
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (token != socketGeneration.get()) return
                 Log.w(TAG, "WebSocket closed: $code")
                 disconnected()
                 if (code == 1008) setupRequired()
@@ -110,6 +152,7 @@ class NexoWebSocketClient(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (token != socketGeneration.get()) { response?.close(); return }
                 Log.e(TAG, "WebSocket connection failed")
                 disconnected()
                 if (response?.code == 401 || response?.code == 403) setupRequired()
@@ -119,16 +162,67 @@ class NexoWebSocketClient(
         })
     }
 
-    private fun handleTextMessage(jsonString: String) {
+    private fun handleTextMessage(jsonString: String) = handleTextMessage(jsonString, socketGeneration.get())
+
+    private fun handleTextMessage(jsonString: String, token: Long) {
+        if (!shouldRun.get() || token != socketGeneration.get()) return
         try {
+            require(jsonString.toByteArray(Charsets.UTF_8).size <= 4096)
             val json = gson.fromJson(jsonString, JsonObject::class.java)
-            when (json.get("type")?.takeUnless { it.isJsonNull }?.asString) {
-                "server_hello" -> {
-                    if (isConnected.get() && protocolReady.compareAndSet(false, true)) {
-                        reconnectAttempt = 0
-                        listener.onConnected()
-                    }
+            val type = OutdoorProtocol.string(json, "type") ?: error("invalid_message")
+            val session = outdoorSession
+            if (type != "server_hello" && type != "ping" && type != "pong") {
+                if (session == null || OutdoorProtocol.uuid(json, "connection_id") != session.connectionId) return
+                if (type in setOf("state_change", "cognitive", "transcription", "tts_start", "tts_end", "visual_telemetry")) {
+                    val epoch = OutdoorProtocol.integer(json, "output_epoch", 0, Long.MAX_VALUE) ?: return
+                    if (!outputAllowed || epoch != outputEpoch) return
                 }
+            }
+            when (type) {
+                "server_hello" -> {
+                    if (protocolReady.get()) error("duplicate_hello")
+                    val selected = OutdoorProtocol.negotiate(json)
+                    if (selected == null) {
+                        shouldRun.set(false)
+                        fenceOutput()
+                        listener.onStateChanged(NexoState.ERROR, "Server perlu pembaruan audio v2. Mikrofon tetap OFF.", null)
+                        webSocket?.cancel()
+                        return
+                    }
+                    outdoorSession = selected
+                    outputEpoch = selected.outputEpoch
+                    fenceOutput()
+                    synchronized(uploadLifecycle) {
+                        protocolReady.set(true)
+                        uploader.connect(selected.connectionId, selected.serverInstanceId, selected.maxChunkBytes, true, SystemClock.elapsedRealtime())
+                    }
+                    reconnectAttempt = 0
+                    val generation = socketGeneration.get()
+                    listener.onOutdoorProtocolReady(selected)
+                    if (shouldRun.get() && protocolReady.get() && generation == socketGeneration.get()) listener.onConnected()
+                }
+                "utterance_ack" -> {
+                    val id = OutdoorProtocol.uuid(json, "utterance_id") ?: error("invalid_message")
+                    val request = OutdoorProtocol.uuid(json, "request_id") ?: error("invalid_message")
+                    val stage = OutdoorProtocol.string(json, "stage") ?: error("invalid_message")
+                    val next = if (json.has("next_sample")) OutdoorProtocol.integer(json, "next_sample", 0, 320000)?.toInt()
+                        ?: error("invalid_length") else 0
+                    val samples = if (json.has("total_samples")) OutdoorProtocol.integer(json, "total_samples", 1, 320000)?.toInt()
+                        ?: error("invalid_length") else 0
+                    uploader.ack(session!!.connectionId, request, id, stage, next, samples,
+                        OutdoorProtocol.string(json, "sha256"), SystemClock.elapsedRealtime())
+                    listener.onOutdoorControl(json)
+                }
+                "utterance_error" -> {
+                    uploader.serverError(OutdoorProtocol.uuid(json, "utterance_id") ?: error("invalid_message"),
+                        OutdoorProtocol.string(json, "code") ?: "invalid_message")
+                    listener.onOutdoorControl(json)
+                }
+                "utterance_result" -> {
+                    uploader.result(OutdoorProtocol.uuid(json, "utterance_id") ?: error("invalid_message"))
+                    listener.onOutdoorControl(json)
+                }
+                "audio_owner_ack", "conversation_resumed", "enrollment_ack" -> listener.onOutdoorControl(json)
                 "state_change" -> {
                     val stateStr = json.get("state")?.takeUnless { it.isJsonNull }?.asString ?: "ERROR"
                     val msg = json.get("message")?.takeUnless { it.isJsonNull }?.asString
@@ -163,15 +257,22 @@ class NexoWebSocketClient(
                     val ts = json.get("timestamp")?.asLong ?: System.currentTimeMillis()
                     sendJson(PongMessage(type = "pong", timestamp = ts))
                 }
+                "pong" -> Unit
+                "cognitive" -> listener.onOutdoorControl(json)
                 "voiceprint_dialog" -> {
                     val dialog = runCatching { gson.fromJson(jsonString, VoiceprintDialog::class.java) }.getOrNull()
                     if (dialog != null) {
                         listener.onVoiceprintDialogReceived(dialog)
                     }
                 }
+                else -> error("invalid_message")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Invalid server control frame")
+            fenceOutput()
+            protocolReady.set(false)
+            webSocket?.close(1008, "invalid_message")
+            webSocket?.cancel()
         }
     }
 
@@ -182,28 +283,69 @@ class NexoWebSocketClient(
     fun unenrollVoiceprint(requestId: String = java.util.UUID.randomUUID().toString()): Boolean =
         sendJson(VoiceprintControl("voiceprint_unenroll", requestId))
 
-    fun startVoiceprintEnrollment(requestId: String): Boolean =
-        sendJson(VoiceprintControl("voiceprint_enroll_start", requestId))
+    @Deprecated("Use enrollment_begin under an acknowledged exclusive lease")
+    fun startVoiceprintEnrollment(requestId: String): Boolean = false
 
-    fun finishVoiceprintEnrollment(requestId: String): Boolean =
-        sendJson(VoiceprintControl("voiceprint_enroll_finish", requestId))
+    @Deprecated("Use enrollment_save under an acknowledged exclusive lease")
+    fun finishVoiceprintEnrollment(requestId: String): Boolean = false
 
-    fun cancelVoiceprintEnrollment(requestId: String): Boolean =
-        sendJson(VoiceprintControl("voiceprint_enroll_cancel", requestId))
+    @Deprecated("Use enrollment_cancel under an acknowledged exclusive lease")
+    fun cancelVoiceprintEnrollment(requestId: String): Boolean = false
 
     fun sendJson(obj: Any): Boolean {
         if (!isConnected.get() || !shouldRun.get()) return false
-        return webSocket?.send(gson.toJson(obj)) == true
+        val json = gson.toJsonTree(obj).asJsonObject
+        val type = OutdoorProtocol.string(json, "type") ?: return false
+        if (type !in setOf("pong", "voiceprint_query", "voiceprint_unenroll")) return false
+        val session = outdoorSession ?: return false
+        json.addProperty("connection_id", session.connectionId)
+        if (!json.has("request_id")) json.addProperty("request_id", java.util.UUID.randomUUID().toString())
+        val request = OutdoorProtocol.uuid(json, "request_id") ?: return false
+        val fields = json.entrySet().associate { it.key to (it.value as Any) }.toMutableMap()
+        fields["request_id"] = request
+        fields["connection_id"] = session.connectionId
+        return sendV2Map(fields)
     }
 
-    fun sendAudioChunk(chunk: ByteArray, length: Int): Boolean {
-        if (!isConnected.get() || !protocolReady.get() || !shouldRun.get()) return false
-        val sent = webSocket?.send(chunk.toByteString(0, length)) == true
-        if (!sent) {
-            protocolReady.set(false)
-            webSocket?.cancel()
+    @Deprecated("Raw PCM is forbidden in v2; use uploadUtterance after local seal")
+    fun sendAudioChunk(chunk: ByteArray, length: Int): Boolean = false
+
+    fun uploadUtterance(pcm: UtteranceBuffer.Sealed, leaseId: String? = null, enrollmentId: String? = null): Boolean =
+        uploader.begin(pcm, leaseId, enrollmentId, SystemClock.elapsedRealtime())
+
+    fun cancelUtterance() { uploader.cancel(SystemClock.elapsedRealtime()) }
+
+    fun fenceOutput() { outputAllowed = false; acceptingPlayback.set(false) }
+
+    /** Service calls only after a matched explicit resume ACK and its owner/generation checks. */
+    fun allowOutput(connectionId: String, epoch: Long): Boolean {
+        val session = outdoorSession ?: return false
+        if (session.connectionId != connectionId || epoch < outputEpoch) return false
+        outputEpoch = epoch
+        outputAllowed = true
+        return true
+    }
+
+    fun sendOutdoorControl(type: String, requestId: String, fields: Map<String, Any> = emptyMap()): Boolean {
+        if (type !in setOf("audio_owner_acquire", "audio_owner_renew", "audio_owner_release", "conversation_resume",
+                "enrollment_begin", "enrollment_save", "enrollment_cancel")) return false
+        runCatching { UploadSession.uuid(requestId) }.getOrElse { return false }
+        val connection = outdoorSession?.connectionId ?: return false
+        val value = fields.toMutableMap()
+        if (value.keys.any { it in setOf("type", "connection_id", "request_id") }) return false
+        value["type"] = type; value["request_id"] = requestId; value["connection_id"] = connection
+        return sendV2Map(value)
+    }
+
+    private fun sendV2Map(value: Map<String, Any>): Boolean = synchronized(sendLock) {
+        val session = outdoorSession
+        if (session == null || value["connection_id"] != session.connectionId || !protocolReady.get() || !shouldRun.get()) false
+        else {
+            val text = gson.toJson(value)
+            val bytes = text.toByteArray(Charsets.UTF_8).size
+            val socket = webSocket
+            bytes <= 4096 && socket != null && socket.queueSize() + bytes <= 131072 && socket.send(text)
         }
-        return sent
     }
 
     private fun setupRequired() {
@@ -246,6 +388,12 @@ class NexoWebSocketClient(
     }
 
     fun disconnect() {
+        socketGeneration.incrementAndGet()
+        fenceOutput()
+        uploader.cancel(SystemClock.elapsedRealtime())
+        uploader.clear()
+        uploadWorker.shutdownNow()
+        outdoorSession = null
         shouldRun.set(false)
         isConnected.set(false)
         protocolReady.set(false)

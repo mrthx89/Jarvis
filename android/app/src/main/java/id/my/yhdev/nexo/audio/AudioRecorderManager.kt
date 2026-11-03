@@ -2,99 +2,141 @@ package id.my.yhdev.nexo.audio
 
 import android.annotation.SuppressLint
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
-import android.media.MediaRecorder
+import android.media.AudioRouting
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
-import android.util.Log
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
+import android.os.Handler
+import android.os.Looper
+import id.my.yhdev.nexo.audio.core.CapturePump
+import id.my.yhdev.nexo.audio.core.GenerationGate
 
 class AudioRecorderManager(
     private val sampleRate: Int = 16000,
     private val onError: (String) -> Unit = {},
     private val onRecoverableError: (String) -> Unit = onError,
+    private val options: CaptureOptions = CaptureOptions.legacyComparison(),
+    private val audioManager: AudioManager? = null,
+    private val onDiagnostics: (CaptureDiagnostics) -> Unit = {},
+    private val onRouteInvalidated: () -> Unit = {},
     private val onChunkCaptured: (ByteArray, Int) -> Unit
 ) {
-    private var audioRecord: AudioRecord? = null
-    private var aec: AcousticEchoCanceler? = null
-    private var noiseSuppressor: NoiseSuppressor? = null
-    @Volatile private var recordingActive = AtomicBoolean(false)
-    private val recordingGeneration = AtomicInteger(0)
-    private class RecoverableReadException(count: Int) : IllegalStateException("AudioRecord.read returned $count")
-    private var recordingThread: Thread? = null
-    private val bufferSize = 3200 // 100 ms of 16 kHz, PCM16, mono
+    private val generation = GenerationGate()
+    @Volatile private var captureToken = 0L
+    private var pump: CapturePump? = null
+    @Volatile private var active = false
+    @Volatile private var finishing = false
+    @Volatile var diagnostics: CaptureDiagnostics? = null
+        private set
 
+    /** Lifecycle worker only, never UI/read thread. Returns true after actual hardware startup. */
     @SuppressLint("MissingPermission")
     @Synchronized
     fun startRecording(): Boolean {
-        if (recordingActive.get()) return true
-        stopRecording() // Release a previously failed reader before replacing its resources.
-        val session = recordingGeneration.incrementAndGet()
+        if (active) return true
+        if (!stopAndJoin()) { onError("recorder_stop_timeout"); return false }
+        val token = generation.begin()
+        captureToken = token
+        var record: AudioRecord? = null
+        var aec: AcousticEchoCanceler? = null
+        var ns: NoiseSuppressor? = null
         try {
+            require(sampleRate == 16000) { "invalid_format" }
             val minBuffer = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-            require(minBuffer > 0) { "Unsupported microphone PCM format" }
-            val record = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, sampleRate,
-                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuffer, bufferSize * 2))
-            audioRecord = record
-            check(record.state == AudioRecord.STATE_INITIALIZED) { "AudioRecord initialization failed" }
-            require(record.sampleRate == sampleRate && record.channelCount == 1 &&
-                record.audioFormat == AudioFormat.ENCODING_PCM_16BIT) { "Microphone PCM format mismatch" }
-            aec = EchoCancellationHelper.attachAEC(record.audioSessionId)
-            noiseSuppressor = EchoCancellationHelper.attachNoiseSuppressor(record.audioSessionId)
-            record.startRecording()
-            check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Microphone did not start" }
-            val active = AtomicBoolean(true)
-            recordingActive = active
-            recordingThread = Thread({
-                val chunk = ByteArray(bufferSize)
-                try {
-                    while (active.get() && session == recordingGeneration.get()) {
-                        val count = record.read(chunk, 0, chunk.size)
-                        if (!active.get() || session != recordingGeneration.get()) break
-                        if (count == AudioRecord.ERROR_DEAD_OBJECT || count == AudioRecord.ERROR_INVALID_OPERATION) {
-                            throw RecoverableReadException(count)
-                        }
-                        check(count > 0) { "AudioRecord.read returned $count" }
-                        onChunkCaptured(chunk, count)
-                    }
-                } catch (e: Exception) {
-                    if (session == recordingGeneration.get() && active.getAndSet(false)) {
-                        val message = "Mikrofon terhenti: ${e.message}"
-                        if (e is RecoverableReadException) onRecoverableError(message) else onError(message)
-                    }
+            require(minBuffer > 0) { "invalid_format" }
+            val unprocessed = audioManager?.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED) == "true"
+            val fallback = options.source == CaptureSource.UNPROCESSED && !unprocessed
+            val selected = if (fallback) CaptureSource.VOICE_RECOGNITION else options.source
+            val current = AudioRecord(selected.value, sampleRate, AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuffer, 6400))
+            record = current
+            check(current.state == AudioRecord.STATE_INITIALIZED) { "recorder_init_failed" }
+            require(current.sampleRate == sampleRate && current.channelCount == 1 &&
+                current.audioFormat == AudioFormat.ENCODING_PCM_16BIT) { "invalid_format" }
+            // Effects are requested only for the explicitly selected comparison path, never stacked with software NS.
+            if (options.requestAec) aec = EchoCancellationHelper.attachAEC(current.audioSessionId)
+            if (options.requestNs) ns = EchoCancellationHelper.attachNoiseSuppressor(current.audioSessionId)
+            current.startRecording()
+            check(current.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "recorder_start_failed" }
+            val route = current.routedDevice
+            diagnostics = CaptureDiagnostics(options.source, selected,
+                if (fallback) "unprocessed_not_advertised" else null, current.sampleRate, current.channelCount,
+                current.audioFormat, route?.type, route?.id, AcousticEchoCanceler.isAvailable(), options.requestAec,
+                aec?.enabled == true, NoiseSuppressor.isAvailable(), options.requestNs, ns?.enabled == true)
+            val routeListener = AudioRouting.OnRoutingChangedListener { routing ->
+                if (generation.matches(token) && routing.routedDevice?.id != route?.id) {
+                    // Fence immediately. Caller schedules physical stop on its lifecycle worker.
+                    generation.invalidate(token); active = false
+                    onRouteInvalidated()
+                    onError("route_changed")
                 }
-            }, "Nexo-AudioRecord-Thread").apply { start() }
-            return true
-        } catch (e: Exception) {
-            Log.e("AudioRecorderManager", "Failed to start microphone: ${e.message}", e)
-            stopRecording()
-            val message = "Mikrofon gagal dimulai: ${e.message}"
-            if (e is SecurityException || e is IllegalArgumentException) onError(message)
-            else onRecoverableError(message)
-            return false
+            }
+            current.addOnRoutingChangedListener(routeListener, Handler(Looper.getMainLooper()))
+            val sessionAec = aec
+            val sessionNs = ns
+            val source = object : CapturePump.Source {
+                override fun read(target: ByteArray): Int = current.read(target, 0, target.size)
+                override fun stop() { runCatching { current.stop() } }
+                override fun release() {
+                    current.removeOnRoutingChangedListener(routeListener)
+                    runCatching { sessionAec?.release() }
+                    runCatching { sessionNs?.release() }
+                    runCatching { current.release() }
+                }
+            }
+            finishing = false
+            val session = CapturePump(source, { bytes, count ->
+                if (generation.matches(token)) onChunkCaptured(bytes, count)
+            }, { code ->
+                if (generation.matches(token)) {
+                    active = false; generation.invalidate(token)
+                    if (code == "permission_loss") onError(code) else onRecoverableError(code)
+                }
+            }, 32, 3200, if (options.automaticVad) 8192 else 51200)
+            pump = session
+            if (!generation.activate(token)) {
+                source.stop(); source.release(); pump = null
+                return false
+            }
+            active = true
+            session.start()
+            if (!generation.isActive(token)) { stopAndJoin(); return false }
+            diagnostics?.let(onDiagnostics)
+            return isRecording()
+        } catch (_: SecurityException) {
+            onError("permission_loss")
+        } catch (_: Exception) {
+            onRecoverableError("recorder_start_failed")
         }
+        active = false
+        generation.invalidate(captureToken)
+        runCatching { aec?.release() }; runCatching { ns?.release() }
+        runCatching { record?.stop() }; runCatching { record?.release() }
+        return false
     }
 
+    /** Finish drains already captured slots. Only seal LocalCapture after true. */
     @Synchronized
-    fun stopRecording() {
-        recordingGeneration.incrementAndGet()
-        recordingActive.set(false)
-        val record = audioRecord
-        audioRecord = null
-        // Stop first: read() can block, so joining before stop leaves a live reader.
-        try { record?.stop() } catch (_: Exception) {}
-        val thread = recordingThread
-        recordingThread = null
-        if (thread != null && thread !== Thread.currentThread()) {
-            try { thread.join(1000) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
-        }
-        try { aec?.release() } catch (_: Exception) {}
-        aec = null
-        try { noiseSuppressor?.release() } catch (_: Exception) {}
-        noiseSuppressor = null
-        try { record?.release() } catch (_: Exception) {}
+    fun finishAndJoin(timeoutMs: Long = 1500): Boolean {
+        finishing = true
+        val done = pump?.finish(timeoutMs) ?: true
+        active = false
+        if (done) { pump = null; generation.invalidate(captureToken) }
+        else { generation.invalidate(captureToken); onError("recorder_stop_timeout") }
+        return done
     }
 
-    fun isRecording(): Boolean = recordingActive.get()
+    /** Cancel fences before touching hardware; false forbids starting another AudioRecord. */
+    @Synchronized
+    fun stopAndJoin(timeoutMs: Long = 1500): Boolean {
+        generation.invalidate(captureToken); active = false; finishing = false
+        val done = pump?.stop(timeoutMs) ?: true
+        if (done) pump = null
+        return done
+    }
+
+    fun stopRecording() { if (!stopAndJoin()) onError("recorder_stop_timeout") }
+    fun isRecording(): Boolean = active && generation.isActive(captureToken) && !finishing && pump?.isRunning == true
+    fun queueHighWater(): Int = pump?.highWater() ?: 0
 }

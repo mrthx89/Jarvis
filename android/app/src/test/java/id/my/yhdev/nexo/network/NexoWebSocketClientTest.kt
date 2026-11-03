@@ -32,6 +32,41 @@ class NexoWebSocketClientTest {
         var ttsStarts = 0
         override fun onTTSStarted() { ttsStarts++ }
         override fun onTTSEnded() {}
+        override fun onVoiceprintDialogReceived(dialog: VoiceprintDialog) {}
+        var onReady: (() -> Unit)? = null
+        override fun onOutdoorProtocolReady(session: OutdoorSession) { onReady?.invoke() }
+    }
+
+    private val helloV2 = """{"type":"server_hello","protocol_version":"2.0","capabilities":["utterance_upload_v2","exclusive_audio_v1"],"connection_id":"00000000-0000-4000-8000-000000000010","server_instance_id":"00000000-0000-4000-8000-000000000020","conversation_paused":true,"output_epoch":0,"limits":{"max_samples":320000,"max_chunk_bytes":16384,"retry_ttl_ms":30000,"owner_lease_ms":15000}}"""
+    private val envelope = "\"connection_id\":\"00000000-0000-4000-8000-000000000010\",\"output_epoch\":0"
+    private fun parse(client: NexoWebSocketClient, value: String) {
+        val method = client.javaClass.getDeclaredMethod("handleTextMessage", String::class.java)
+        method.isAccessible = true
+        method.invoke(client, value)
+    }
+    private fun ready(client: NexoWebSocketClient) {
+        parse(client, helloV2)
+        assertTrue(client.allowOutput("00000000-0000-4000-8000-000000000010", 0))
+    }
+
+    @Test fun teardownDuringReadyNeverPublishesConnected() {
+        val events = Events()
+        val client = NexoWebSocketClient("ws://localhost/", "test", "a".repeat(43), events)
+        events.onReady = { client.disconnect() }
+        parse(client, helloV2)
+        assertEquals(1L, events.connected.count)
+        assertNull(client.outdoorSession)
+    }
+
+    @Test fun legacyEnrollmentCannotSendOnV2() {
+        val events = Events()
+        val client = NexoWebSocketClient("ws://localhost/", "test", "a".repeat(43), events)
+        try {
+            ready(client)
+            assertFalse(client.startVoiceprintEnrollment("test"))
+            assertFalse(client.finishVoiceprintEnrollment("test"))
+            assertFalse(client.cancelVoiceprintEnrollment("test"))
+        } finally { client.disconnect() }
     }
 
     @Test fun waitsForServerHelloBeforeConnectedOrSendingPcm() {
@@ -57,10 +92,15 @@ class NexoWebSocketClientTest {
             assertFalse(client.sendAudioChunk(byteArrayOf(1, 2), 2))
             assertNull(audio.poll(150, TimeUnit.MILLISECONDS))
             client.connect() // Duplicate callers must not create another socket.
-            peer.send("""{"type":"server_hello","session_id":"test","status":"IDLE"}""")
+            peer.send(helloV2)
             assertTrue(events.connected.await(3, TimeUnit.SECONDS))
-            client.sendAudioChunk(byteArrayOf(1, 2), 2)
-            assertArrayEquals(byteArrayOf(1, 2), audio.poll(3, TimeUnit.SECONDS)!!.toByteArray())
+            assertFalse(client.sendAudioChunk(byteArrayOf(1, 2), 2))
+            assertNull(audio.poll(150, TimeUnit.MILLISECONDS))
+            client.queryVoiceprint()
+            val query = com.google.gson.JsonParser.parseString(hello.poll(3, TimeUnit.SECONDS)!!).asJsonObject
+            assertEquals("voiceprint_query", query.get("type").asString)
+            assertEquals("00000000-0000-4000-8000-000000000010", query.get("connection_id").asString)
+            assertNotNull(query.get("request_id"))
         } finally {
             client.disconnect()
             peer.close(1000, "test done")
@@ -115,7 +155,8 @@ class NexoWebSocketClientTest {
             try {
                 val parse = client.javaClass.getDeclaredMethod("handleTextMessage", String::class.java)
                 parse.isAccessible = true
-                parse.invoke(client, "{\"type\":\"tts_start\",$spec}")
+                ready(client)
+                parse.invoke(client, "{\"type\":\"tts_start\",$envelope,$spec}")
                 assertEquals(0, events.ttsStarts)
                 assertEquals(NexoState.ERROR, events.state)
             } finally { client.disconnect() }
@@ -128,7 +169,8 @@ class NexoWebSocketClientTest {
         try {
             val parse = client.javaClass.getDeclaredMethod("handleTextMessage", String::class.java)
             parse.isAccessible = true
-            parse.invoke(client, """{"type":"tts_start","format":"audio/pcm","sample_rate":24000,"channels":1}""")
+            ready(client)
+            parse.invoke(client, """{"type":"tts_start",$envelope,"format":"audio/pcm","sample_rate":24000,"channels":1}""")
             assertEquals(1, events.ttsStarts)
         } finally { client.disconnect() }
     }
@@ -138,7 +180,8 @@ class NexoWebSocketClientTest {
         val client = NexoWebSocketClient("ws://localhost/", "test", "a".repeat(43), events)
         val parse = client.javaClass.getDeclaredMethod("handleTextMessage", String::class.java)
         parse.isAccessible = true
-        parse.invoke(client, """{"type":"state_change","state":"THINKING","message":null,"expression":null}""")
+        ready(client)
+        parse.invoke(client, """{"type":"state_change",$envelope,"state":"THINKING","message":null,"expression":null}""")
         assertEquals(NexoState.THINKING, events.state)
         assertNull(events.message)
         assertNull(events.expression)
