@@ -21,6 +21,17 @@ public final class DiagnosticHarness {
         clip.expire(300010); assert !clip.available(300010);
         try (java.util.stream.Stream<Path> files = Files.list(dir)) { assert files.count() == 0; }
         Files.delete(dir);
+        id.my.yhdev.nexo.audio.core.SheetOperation op = new id.my.yhdev.nexo.audio.core.SheetOperation();
+        long play = op.begin("owner", "LOCAL_PLAYBACK", 1);
+        assert op.accepts(play, "owner", "LOCAL_PLAYBACK", 1);
+        assert !op.accepts(play, "owner", "RELEASING", 1) : "close retains owner but revokes state";
+        op.invalidate();
+        assert !op.accepts(play, "owner", "LOCAL_PLAYBACK", 1);
+        long delete = op.begin("owner", "LOCAL_DELETING", 1);
+        assert !op.accepts(play, "owner", "LOCAL_PLAYBACK", 1) : "delete supersedes play";
+        assert !op.accepts(delete, "owner", "LOCAL_DELETING", 2) : "new capture";
+        assert !op.accepts(delete, "new-owner", "LOCAL_DELETING", 1);
+        assert op.accepts(delete, "owner", "LOCAL_DELETING", 1);
         System.out.println("PASS diagnostic");
     }
 }

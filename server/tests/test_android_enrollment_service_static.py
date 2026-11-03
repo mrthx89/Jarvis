@@ -118,7 +118,10 @@ def test_enrollment_exits_cancel_release_and_invalidate_without_auto_resume():
                     "time >= enrollmentDeadline", "!permitted()"):
         assert failure in tick
     assert '"denied", "expired" -> fail(' in body("private fun control(")
-    assert 'override fun onDisconnected() = dispatch { fail(' in source()
+    assert 'override fun onDisconnected() = dispatch { transientDisconnect() }' in source()
+    assert 'if (sheetOwner != null) { fail(' in body("private fun transientDisconnect()")
+    assert "recovery.clear()" in body("private fun invalidateCapture(")
+    assert "webSocketClient?.cancelUtterance()" in body("private fun invalidateCapture(")
 
 
 def test_level_callback_is_optional_main_tick_only_and_reset_on_invalidation():
@@ -157,7 +160,9 @@ def test_sheet_silences_chime_and_failed_controls_or_capture_fail_closed():
 def test_sample_tail_stays_dedicated_and_resume_requires_release_ack_and_hardware():
     deliver = body("private fun deliver(")
     assert 'val lease = if (purpose == "enrollment") ownership.lease() else null' in deliver
-    assert "client.uploadUtterance(sealed, lease, enrollment)" in deliver
+    assert "client.uploadUtterance(sealed, lease, enrollment," in deliver
+    assert 'purpose == "conversation" && recovery.active()' in deliver
+    assert "client.retainForRecovery" in deliver
     assert "capture == captureGeneration && !destroyed" in deliver
     assert "sendAudioChunk" not in source()  # No raw v1 fallback or read-tail routing.
     assert 'closeRecordingSheet("explicit_resume", resume = true)' in body("fun resumeAfterRecording()")

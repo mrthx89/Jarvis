@@ -108,6 +108,9 @@ public final class UploadHarness {
                     assert w.controls.get(1).get("type").equals("utterance_status");
                     r = (String) w.controls.get(1).get("request_id");
                     u.ack(connection, r, s.id, "unknown", 0, 0, null, 7);
+                    assert u.state().equals("RETRY_READY") : "unknown while paused cannot replay";
+                    assert w.controls.size() == 2;
+                    assert u.resumeRetry(8);
                     assert w.controls.get(2).get("utterance_id").equals(s.id);
                     r = (String) w.controls.get(2).get("request_id");
                     u.ack(connection, r, s.id, "begin", 0, 0, null, 8); u.pump(9);
@@ -127,6 +130,46 @@ public final class UploadHarness {
         UtteranceBuffer freshBuffer = new UtteranceBuffer();
         freshBuffer.start("conversation", 5); freshBuffer.accept(new byte[]{1, 2}, 2);
         assert upload.begin(freshBuffer.finish("manual_finish", 6), null, null, 7);
+        for (int phase = 0; phase < 3; phase++) {
+            Wire w = new Wire(); UploadSession u = new UploadSession(w);
+            UtteranceBuffer b = new UtteranceBuffer(); b.start("conversation", 0);
+            b.accept(new byte[]{1,2,3,4}, 4); UtteranceBuffer.Sealed s = b.finish("manual_finish", 100);
+            u.connect(connection, instance, 2, true, 0); u.begin(s, null, null, 101);
+            String r = (String) w.controls.get(0).get("request_id");
+            if (phase > 0) { u.ack(connection, r, s.id, "begin", 0, 0, null, 102); u.pump(103); }
+            if (phase > 1) u.pump(104);
+            u.disconnected(); int count = w.controls.size();
+            u.connect(connection, instance, 2, true, 105);
+            assert w.controls.get(count).get("type").equals("utterance_status");
+            r = (String) w.controls.get(count).get("request_id");
+            u.ack(connection, r, s.id, "unknown", 0, 0, null, 106);
+            u.pump(5106); assert u.state().equals("RETRY_READY");
+            assert w.controls.size() == count + 1 : "no replay before explicit resume";
+            u.pump(30100); assert s.isReleased() && !u.resumeRetry(30101);
+        }
+        Wire stagedWire = new Wire(); UploadSession staged = new UploadSession(stagedWire);
+        UtteranceBuffer offline = new UtteranceBuffer(); offline.start("conversation", 0);
+        offline.accept(new byte[]{1,2}, 2); UtteranceBuffer.Sealed offlinePcm = offline.finish("manual_finish", 100);
+        assert staged.retainDisconnected(offlinePcm, instance, 101);
+        assert stagedWire.controls.isEmpty();
+        staged.connect(connection, instance, 2, true, 102);
+        assert stagedWire.controls.get(0).get("type").equals("utterance_status");
+        Wire knownWire = new Wire(); UploadSession known = new UploadSession(knownWire);
+        UtteranceBuffer kb = new UtteranceBuffer(); kb.start("conversation", 0); kb.accept(new byte[]{1,2}, 2);
+        UtteranceBuffer.Sealed ks = kb.finish("manual_finish", 100);
+        known.connect(connection, instance, 2, true, 0); known.begin(ks, null, null, 101);
+        String kr = (String) knownWire.controls.get(0).get("request_id");
+        known.ack(connection, kr, ks.id, "begin", 0, 0, null, 102); known.pump(103);
+        String kh = ks.sha256(); kr = (String) knownWire.controls.get(1).get("request_id");
+        known.ack(connection, kr, ks.id, "accepted", 0, 1, kh, 104);
+        known.disconnected(); known.connect(connection, instance, 2, true, 105);
+        known.disconnected(); int queries = knownWire.controls.size();
+        known.connect(connection, instance, 2, true, 106);
+        assert knownWire.controls.size() == queries + 1 : "each reconnect queries accepted identity";
+        kr = (String) knownWire.controls.get(queries).get("request_id");
+        known.ack(connection, kr, ks.id, "completed", 0, 1, kh, 107);
+        assert known.state().equals("COMPLETED") && !known.resumeRetry(108);
+        assert knownWire.frames.size() == 1;
         System.out.println("PASS upload");
     }
 }

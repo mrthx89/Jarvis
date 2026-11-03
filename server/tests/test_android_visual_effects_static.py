@@ -165,7 +165,10 @@ def test_disconnected_visual_assets_and_v2_pause_wiring():
     assert "NexoState.DISCONNECTED -> 0xFFFFB300.toInt()" in activity_source
 
     service_source = (JAVA_SERVICE / "NexoKioskService.kt").read_text()
-    assert 'override fun onDisconnected() = dispatch { fail("Koneksi terputus • percakapan tetap Paused") }' in service_source
+    assert 'override fun onDisconnected() = dispatch { transientDisconnect() }' in service_source
+    transient = service_source.split('private fun transientDisconnect()', 1)[1].split('private var enrollmentId', 1)[0]
+    assert 'persistOff()' in transient and 'webSocketClient?.fenceOutput()' in transient
+    assert 'startRecording(' not in transient and 'requestResume()' not in transient
     failure = service_source.split('private fun fail(', 1)[1].split('fun initializeConnection(', 1)[0]
     assert 'resumeOnHello = false; resumeOnRelease = false' in failure
     assert 'closeRecordingSheet("error")' in failure

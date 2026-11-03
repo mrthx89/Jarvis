@@ -307,7 +307,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         toggleVoice.setOnClickListener {
             resetActivity()
             val service = kioskService ?: return@setOnClickListener
-            if (service.isVoiceEnabled) service.stopVoice() else service.startVoice()
+            if (service.isVoiceEnabled || service.hasRecoveryCapture) service.stopVoice() else service.startVoice()
         }
         captureMode = findViewById(R.id.captureMode)
         startUtterance = findViewById(R.id.startUtterance)
@@ -417,6 +417,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             captureMode.isChecked = automatic
             captureMode.isEnabled = available
             captureMode.text = getString(if (available) R.string.capture_automatic else R.string.capture_auto_unavailable)
+            renderStatus()
         }
     }
 
@@ -604,7 +605,11 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         }
         ivStatusLed.setColorFilter(ledColor)
         startUtterance.isEnabled = voiceEnabled && status == "Siap" && !captureMode.isChecked
-        finishUtterance.isEnabled = voiceEnabled && status == "Merekam"
+        finishUtterance.isEnabled = kioskService?.canFinishCapture == true
+        val recoveryCapture = kioskService?.hasRecoveryCapture == true
+        toggleVoice.setText(if (voiceEnabled || recoveryCapture) R.string.voice_stop else R.string.voice_start)
+        toggleVoice.isEnabled = voiceEnabled || recoveryCapture || kioskService?.canResumeVoice == true
+        if (recoveryCapture || message?.contains("batas 20 detik") == true) tvSubtitle.text = message
     }
 
     override fun onTelemetryReceived(amplitude: Float, bands: List<Float>?) {

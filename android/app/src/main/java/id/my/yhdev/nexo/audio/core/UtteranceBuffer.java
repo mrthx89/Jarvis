@@ -23,6 +23,10 @@ public final class UtteranceBuffer {
             this.endReason = reason; this.sealedAt = now;
         }
         public int samples() { return bytes / 2; }
+        public String status(String message) {
+            return endReason.equals("duration_limit") ?
+                message + " • Rekaman selesai: batas 20 detik tercapai (duration_limit)." : message;
+        }
         public synchronized String sha256() {
             checkLive();
             if (digest == null) {

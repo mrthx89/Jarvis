@@ -47,6 +47,11 @@ public final class AudioOwnership {
     }
     public synchronized boolean normalAllowed() { return foreground && intent && resumed && recorder && owner == null; }
     public synchronized boolean intent() { return intent; }
+    public synchronized boolean pauseForModeChange(boolean busy) {
+        if (busy || owner != null || releasing || resumeRequest != null) return false;
+        disconnected();
+        return true;
+    }
     public synchronized boolean acquire(String request, long now) {
         if (!foreground || connection == null || owner == null || now >= deadline || acquireRequest != null) return false;
         UploadSession.uuid(request); acquireRequest = request;

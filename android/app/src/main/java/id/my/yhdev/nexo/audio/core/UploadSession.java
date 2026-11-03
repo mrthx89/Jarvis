@@ -41,7 +41,7 @@ public final class UploadSession {
         if (!supported) { fail("unsupported_capability"); return false; }
         if (state.equals("CANCELLING")) { fail("cancelled"); return false; }
         if (pcm == null) {
-            if (id != null && state.equals("ACCEPTED")) {
+            if (id != null && (state.equals("ACCEPTED") || state.equals("ACCEPTED_STATUS"))) {
                 if (!instance.equals(originalInstance)) { fail("delivery_unknown"); return false; }
                 state = "ACCEPTED_STATUS"; deadline = now + 5000; return send("utterance_status");
             }
@@ -61,6 +61,19 @@ public final class UploadSession {
         if (now - sealed.sealedAt >= 30000 || now < sealed.sealedAt) { fail("expired"); return false; }
         pcm = sealed; id = sealed.id; lease = leaseId; enrollment = enrollmentId; originalInstance = instance;
         error = null;
+        return startBegin(now);
+    }
+    public synchronized boolean retainDisconnected(UtteranceBuffer.Sealed sealed, String serverInstance, long now) {
+        if (id != null || !sealed.purpose.equals("conversation") || sealed.isReleased()) return false;
+        uuid(serverInstance);
+        if (now < sealed.sealedAt || now - sealed.sealedAt >= 30000) return false;
+        pcm = sealed; id = sealed.id; originalInstance = serverInstance;
+        error = null; state = "DISCONNECTED";
+        return true;
+    }
+    public synchronized boolean resumeRetry(long now) {
+        if (!state.equals("RETRY_READY") || pcm == null || connection == null) return false;
+        if (expired(now)) { fail("expired"); return false; }
         return startBegin(now);
     }
     private boolean startBegin(long now) {
@@ -120,7 +133,7 @@ public final class UploadSession {
             acceptedSamples = samples; acceptedHash = hash;
             pcm.erase(); pcm = null;
         } else if (stage.equals("unknown") && state.equals("STATUS")) {
-            startBegin(now);
+            state = "RETRY_READY";
         } else if (stage.equals("cancelled") || stage.equals("rejected")) {
             fail(stage);
         }
@@ -133,7 +146,7 @@ public final class UploadSession {
         if (state.equals("ACCEPTED_STATUS") && now >= deadline) { fail("delivery_unknown"); wire.abort(); return; }
         // Disconnected retries retain the original seal deadline, not an infinite cache.
         if (pcm != null && expired(now)) { fail("expired"); return; }
-        if (pcm == null || terminal() || state.equals("DISCONNECTED")) return;
+        if (pcm == null || terminal() || state.equals("DISCONNECTED") || state.equals("RETRY_READY")) return;
         if (now >= deadline) { state = "DISCONNECTED"; error = "upload_timeout"; return; }
         if (!state.equals("SENDING")) return;
         int bytes = Math.min(chunkBytes, (pcm.samples() - sentSamples) * 2);

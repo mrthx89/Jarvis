@@ -119,7 +119,11 @@ def test_socket_events_and_playback_completion_use_generation_connection_and_epo
                    "override fun onTranscriptionReceived(", "override fun onAudioChunkReceived(",
                    "override fun onTTSStarted()", "override fun onTTSEnded()"):
         assert not body(marker).strip(), marker  # Untagged v1 callbacks are inert.
-    assert 'override fun onDisconnected() = dispatch { fail(' in connection
+    assert 'override fun onDisconnected() = dispatch { transientDisconnect() }' in connection
+    transient = body("private fun transientDisconnect()")
+    assert "ownership.disconnected()" in transient and "fenceOutput()" in transient
+    assert "requestResume()" not in transient and "startRecording()" not in transient
+    assert "recovery.clear()" in body("private fun invalidateCapture(")
     output = body("private fun output(")
     assert 'OutdoorProtocol.uuid(json, "connection_id") ?: return' in output
     assert 'OutdoorProtocol.integer(json, "output_epoch", 0, Long.MAX_VALUE) ?: return' in output

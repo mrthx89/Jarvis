@@ -74,6 +74,20 @@ public final class OwnershipHarness {
         assert !renewed.normalAllowed();
         renewed.foreground(true);
         assert !renewed.normalAllowed() : "foreground return cannot resume";
+        AudioOwnership mode = new AudioOwnership();
+        mode.foreground(true); mode.connected(C, 0);
+        assert mode.resume(R, 0) && mode.resumed(C, R, false, 1);
+        assert mode.recorderReady(mode.generation(), true);
+        assert !mode.pauseForModeChange(true) : "TTS/busy transition must be rejected";
+        assert mode.normalAllowed();
+        assert mode.pauseForModeChange(false) : "manual idle -> auto must have an explicit next action";
+        assert !mode.intent() && !mode.normalAllowed();
+        mode.foreground(false); mode.foreground(true);
+        assert !mode.normalAllowed() : "mode change requires explicit resume, not lifecycle";
+        assert mode.pauseForModeChange(false) : "paused mode selection does not resume";
+        mode.connected(C, 1); mode.openSheet(O, 10);
+        assert !mode.pauseForModeChange(false) : "sheet owns mode boundary";
+        assert !mode.normalAllowed();
         System.out.println("PASS ownership");
     }
 }

@@ -87,7 +87,12 @@ class CaptureRecoveryStaticTests(unittest.TestCase):
             self.assertNotIn(forbidden, failed + fail + pause)
         self.assertNotIn("recoverAudioSession", service)
         self.assertNotIn("audioRecoveryAttempts", service)
-        self.assertIn("override fun onDisconnected() = dispatch { fail(", service)
+        self.assertIn("override fun onDisconnected() = dispatch { transientDisconnect() }", service)
+        transient = body(service, "private fun transientDisconnect()")
+        for fragment in ("persistOff()", "ownership.disconnected()", "fenceOutput()", "recovery.disconnected("):
+            self.assertIn(fragment, transient)
+        for forbidden in ("requestResume()", "startRecording()", "webSocketClient?.disconnect()"):
+            self.assertNotIn(forbidden, transient)
         self.assertIn("stopSelf()", body(service, "fun stopVoice()"))
 
     def test_process_restart_is_non_sticky_paused_and_cannot_restore_saved_on(self):

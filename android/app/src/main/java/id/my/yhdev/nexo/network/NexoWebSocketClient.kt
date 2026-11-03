@@ -335,16 +335,53 @@ class NexoWebSocketClient(
     fun sendAudioChunk(chunk: ByteArray, length: Int): Boolean = false
 
     fun uploadUtterance(pcm: UtteranceBuffer.Sealed, leaseId: String? = null, enrollmentId: String? = null,
+        originalInstance: String? = outdoorSession?.serverInstanceId,
+        originalConnection: String? = outdoorSession?.connectionId,
         stillCurrent: () -> Boolean = { true }): Boolean {
         val result = java.util.concurrent.CompletableFuture<Boolean>()
         runCatching { uploadWorker.execute {
             if (!shouldRun.get() || !stillCurrent()) { result.complete(false); return@execute }
             synchronized(sendLock) { captureSendAllowed = stillCurrent }
             result.complete(runCatching {
-                uploader.begin(pcm, leaseId, enrollmentId, SystemClock.elapsedRealtime())
+                val session = outdoorSession
+                val instance = originalInstance
+                val changed = session == null || session.connectionId != originalConnection
+                val begun = if (pcm.purpose == "conversation" && changed && instance != null) {
+                    val retained = uploader.retainDisconnected(pcm, instance, SystemClock.elapsedRealtime())
+                    if (retained && session != null) uploader.connect(session.connectionId, session.serverInstanceId,
+                        session.maxChunkBytes, true, SystemClock.elapsedRealtime())
+                    retained
+                } else uploader.begin(pcm, leaseId, enrollmentId, SystemClock.elapsedRealtime())
+                begun || (uploader.state() == "DISCONNECTED" && !pcm.isReleased())
             }.getOrDefault(false))
         } }.onFailure { result.complete(false) }
         return runCatching { result.get(5, TimeUnit.SECONDS) }.getOrDefault(false)
+    }
+
+    fun retainForRecovery(pcm: UtteranceBuffer.Sealed, originalInstance: String,
+        stillCurrent: () -> Boolean): Boolean {
+        val result = java.util.concurrent.CompletableFuture<Boolean>()
+        runCatching { uploadWorker.execute {
+            synchronized(uploadLifecycle) {
+                if (!shouldRun.get() || !stillCurrent()) { result.complete(false); return@execute }
+                synchronized(sendLock) { captureSendAllowed = stillCurrent }
+                val retained = uploader.retainDisconnected(pcm, originalInstance, SystemClock.elapsedRealtime())
+                val session = outdoorSession
+                if (retained && session != null) uploader.connect(session.connectionId, session.serverInstanceId,
+                    session.maxChunkBytes, true, SystemClock.elapsedRealtime())
+                result.complete(retained)
+            }
+        } }.onFailure { result.complete(false) }
+        return runCatching { result.get(5, TimeUnit.SECONDS) }.getOrDefault(false)
+    }
+
+    fun resumeRetainedUpload(stillCurrent: () -> Boolean) {
+        runCatching { uploadWorker.execute {
+            if (shouldRun.get() && stillCurrent()) {
+                synchronized(sendLock) { captureSendAllowed = stillCurrent }
+                uploader.resumeRetry(SystemClock.elapsedRealtime())
+            }
+        } }
     }
 
     fun cancelUtterance() {
