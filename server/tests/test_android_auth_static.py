@@ -81,9 +81,19 @@ def test_setup_dialog_and_service_reset_wiring():
     assert 'credentialSheet?.dismiss()' in activity
     assert 'currentServerUrl == serverUrl' in activity
     assert 'refreshCredentials()' in activity
-    assert 'credentialStore.read(serverUrl, deviceId)' in service
-    assert 'forceReconnect = true' in service
-    assert 'if (bearerToken == null)' in service
+    connection = service.split('private fun ensureConnection()', 1)[1].split('private var sheetOwner', 1)[0]
+    assert 'val key = connectionKey ?: run { fail(' in connection
+    assert 'credentialStore.read(key.first, key.second) ?: run { fail(' in connection
+    assert connection.index('credentialStore.read(') < connection.index('NexoWebSocketClient(key.first, key.second, bearer, events)')
+    refresh = service.split('fun refreshCredentials()', 1)[1].split('private fun ensureConnection()', 1)[0]
+    assert 'closeRecordingSheet("credentials_changed")' in refresh
+    assert 'pauseLocal("credentials_changed")' in refresh
+    assert 'ensureConnection(' not in refresh
+    assert 'startVoice(' not in refresh
+    pause = service.split('private fun pauseLocal(', 1)[1].split('private fun fail(', 1)[0]
+    assert 'persistOff()' in pause
+    assert 'ownership.disconnected()' in pause
+    assert 'webSocketClient?.disconnect(); webSocketClient = null' in pause
 
 
 def test_network_junit_constructor_and_auth_cases_are_updated():

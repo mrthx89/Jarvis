@@ -42,6 +42,7 @@ internal fun writePcmChunk(
 internal interface PcmOutput {
     val playbackHeadFrames: Long
     fun write(data: ByteArray, offset: Int, length: Int): Int
+    fun start()
     fun close()
 }
 
@@ -56,8 +57,8 @@ private fun createPcmOutput(sampleRate: Int): PcmOutput {
             .setSampleRate(sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
         .setBufferSizeInBytes(maxOf(minBuffer, 9600))
         .setTransferMode(AudioTrack.MODE_STREAM).build()
-    try { track.play() } catch (e: Exception) { track.release(); throw e }
     return object : PcmOutput {
+        override fun start() { track.play() }
         override val playbackHeadFrames: Long
             get() = track.playbackHeadPosition.toLong() and 0xffffffffL
         override fun write(data: ByteArray, offset: Int, length: Int): Int =
@@ -77,7 +78,8 @@ class AudioPlayerManager internal constructor(
     private val outputFactory: () -> PcmOutput = { createPcmOutput(sampleRate) },
     private val nowNanos: () -> Long = System::nanoTime,
     private val sleep: (Long) -> Unit = Thread::sleep,
-    private val maxBufferedBytes: Int = 120_000
+    private val maxBufferedBytes: Int = 120_000,
+    private val outputGuard: (() -> Unit) -> Boolean = { action -> action(); true }
 ) {
     private var output: PcmOutput? = null
     private val generation = AtomicInteger(0)
@@ -94,9 +96,20 @@ class AudioPlayerManager internal constructor(
 
     private fun startTrack() {
         if (output != null) return
-        output = outputFactory()
-        framesWritten = 0
-        isPlaying = true
+        val token = generation.get()
+        val track = outputFactory()
+        var started = false
+        try {
+            outputGuard {
+                if (current(token)) {
+                    track.start()
+                    output = track
+                    framesWritten = 0
+                    isPlaying = true
+                    started = true
+                }
+            }
+        } finally { if (!started) track.close() }
     }
 
     private fun current(token: Int): Boolean = token == generation.get() && !failed && !released.get()
@@ -148,8 +161,11 @@ class AudioPlayerManager internal constructor(
                         if (!current(token)) return@execute
                         try {
                             startTrack()
-                            writePcmChunk(chunk, { current(token) }, output!!::write, nowNanos, sleep,
-                                onWritten = { framesWritten += it / 2 })
+                            if (output != null) writePcmChunk(chunk, { current(token) }, { bytes, offset, length ->
+                                var written = 0
+                                outputGuard { if (current(token)) written = output?.write(bytes, offset, length) ?: 0 }
+                                written
+                            }, nowNanos, sleep, onWritten = { framesWritten += it / 2 })
                         } catch (e: Exception) {
                             fail(token, e)
                         }
@@ -191,13 +207,24 @@ class AudioPlayerManager internal constructor(
         }
     }
 
-    private fun stopTrack() {
+    private fun stopTrack(): Boolean {
         val track = output
         output = null
         isPlaying = false
         framesWritten = 0
-        try { track?.close() }
-        catch (e: Exception) { Log.w("AudioPlayerManager", "Error stopping AudioTrack: ${e.message}") }
+        return try { track?.close(); true }
+        catch (_: Exception) { false }
+    }
+
+    /** Nonblocking caller; completion follows actual pause/flush/stop/release on the output worker. */
+    fun stopAndConfirm(onStopped: (Boolean) -> Unit) {
+        synchronized(bufferLock) {
+            if (released.get()) { onStopped(false); return }
+            generation.incrementAndGet()
+            queuedBytes.set(0)
+            bufferLock.notifyAll()
+            worker.execute { val stopped = stopTrack(); failed = !stopped; onStopped(stopped) }
+        }
     }
 
     fun stop() {

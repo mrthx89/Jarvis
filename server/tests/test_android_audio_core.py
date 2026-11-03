@@ -29,10 +29,10 @@ def java_core(tmp_path_factory):
     return str(Path(javac).with_name("java")), out
 
 
-@pytest.mark.parametrize("scenario", ["handoff", "utterance", "vad", "upload", "capture", "local", "lease", "generation", "diagnostic"])
+@pytest.mark.parametrize("scenario", ["handoff", "utterance", "vad", "upload", "capture", "local", "lease", "generation", "diagnostic", "ownership", "output_revocation", "lifecycle_admission", "processing_deadline"])
 def test_production_audio_core(java_core, scenario):
     java, out = java_core
-    harness = {"upload": "UploadHarness", "capture": "CaptureHarness", "local": "LocalCaptureHarness", "lease": "LeaseHarness", "generation": "GenerationHarness", "diagnostic": "DiagnosticHarness"}.get(scenario, "AudioCoreHarness")
+    harness = {"upload": "UploadHarness", "capture": "CaptureHarness", "local": "LocalCaptureHarness", "lease": "LeaseHarness", "generation": "GenerationHarness", "diagnostic": "DiagnosticHarness", "ownership": "OwnershipHarness", "output_revocation": "OutputRevocationHarness", "lifecycle_admission": "LifecycleAdmissionHarness", "processing_deadline": "ProcessingDeadlineHarness"}.get(scenario, "AudioCoreHarness")
     result = subprocess.run([java, "-ea", "-cp", str(out), harness, scenario,
                              str(ROOT / "docs/fixtures/outdoor_audio_v2.json")],
                             capture_output=True, text=True, timeout=30)

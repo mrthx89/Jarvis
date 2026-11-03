@@ -20,6 +20,9 @@ class PrivateAudioDiagnostic internal constructor(privateDirectory: java.io.File
     private val clip = PrivateDiagnosticClip(privateDirectory)
     private val admission = java.util.concurrent.Semaphore(1)
     private var player: MediaPlayer? = null
+    private val playbackGeneration = java.util.concurrent.atomic.AtomicLong()
+    /** Atomic admission revocation; an admitted start is quiesced by dismiss on the worker. */
+    fun fencePlayback() { playbackGeneration.incrementAndGet() }
     private var expiresAt = 0L
     init {
         worker.scheduleAtFixedRate({
@@ -47,7 +50,9 @@ class PrivateAudioDiagnostic internal constructor(privateDirectory: java.io.File
         clip.retain(pcm, explicitConsent, now).also { if (it) expiresAt = now + 300000 }
     }
     /** Requires active diagnostic ownership and all normal playback/capture gates closed by the service. */
-    fun play(explicitAction: Boolean): CompletableFuture<Boolean> = submit {
+    fun play(explicitAction: Boolean): CompletableFuture<Boolean> {
+        val token = playbackGeneration.get()
+        return submit {
         if (!explicitAction) return@submit false
         stopPlayback()
         val input = clip.openPlayback(SystemClock.elapsedRealtime()) ?: return@submit false
@@ -57,13 +62,14 @@ class PrivateAudioDiagnostic internal constructor(privateDirectory: java.io.File
             current.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             current.setDataSource(input.fd)
-            current.setOnCompletionListener { worker.execute { stopPlayback() } }
-            current.setOnErrorListener { _, _, _ -> worker.execute { stopPlayback() }; true }
+            current.setOnCompletionListener { runCatching { worker.execute { stopPlayback(current) } } }
+            current.setOnErrorListener { _, _, _ -> runCatching { worker.execute { stopPlayback(current) } }; true }
             current.prepare()
-            current.start()
-            true
+            if (token != playbackGeneration.get()) { stopPlayback(current); false }
+            else { current.start(); true }
         } catch (_: Exception) { stopPlayback(); false }
         finally { input.close() }
+        }
     }
     /** UI must warn that external copies cannot be erased, then open the destination explicitly. */
     fun exportWav(destination: OutputStream, explicitConsent: Boolean): Boolean {
@@ -71,6 +77,7 @@ class PrivateAudioDiagnostic internal constructor(privateDirectory: java.io.File
         return clip.exportWav(destination, explicitConsent, SystemClock.elapsedRealtime())
     }
     fun dismiss(): CompletableFuture<Unit> {
+        fencePlayback()
         val result = CompletableFuture<Unit>()
         worker.execute {
             try { stopPlayback(); clip.close(); expiresAt = 0; result.complete(Unit) }
@@ -78,7 +85,11 @@ class PrivateAudioDiagnostic internal constructor(privateDirectory: java.io.File
         }
         return result
     }
-    private fun stopPlayback() { player?.let { runCatching { it.stop() }; it.release() }; player = null }
+    private fun stopPlayback(expected: MediaPlayer? = player) {
+        if (player !== expected) return
+        player = null
+        expected?.let { runCatching { it.stop() }; it.release() }
+    }
     /** Call on lifecycle worker, not UI/read thread. Also call dismiss on background/route/owner exit. */
     override fun close() {
         try { dismiss().get(2, TimeUnit.SECONDS) }

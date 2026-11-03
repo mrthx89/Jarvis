@@ -1,24 +1,14 @@
-"""Source-only voice/privacy guards; no Kotlin compilation or device execution.
+"""Source-only v2 voice/privacy wiring; not Android runtime or build evidence.
 
-These checks inspect service wiring, not actual Android microphone/FGS behavior.
+SDK-free ownership transitions execute separately in test_android_audio_core.py's
+OwnershipHarness. Neither those host checks nor these guards verify Android FGS,
+microphone hardware, scheduling, acoustic silence, or Kotlin compilation.
 """
 from pathlib import Path
-import re
 
 
-def _get_service_file():
-    candidates = [
-        'android/app/src/main/java/id/my/yhdev/nexo/service/NexoKioskService.kt',
-        'android/app/src/main/java/id/my/yhdev/nexo/service/NexoKioskService.kt',
-    ]
-    for c in candidates:
-        p = Path(__file__).resolve().parents[2] / c
-        if p.exists():
-            return p
-    raise FileNotFoundError(f"None found from {candidates}")
-
-
-SERVICE = _get_service_file()
+SERVICE = (Path(__file__).resolve().parents[2] /
+           "android/app/src/main/java/id/my/yhdev/nexo/service/NexoKioskService.kt")
 
 
 def source():
@@ -27,144 +17,147 @@ def source():
 
 def body(marker):
     text = source()
-    start = text.index('{', text.rindex(marker))
-    depth = 1
-    end = start + 1
+    start = text.index(marker)
+    # Do not accidentally treat the next function as an expression-bodied method.
+    line = text[start:].splitlines()[0]
+    assert "{" in line, f"Expected block body: {marker}"
+    opening = text.index("{", start)
+    depth, end = 1, opening + 1
     while depth:
-        depth += (text[end] == '{') - (text[end] == '}')
+        depth += (text[end] == "{") - (text[end] == "}")
         end += 1
-    return text[start + 1:end - 1]
+    return text[opening + 1:end - 1]
 
 
 def test_voice_choice_is_private_persisted_default_off_and_public_read_only():
     text = source()
-    assert 'val isVoiceEnabled: Boolean' in text
-    assert 'get() = voiceEnabled' in text
+    assert "val isVoiceEnabled: Boolean get() = voiceEnabled" in text
     assert 'getSharedPreferences("voice_control", Context.MODE_PRIVATE)' in text
-    created = body('override fun onCreate()')
-    assert 'getBoolean("enabled", false)' in created
-    assert 'if (isVoiceEnabled)' in created
-    assert (
-        'publish(NexoState.DISCONNECTED, "Menunggu endpoint server...")' in created or
-        'publish(NexoState.DISCONNECTED, "Menunggu endpoint server...")' in created
-    )
-    assert 'fun startVoice()' in text
-    assert 'fun stopVoice()' in text
-    assert 'fun onVoiceEnabledChanged(enabled: Boolean)' in text
-    setter = body('set(value)')
-    assert 'value?.onVoiceEnabledChanged(isVoiceEnabled)' in setter
-    assert 'value?.onStateChanged(currentState, currentMessage, currentExpression)' in setter
-    assert setter.index('onVoiceEnabledChanged') < setter.index('onStateChanged')
-    assert 'voicePreferences.edit().putBoolean("enabled", true).commit()' in body('fun startVoice()')
-    assert 'voicePreferences.edit().putBoolean("enabled", false).commit()' in body('fun stopVoice()')
+    assert "private var voiceEnabled = false" in text
+    created = body("override fun onCreate()")
+    assert created.index("persistOff()") < created.index("startForegroundNotification()")
+    assert 'getBoolean("enabled"' not in text  # Saved ON cannot authorize a restart.
+    off = body("private fun persistOff()")
+    for fragment in ('voiceEnabled = false', 'putBoolean("enabled", false).commit()',
+                     'onVoiceEnabledChanged(false)'):
+        assert fragment in off
+    setter = body("set(value)")
+    assert setter.index("onVoiceEnabledChanged(voiceEnabled)") < setter.index("onStateChanged(")
+    assert "onRecordingSessionChanged(session())" in setter
+    start = body("fun startVoice()")
+    assert "!permitted() || ownership.owner() != null || sheetOwner != null" in start
+    assert "resumeOnHello = true" in start and "requestResume()" in start
+    resume = body("private fun requestResume()")
+    assert resume.index("ownership.resume(request, now())") < resume.index('putBoolean("enabled", true).commit()')
+    assert 'sendOutdoorControl("conversation_resume", request)' in resume
+    assert "mikrofon belum aktif" in resume
+    assert "startRecording()" not in start + resume
 
 
-def test_stopped_endpoint_and_credential_refresh_cannot_read_tokens_or_connect():
-    initialize = body('fun initializeConnection(')
-    saved = initialize.index('connectionKey = Pair(serverUrl, deviceId)')
-    guard = initialize.index('if (!isVoiceEnabled)')
-    read = initialize.index('credentialStore.read(serverUrl, deviceId)')
-    connect = initialize.index('webSocketClient?.connect()')
-    assert saved < guard < read < connect
-    assert 'return' in initialize[guard:read]
-    assert 'voiceEnabled = true' not in initialize
-    refresh = body('fun refreshCredentials()')
-    assert 'if (!isVoiceEnabled) return' in refresh
-    assert 'forceReconnect = true' in refresh
-    assert 'forceReconnect = true' in body('fun startVoice()')
+def test_endpoint_and_credential_changes_pause_without_reading_tokens_or_connecting():
+    initialize = body("fun initializeConnection(")
+    assert "ServerEndpointPolicy.isValid(serverUrl)" in initialize
+    assert 'closeRecordingSheet("endpoint_changed")' in initialize
+    assert 'pauseLocal("endpoint_changed")' in initialize
+    assert "connectionKey = Pair(serverUrl, deviceId)" in initialize
+    refresh = body("fun refreshCredentials()")
+    assert 'closeRecordingSheet("credentials_changed")' in refresh
+    assert 'pauseLocal("credentials_changed")' in refresh
+    for forbidden in ("credentialStore.read", "connect()", "ensureConnection()", "voiceEnabled = true"):
+        assert forbidden not in initialize + refresh
+    # Only an explicit start/sheet open creates an authenticated control socket.
+    connection = body("private fun ensureConnection()")
+    assert connection.index("credentialStore.read(key.first, key.second)") < connection.index("NexoWebSocketClient(")
+    assert "bearer, events" in connection
+    assert "isVoiceEnabled" not in connection  # Dedicated recording works normal OFF.
 
 
-def test_stop_persists_before_teardown_fences_callbacks_and_publishes_paused_idle():
-    stop = body('fun stopVoice()')
-    publish_idle = 'publish(NexoState.IDLE' if 'publish(NexoState.IDLE' in stop else 'publish(NexoState.IDLE'
-    ordered = ['putBoolean("enabled", false).commit()', 'voiceEnabled = false',
-               '++generation', '++audioGeneration', 'duplex.disconnected()',
-               'audioRecorder.stopRecording()', 'audioPlayer.stop()',
-               'webSocketClient?.disconnect()', 'webSocketClient = null',
-               'onVoiceEnabledChanged(false)', publish_idle,
-               'startForegroundNotification()']
-    positions = [stop.index(fragment) for fragment in ordered]
+def test_stop_closes_send_and_output_gates_before_teardown_and_publishes_paused():
+    stop = body("fun stopVoice()")
+    assert stop.index('closeRecordingSheet("STOP")') < stop.index('pauseLocal("STOP")') < stop.index("stopSelf()")
+    assert "resumeOnHello = false; resumeOnRelease = false" in stop
+    pause = body("private fun pauseLocal(")
+    ordered = ["webSocketClient?.fenceCapture()", "persistOff()", "ownership.disconnected()",
+               "webSocketClient?.fenceOutput()", "invalidateCapture(reason)",
+               "earconManager.stop()", "audioPlayer.stop()", "++generation",
+               "webSocketClient?.disconnect()", "webSocketClient = null", "publish(NexoState.IDLE"]
+    positions = [pause.index(fragment) for fragment in ordered]
     assert positions == sorted(positions)
-    assert 'dijeda' in stop
-    assert 'NexoState.ERROR' not in stop and 'NexoState.ERROR' not in stop
-    assert 'menghubungkan ulang' not in stop
-    assert 'connectionKey = null' not in stop
+    assert "Paused" in pause and "connectionKey = null" not in pause
+    assert "NexoState.ERROR" not in stop + pause
 
 
-def test_audio_sessions_capture_generation_and_never_reconnect_on_audio_failure():
-    session = body('private fun createAudioSession()')
-    assert 'val audioToken = ++audioGeneration' in session
-    assert session.count('if (!isVoiceEnabled || audioToken != audioGeneration) return@post') == 2
-    assert 'isVoiceEnabled && audioToken == audioGeneration && duplex.canSendAudio' in session
-    assert 'if (isVoiceEnabled && token == generation && audioToken == audioGeneration)' in session
-    assert 'initializeConnection(' not in session
-    fail = body('private fun failAudioSession(')
-    assert '++generation' in fail
-    assert '++audioGeneration' in fail
-    assert 'duplex.disconnected()' in fail
-    assert 'audioRecorder.stopRecording()' in fail
-    assert 'audioPlayer.stop()' in fail
-    assert 'webSocketClient?.disconnect()' in fail
-    assert 'webSocketClient = null' in fail
-    assert 'voiceEnabled = false' not in fail  # STOP remains available after permission/output error.
-    assert 'menghubungkan ulang' not in fail
-    connected = body('override fun onConnected() {')
-    assert connected.index('if (!isVoiceEnabled) return') < connected.index('audioRecorder.startRecording()')
-    assert connected.index('createAudioSession()') < connected.index('audioRecorder.startRecording()')
-    assert source().count('audioRecorder.startRecording()') == 1
+def test_capture_errors_invalidate_and_pause_instead_of_automatic_recovery():
+    capture = body("private fun startCapture(")
+    assert "val gate = ownership.generation()" in capture
+    assert "val capture = nextCapture()" in capture
+    assert "val socket = generation" in capture
+    assert "onError = { code -> captureFailed(capture, code) }" in capture
+    assert "onRecoverableError = { code -> captureFailed(capture, code) }" in capture
+    assert 'onRouteInvalidated = { captureFailed(capture, "route_changed") }' in capture
+    failure = body("private fun captureFailed(")
+    assert failure.index("captureAdmission.revoke(capture)") < failure.index("main.post {")
+    assert "destroyed || revoked != captureGeneration" in failure
+    assert "local.fail(" not in failure
+    assert "lifecycle.execute" not in failure
+    assert 'fail("Rekaman gagal: $code")' in failure
+    invalidation = body("private fun invalidateCapture(")
+    assert "recorder?.stopAndJoin()" in invalidation
+    assert invalidation.index("lifecycle.execute") < invalidation.index("local.cancel(reason)")
+    fail = body("private fun fail(")
+    assert 'closeRecordingSheet("error")' in fail and 'pauseLocal("error")' in fail
+    assert "resumeOnHello = false; resumeOnRelease = false" in fail
+    for forbidden in ("ensureConnection()", "requestResume()", "postDelayed", "startRecording()"):
+        assert forbidden not in failure + fail
 
 
-def test_socket_events_and_playback_completion_are_fenced_while_stopped():
-    initialize = body('fun initializeConnection(')
-    assert 'if (isVoiceEnabled && token == generation) action()' in initialize
-    for method in ('onConnected()', 'onDisconnected()',
-                   'onStateChanged(state:', 'onTelemetryReceived(amplitude:',
-                   'onTranscriptionReceived(role:', 'onAudioChunkReceived(audioData:',
-                   'onTTSStarted()', 'onTTSEnded()'):
-        # Match concrete service overrides, not the forwarding listener expressions.
-        text = source()
-        pattern = r'override fun ' + re.escape(method) + r'[^\n]*\{'
-        matches = list(re.finditer(pattern, text))
-        assert matches, method
-        implementation = body(matches[-1].group())
-        assert 'if (!isVoiceEnabled) return' in implementation, method
-    ended = body('override fun onTTSEnded() {')
-    assert 'isVoiceEnabled && token == generation && audioToken == audioGeneration && turn == playbackTurn.get()' in ended
-    assert 'if (isVoiceEnabled && duplex.canSendAudio)' in body('private fun publishListening()')
-    disconnected = body('override fun onDisconnected() {')
-    assert '++audioGeneration' in disconnected
-    assert 'audioRecorder.stopRecording()' in disconnected
-    assert 'audioPlayer.stop()' in disconnected
+def test_socket_events_and_playback_completion_use_generation_connection_and_epoch():
+    connection = body("private fun ensureConnection()")
+    assert "if (!destroyed && token == generation) action()" in connection
+    assert "override fun usesTaggedOutput() = true" in connection
+    for marker in ("override fun onConnected()", "override fun onTelemetryReceived(",
+                   "override fun onTranscriptionReceived(", "override fun onAudioChunkReceived(",
+                   "override fun onTTSStarted()", "override fun onTTSEnded()"):
+        assert not body(marker).strip(), marker  # Untagged v1 callbacks are inert.
+    assert 'override fun onDisconnected() = dispatch { fail(' in connection
+    output = body("private fun output(")
+    assert 'OutdoorProtocol.uuid(json, "connection_id") ?: return' in output
+    assert 'OutdoorProtocol.integer(json, "output_epoch", 0, Long.MAX_VALUE) ?: return' in output
+    assert "if (!ownership.outputAllowed(id, epoch)) return" in output
+    assert "ownership.outputAllowed(id, epoch) && turn == playbackTurn.get()" in output
+    resume = body("private fun startResumedRecorder(")
+    ready = "ownership.recorderReady(gate, started && recorder.isRecording())"
+    assert resume.index(ready) < resume.index("allowOutput(id, epoch)") < resume.index("publish(NexoState.LISTENING")
 
 
-def test_playback_events_preserve_speaking_expression_until_audio_drains():
-    started = body('override fun onTTSStarted() {')
-    assert 'currentExpression)' in started
-    text = source()
-    changed_pattern = r'override fun onStateChanged\(state:\s*(?:NexoState|NexoState),\s*message:\s*String\?,\s*expression:\s*String\?\)\s*\{'
-    match = re.search(changed_pattern, text)
-    assert match is not None
-    changed = body(match.group())
-    assert 'mikrofon dijeda", currentExpression)' in changed
+def test_playback_keeps_speaking_expression_until_current_turn_drains():
+    output = body("private fun output(")
+    started = output.split('"tts_start" -> {', 1)[1].split('"tts_end" -> {', 1)[0]
+    assert 'publish(NexoState.SPEAKING, "Menjawab • mikrofon dijeda", currentExpression)' in started
+    ended = output.split('"tts_end" -> {', 1)[1].split('"state_change", "cognitive"', 1)[0]
+    assert ended.index("audioPlayer.finish") < ended.index("playbackPending = false") < ended.index("maybeNextTurn()")
+    next_turn = body("private fun maybeNextTurn()")
+    assert "!turnComplete || playbackPending || !ownership.normalAllowed()" in next_turn
+    assert "now() - playbackDrainedAt < 600" in next_turn
+    assert "sleepExpression" in next_turn
 
 
-def test_notification_is_truthful_about_paused_and_actual_capture():
-    notification = body('private fun startForegroundNotification()')
-    assert '!isVoiceEnabled' in notification
-    assert 'Mikrofon nonaktif' in notification
-    assert 'audioRecorder.isRecording()' in notification
-    assert 'Mikrofon aktif' in notification
-    assert 'mikrofon belum aktif' in notification
-    assert 'Layanan suara aktif' not in notification
-    assert 'startForegroundNotification()' in body('private fun publish(')
-    destroy = body('override fun onDestroy()')
-    assert 'voiceEnabled = false' in destroy
-    assert '++audioGeneration' in destroy
-    assert 'putBoolean' not in destroy  # Service destruction must not erase user choice.
+def test_notification_does_not_claim_capture_and_destroy_persists_paused():
+    notification = body("private fun startForegroundNotification()")
+    assert "lihat layar untuk status mikrofon" in notification
+    for claim in ("Mikrofon aktif", "Layanan suara aktif", "Merekam"):
+        assert claim not in notification
+    destroy = body("override fun onDestroy()")
+    for fragment in ('closeRecordingSheet("service_destroy")', "destroyed = true; ++generation; persistOff()",
+                     "ownership.disconnected()", "fenceOutput()", 'invalidateCapture("service_destroy")',
+                     "removeCallbacksAndMessages(null)", "webSocketClient?.disconnect()"):
+        assert fragment in destroy
+    assert "lifecycle.execute" in destroy
+    assert destroy.index("val joined = audioRecorder?.stopAndJoin()") < destroy.index("if (joined) { vad?.close()")
 
 
 def test_nexo_voice_pipeline_constants():
-    """Verify Nexo STT/TTS and audio constants match voice session contract."""
+    """Configuration check only, not STT/TTS or microphone execution."""
     from nexo_server.config import STTSettings, TTSSettings
     stt = STTSettings()
     tts = TTSSettings()

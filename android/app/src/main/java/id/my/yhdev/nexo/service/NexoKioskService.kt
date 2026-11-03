@@ -1,764 +1,867 @@
 package id.my.yhdev.nexo.service
 
 import android.Manifest
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
+import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Binder
-import android.os.Build
-import android.os.IBinder
-import android.os.Handler
-import android.os.Looper
-import android.os.SystemClock
-import android.util.Log
+import android.media.AudioManager
+import android.os.*
 import androidx.core.app.NotificationCompat
+import com.google.gson.JsonObject
 import id.my.yhdev.nexo.MainActivity
+import id.my.yhdev.nexo.audio.*
+import id.my.yhdev.nexo.audio.core.AudioOwnership
+import id.my.yhdev.nexo.audio.core.LocalCapture
+import id.my.yhdev.nexo.audio.core.ProcessingDeadline
+import id.my.yhdev.nexo.audio.core.UtteranceBuffer
+import id.my.yhdev.nexo.audio.vad.SileroVad
 import id.my.yhdev.nexo.config.ServerEndpointPolicy
-import id.my.yhdev.nexo.audio.AudioPlayerManager
-import id.my.yhdev.nexo.audio.AudioRecorderManager
-import id.my.yhdev.nexo.audio.EarconManager
-import id.my.yhdev.nexo.audio.HalfDuplexGate
-import id.my.yhdev.nexo.network.NexoWebSocketClient
-import id.my.yhdev.nexo.network.VoiceprintDialog
-import java.util.UUID
-import java.util.concurrent.atomic.AtomicInteger
-import id.my.yhdev.nexo.ui.NexoState
+import id.my.yhdev.nexo.network.*
 import id.my.yhdev.nexo.security.DeviceCredentialStore
+import id.my.yhdev.nexo.ui.NexoState
+import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
-open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListener {
+/** All binder/UI state runs on main. Recorder joins and model disposal run only on lifecycle. */
+open class NexoKioskService : Service() {
     private val binder = LocalBinder()
     private val main = Handler(Looper.getMainLooper())
-    private val duplex = HalfDuplexGate()
-    private lateinit var audioRecorder: AudioRecorderManager
+    private val lifecycle = Executors.newSingleThreadExecutor { Thread(it, "Nexo-AudioLifecycle") }
+    private val upload = Executors.newSingleThreadExecutor { Thread(it, "Nexo-AudioUpload") }
+    private val ownership = AudioOwnership()
+    private val local = LocalCapture()
+    private val playbackTurn = AtomicInteger(0)
+    @Volatile private var generation = 0
+    private val captureAdmission = id.my.yhdev.nexo.audio.core.LifecycleAdmission()
+    private val captureGeneration: Long get() = captureAdmission.generation()
+    private fun nextCapture(): Long = captureAdmission.advance()
+    @Volatile private var webSocketClient: NexoWebSocketClient? = null
+    @Volatile private var audioRecorder: AudioRecorderManager? = null
     private lateinit var audioPlayer: AudioPlayerManager
     private lateinit var earconManager: EarconManager
-    private var lastListeningChime = 0L
-    @Volatile private var webSocketClient: NexoWebSocketClient? = null
-    @Volatile private var generation = 0
-    @Volatile private var audioGeneration = 0
-    private val playbackTurn = AtomicInteger(0)
-    private var connectionKey: Pair<String, String>? = null
-    private var audioRecovery: Runnable? = null
-    private var audioRecoveryAttempts = 0
-    private var foregroundAllowed = true
+    private lateinit var diagnostic: PrivateAudioDiagnostic
     private val credentialStore by lazy { DeviceCredentialStore(this) }
     private val voicePreferences by lazy { getSharedPreferences("voice_control", Context.MODE_PRIVATE) }
     @Volatile private var voiceEnabled = false
-    val isVoiceEnabled: Boolean
-        get() = voiceEnabled
+    private var uiForeground = false
+    private var foregroundAllowed = true
+    private var connectionKey: Pair<String, String>? = null
     private var currentState = NexoState.IDLE
-    private var currentMessage: String? = "Suara dijeda • tekan Mulai untuk mendengarkan"
+    private var currentMessage: String? = "Paused • tekan Mulai untuk melanjutkan"
     private var currentExpression: String? = null
+    private var sleepExpression: String? = null
+    private var sheetPurpose = "enrollment"
+    private var sheetState = "CLOSED"
+    private var sheetMessage = "Percakapan dijeda"
+    private var sheetOpened = 0L
+    private var sheetLocalStopped = false
+    private var acquireSent = false
+    private var querySent = false
+    private var queryRequest: String? = null
+    private var queryDeadline = 0L
+    private var pendingDelete: String? = null
+    private var deleteDeadline = 0L
+    private var releaseLocallyStopped = false
+    private var releaseAcknowledged = false
+    private var releaseDeadline = 0L
+    private var resumeOnRelease = false
+    private fun completeReleaseIfReady() {
+        if (!releaseLocallyStopped || !releaseAcknowledged) return
+        sheetOwner = null
+        sheet("CLOSED", "Paused • rekaman ditutup")
+        if (resumeOnRelease && permitted()) { resumeOnRelease = false; requestResume() }
+    }
+    private var resumeOnHello = false
+    private var enrollmentId: String? = null
+    private var enrollmentRequest: String? = null
+    private var enrollmentOperation: String? = null
+    private var enrollmentDeadline = 0L
+    private val samples = mutableListOf<String>()
+    private var sampleCount = 0
+    private var pendingUtterance: String? = null
+    private val processing = ProcessingDeadline()
+    private var sealedPending: UtteranceBuffer.Sealed? = null
+    private var finishPending = false
+    private var startingCapture = false
+    private var turnComplete = false
+    @Volatile private var playbackReady = false
+    private var playbackPending = false
+    private var playbackDrainedAt = 0L
+    private var diagnosticUntil = 0L
+    private var diagnosticReady = false
+    private var automatic = false // Manual remains independent of model availability.
+    @Volatile private var vadAvailable = false
+    private var vad: SileroVad? = null // Lifecycle owns reset/close after consumer join.
     private var lastVoiceprintDialog: VoiceprintDialog? = null
-    private enum class EnrollmentPhase { STARTING, RECORDING, SAVING, CANCELLING }
-    private val enrollmentLock = Any()
-    @Volatile private var pendingEnrollmentId: String? = null
-    @Volatile private var enrollmentPhase: EnrollmentPhase? = null
-    private var enrollmentGeneration = -1
-    @Volatile private var voiceprintConnectionReady = false
-    private var pendingUnenrollId: String? = null
-    private var enrollmentTimeout: Runnable? = null
-    private var enrollmentSilencedChimes = false
-    private val enrollmentActive: Boolean
-        get() = pendingEnrollmentId != null
+    @Volatile private var destroyed = false
+    val isVoiceEnabled: Boolean get() = voiceEnabled
 
+    data class RecordingSession(val state: String, val message: String, val ready: Boolean,
+        val sampleCount: Int, val requiredSamples: Int, val diagnostic: Boolean)
+    private fun session() = RecordingSession(sheetState, sheetMessage,
+        ownership.dedicatedAllowed(now()) && sheetState in setOf("READY", "SAMPLES_READY", "LOCAL_READY"),
+        samples.size, sampleCount, sheetPurpose == "diagnostic")
     var serviceCallback: ServiceCallback? = null
         set(value) {
             field = value
-            value?.onVoiceEnabledChanged(isVoiceEnabled)
+            value?.onVoiceEnabledChanged(voiceEnabled)
             value?.onStateChanged(currentState, currentMessage, currentExpression)
+            value?.onRecordingSessionChanged(session())
+            value?.onCaptureModeChanged(automatic, vadAvailable)
             lastVoiceprintDialog?.let { value?.onVoiceprintDialogReceived(it) }
         }
-
     interface ServiceCallback {
         fun onVoiceEnabledChanged(enabled: Boolean)
         fun onStateChanged(state: NexoState, message: String?, expression: String?)
         fun onTelemetryReceived(amplitude: Float, bands: List<Float>?)
         fun onEnrollmentLevel(amplitude: Float) {}
         fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean)
-        fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog)
+        fun onVoiceprintDialogReceived(dialog: VoiceprintDialog)
+        fun onRecordingSessionChanged(session: RecordingSession) {}
+        fun onCaptureModeChanged(automatic: Boolean, available: Boolean) {}
     }
-
-    inner class LocalBinder : Binder() {
-        fun getService(): NexoKioskService = this@NexoKioskService
-    }
-
+    inner class LocalBinder : Binder() { fun getService(): NexoKioskService = this@NexoKioskService }
     override fun onBind(intent: Intent?): IBinder = binder
-
-    private fun publish(state: NexoState, message: String?, expression: String? = null) {
-        currentState = state
-        currentMessage = message
-        currentExpression = expression
-        serviceCallback?.onStateChanged(state, message, expression)
-        startForegroundNotification()
-    }
-
-    private fun publishListening() {
-        if (enrollmentActive) return
-        if (isVoiceEnabled && duplex.canSendAudio) {
-            val now = SystemClock.uptimeMillis()
-            val isSleeping = currentExpression == "sleeping"
-            if (!isSleeping && now - lastListeningChime > 1500L && ::earconManager.isInitialized) {
-                lastListeningChime = now
-                earconManager.playListening()
-            }
-            val expr = if (isSleeping) "sleeping" else "netral"
-            val msg = if (isSleeping) "Mode tidur • ucapkan 'Nexo bangun'" else "Mikrofon aktif • silakan bicara"
-            publish(NexoState.LISTENING, msg, expr)
-        }
-    }
-
-    // Called by the visible Activity after microphone permission has been granted.
-    fun startVoice() {
-        if (isVoiceEnabled && webSocketClient != null &&
-            (::audioRecorder.isInitialized && audioRecorder.isRecording() || enrollmentActive)) return
-        cancelAudioRecovery()
-        audioRecoveryAttempts = 0
-        voicePreferences.edit().putBoolean("enabled", true).commit()
-        voiceEnabled = true
-        serviceCallback?.onVoiceEnabledChanged(true)
-        foregroundAllowed = true // Explicit visible user action may retry OS promotion.
-        startForegroundNotification()
-        if (!foregroundAllowed) return
-        // Update the started-service restart policy after an OFF -> ON binder call.
-        try {
-            startService(Intent(this, NexoKioskService::class.java))
-        } catch (e: SecurityException) {
-            foregroundDenied()
-            return
-        } catch (e: IllegalStateException) {
-            foregroundDenied()
-            return
-        }
-        connectionKey?.let { initializeConnection(it.first, it.second, forceReconnect = true) }
-            ?: publish(NexoState.DISCONNECTED, "Menunggu endpoint server...")
-    }
-
-    fun stopVoice() {
-        cancelAudioRecovery()
-        audioRecoveryAttempts = 0
-        voicePreferences.edit().putBoolean("enabled", false).commit()
+    private fun now() = SystemClock.elapsedRealtime()
+    private fun uuid() = UUID.randomUUID().toString()
+    private fun permitted() = uiForeground && foregroundAllowed &&
+        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    private fun persistOff() {
         voiceEnabled = false
-        ++generation
-        ++audioGeneration
-        duplex.disconnected()
-        invalidateVoiceprint("Sesi suara berakhir • status suara belum diketahui")
-        audioRecorder.stopRecording()
-        audioPlayer.stop()
-        webSocketClient?.disconnect()
-        webSocketClient = null
+        voicePreferences.edit().putBoolean("enabled", false).commit()
         serviceCallback?.onVoiceEnabledChanged(false)
-        publish(NexoState.IDLE, "Suara dijeda • tekan Mulai untuk mendengarkan", "netral")
-        startForegroundNotification()
-        stopSelf() // OFF must also remove the old START_STICKY started-service request.
+    }
+    private fun publish(state: NexoState, message: String?, expression: String? = null) {
+        currentState = state; currentMessage = message; currentExpression = expression
+        serviceCallback?.onStateChanged(state, message, expression)
+    }
+    private fun sheet(state: String, message: String) {
+        sheetState = state; sheetMessage = message
+        serviceCallback?.onRecordingSessionChanged(session())
+    }
+    private fun outputGuard(connection: String, epoch: Long, action: () -> Unit): Boolean {
+        if (destroyed || !ownership.outputAllowed(connection, epoch)) return false
+        return ownership.runOutput(connection, epoch) { action() }
+    }
+    private fun outputGuard(action: () -> Unit): Boolean {
+        val id = ownership.connection() ?: return false
+        return outputGuard(id, ownership.epoch(), action)
     }
 
     override fun onCreate() {
         super.onCreate()
-        earconManager = EarconManager(this)
-        voiceEnabled = voicePreferences.getBoolean("enabled", false)
+        // A process/service restart never inherits permission to resume an uncertain turn.
+        persistOff()
+        audioPlayer = newPlayer()
+        earconManager = EarconManager(this, ::outputGuard)
+        diagnostic = PrivateAudioDiagnostic(this)
         startForegroundNotification()
-        createAudioSession()
-        if (!foregroundAllowed) return
-        if (isVoiceEnabled) publish(NexoState.DISCONNECTED, "Menunggu endpoint server...")
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // A sticky recreation has no Activity to supply Remote Config or device ID.
-        // Android owns whether a microphone FGS restart is allowed; never schedule resurrection.
-        if (!foregroundAllowed) return START_NOT_STICKY
-        if (!isVoiceEnabled) return START_NOT_STICKY
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            failAudioSession("Izin mikrofon diperlukan • buka aplikasi untuk melanjutkan")
-            stopSelf(startId)
-            return START_NOT_STICKY
+        main.post(tick)
+        lifecycle.execute {
+            vad = runCatching {
+                val file = noBackupFilesDir.resolve("silero-v6.2.3.onnx")
+                assets.open("vad/silero-v6.2.3.onnx").use { source -> file.outputStream().use { source.copyTo(it) } }
+                SileroVad(file.absolutePath)
+            }.getOrNull()
+            vadAvailable = vad != null
+            main.post { if (!destroyed) serviceCallback?.onCaptureModeChanged(automatic, vadAvailable) }
         }
-        if (connectionKey == null) connectionKey = restoreConnectionKey()
-        connectionKey?.let { initializeConnection(it.first, it.second) }
-            ?: publish(NexoState.ERROR, "Buka aplikasi untuk memuat endpoint suara")
-        return START_STICKY
     }
+    private fun newPlayer(): AudioPlayerManager {
+        val connection = ownership.connection()
+        val epoch = ownership.epoch()
+        return AudioPlayerManager(onError = { main.post {
+            if (connection != null && ownership.outputAllowed(connection, epoch)) fail("Pemutaran audio gagal")
+        } }, outputGuard = { action -> playbackReady && connection != null && outputGuard(connection, epoch, action) })
 
-    private fun restoreConnectionKey(): Pair<String, String>? {
-        val url = voicePreferences.getString("server_url", null) ?: return null
-        val id = voicePreferences.getString("device_id", null) ?: return null
-        return if (ServerEndpointPolicy.isValid(url) && id.isNotBlank()) Pair(url, id) else null
     }
-
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Home/task swipe is not Force stop. Keep the existing started FGS only.
-        // No alarms, jobs, receiver, or background Activity/service relaunch here.
+        setUiForeground(false)
         super.onTaskRemoved(rootIntent)
     }
-
-    private fun createAudioSession() {
-        // Capture the session token at construction, never when a late error arrives.
-        val audioToken = ++audioGeneration
-        val client = webSocketClient
-        if (::audioRecorder.isInitialized) audioRecorder.stopRecording()
-        if (::audioPlayer.isInitialized) audioPlayer.release()
-        audioPlayer = AudioPlayerManager(onError = { message ->
-            main.post {
-                if (!isVoiceEnabled || audioToken != audioGeneration) return@post
-                failAudioSession(message)
-            }
-        })
-        audioRecorder = AudioRecorderManager(onError = { message ->
-            main.post {
-                if (!isVoiceEnabled || audioToken != audioGeneration) return@post
-                failAudioSession(message)
-            }
-        }, onRecoverableError = { message ->
-            main.post {
-                if (isVoiceEnabled && audioToken == audioGeneration) recoverAudioSession(message)
-            }
-        }) { chunk, length ->
-            // Serialize PCM with enrollment controls: no chunk can cross start/finish/cancel.
-            // Use this session's socket, never a replacement endpoint's socket.
-            synchronized(enrollmentLock) {
-                if (isVoiceEnabled && audioToken == audioGeneration) {
-                    val requestId = pendingEnrollmentId
-                    val enrollmentRecording = requestId != null && enrollmentPhase == EnrollmentPhase.RECORDING
-                    val normalRecording = requestId == null &&
-                        isVoiceEnabled && audioToken == audioGeneration && duplex.canSendAudio
-                    if (enrollmentRecording || normalRecording) {
-                        val localAmp = calculateNormalizedRms(chunk, length)
-                        main.post {
-                            if (isVoiceEnabled && audioToken == audioGeneration) {
-                                if (enrollmentRecording && pendingEnrollmentId == requestId &&
-                                    enrollmentPhase == EnrollmentPhase.RECORDING) {
-                                    serviceCallback?.onEnrollmentLevel(localAmp)
-                                } else if (normalRecording && !enrollmentActive && duplex.canSendAudio) {
-                                    serviceCallback?.onTelemetryReceived(localAmp, null)
-                                }
-                            }
-                        }
-                        if (client?.sendAudioChunk(chunk, length) != true) {
-                            val token = generation
-                            main.post {
-                                if (isVoiceEnabled && token == generation && audioToken == audioGeneration) {
-                                    failAudioSession("Pengiriman audio gagal • coba hubungkan ulang")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+    fun setUiForeground(value: Boolean) {
+        uiForeground = value
+        if (!value) {
+            closeRecordingSheet("background")
+            pauseLocal("background")
         }
+        ownership.foreground(value && permitted())
     }
-
-    private fun calculateNormalizedRms(chunk: ByteArray, length: Int): Float {
-        val numSamples = length / 2
-        if (numSamples <= 0) return 0f
-        var sumSquares = 0.0
-        var i = 0
-        while (i < length - 1) {
-            val low = chunk[i].toInt() and 0xFF
-            val high = chunk[i + 1].toInt()
-            val sample = (high shl 8) or low
-            sumSquares += (sample * sample).toDouble()
-            i += 2
-        }
-        val rms = Math.sqrt(sumSquares / numSamples)
-        if (rms <= 1.0) return 0f
-        val db = 20.0 * Math.log10(rms / 32767.0)
-        return Math.max(0.0, Math.min(1.0, (db + 55.0) / 40.0)).toFloat()
+    fun setAutomaticCapture(value: Boolean): Boolean {
+        if (value && !vadAvailable || startingCapture || audioRecorder?.isRecording() == true || pendingUtterance != null) return false
+        automatic = value
+        serviceCallback?.onCaptureModeChanged(automatic, vadAvailable)
+        return true
     }
-
-    private fun cancelAudioRecovery() {
-        audioRecovery?.let { main.removeCallbacks(it) }
-        audioRecovery = null
+    fun startVoice() {
+        if (!permitted() || ownership.owner() != null || sheetOwner != null) return
+        if (ownership.normalAllowed()) return
+        resumeOnHello = true
+        ensureConnection()
+        if (webSocketClient?.outdoorSession != null) requestResume()
     }
-
-    private fun recoverAudioSession(message: String) {
-        if (!isVoiceEnabled || audioRecovery != null) return
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ||
-            audioRecoveryAttempts >= 3 || connectionKey == null) {
-            failAudioSession(message)
-            return
-        }
-        // A fresh handshake prevents old turn/audio callbacks reopening the gate.
-        failAudioSession(message)
-        if (!foregroundAllowed) return
-        val token = generation
-        val delayMs = 1000L shl audioRecoveryAttempts++ // 1, 2, 4 seconds; never a tight loop.
-        audioRecovery = Runnable {
-            audioRecovery = null
-            if (isVoiceEnabled && token == generation) {
-                connectionKey?.let { initializeConnection(it.first, it.second, forceReconnect = true) }
-            }
-        }
-        publish(NexoState.ERROR, "$message • mencoba memulihkan mikrofon")
-        if (!foregroundAllowed) return
-        audioRecovery?.let { main.postDelayed(it, delayMs) }
+    private fun requestResume() {
+        resumeOnHello = false
+        if (!permitted()) return
+        val request = uuid()
+        if (!ownership.resume(request, now())) return
+        voicePreferences.edit().putBoolean("enabled", true).commit()
+        voiceEnabled = true
+        serviceCallback?.onVoiceEnabledChanged(true)
+        publish(NexoState.IDLE, "Menunggu izin lanjut dari server • mikrofon belum aktif", sleepExpression)
+        if (webSocketClient?.sendOutdoorControl("conversation_resume", request) != true) fail("Permintaan lanjut gagal")
     }
-
-    private fun failAudioSession(message: String) {
-        cancelAudioRecovery()
-        // Permission/configuration/output failures remain terminal; STOP is still available.
-        ++generation
-        ++audioGeneration
-        duplex.disconnected()
-        invalidateVoiceprint("Sesi suara berakhir • status suara belum diketahui")
-        audioRecorder.stopRecording()
+    fun stopVoice() {
+        resumeOnHello = false; resumeOnRelease = false
+        closeRecordingSheet("STOP")
+        pauseLocal("STOP")
+        stopSelf()
+    }
+    /** Closes the actual output/send gates before any asynchronous cleanup. */
+    private fun pauseLocal(reason: String) {
+        webSocketClient?.fenceCapture()
+        sheetOwner = null; enrollmentOperation = null; queryRequest = null; pendingDelete = null
+        playbackReady = false; playbackPending = false; resumeOnRelease = false
+        persistOff()
+        ownership.disconnected()
+        webSocketClient?.fenceOutput()
+        invalidateCapture(reason)
+        earconManager.stop()
         audioPlayer.stop()
-        webSocketClient?.disconnect()
-        webSocketClient = null
-        publish(NexoState.ERROR, message)
+        ++generation
+        webSocketClient?.disconnect(); webSocketClient = null
+        lastVoiceprintDialog = null
+        publish(NexoState.IDLE, "Paused • tekan Mulai untuk melanjutkan", sleepExpression)
     }
-
-    fun refreshCredentials() {
-        if (!isVoiceEnabled) return
-        connectionKey?.let { initializeConnection(it.first, it.second, forceReconnect = true) }
+    private fun fail(message: String) {
+        if (destroyed) return
+        resumeOnHello = false; resumeOnRelease = false
+        closeRecordingSheet("error")
+        pauseLocal("error")
+        sheet("ERROR", "$message. Tutup dan buka lagi untuk mencoba ulang.")
+        publish(NexoState.ERROR, message, sleepExpression)
     }
-
     fun initializeConnection(serverUrl: String, deviceId: String, forceReconnect: Boolean = false) {
-        val sameEndpoint = connectionKey == Pair(serverUrl, deviceId)
-        if (!ServerEndpointPolicy.isValid(serverUrl) || deviceId.isBlank()) {
-            failAudioSession("Endpoint suara tidak valid")
-            return
-        }
+        if (!ServerEndpointPolicy.isValid(serverUrl) || deviceId.isBlank()) { fail("Endpoint suara tidak valid"); return }
+        val changed = connectionKey != null && connectionKey != Pair(serverUrl, deviceId)
+        if (changed || forceReconnect) { closeRecordingSheet("endpoint_changed"); pauseLocal("endpoint_changed") }
         connectionKey = Pair(serverUrl, deviceId)
         voicePreferences.edit().putString("server_url", serverUrl).putString("device_id", deviceId).apply()
-        // Remote Config may change while paused; remember it without opening credentials or audio.
-        if (!isVoiceEnabled) return
-        if (!foregroundAllowed) return
-        if (!forceReconnect && sameEndpoint && webSocketClient != null) return
-        cancelAudioRecovery()
-        val bearerToken = credentialStore.read(serverUrl, deviceId)
+    }
+    fun refreshCredentials() { closeRecordingSheet("credentials_changed"); pauseLocal("credentials_changed") }
+    private fun ensureConnection() {
+        if (webSocketClient != null) return
+        val key = connectionKey ?: run { fail("Endpoint belum tersedia"); return }
+        val bearer = credentialStore.read(key.first, key.second) ?: run { fail("Penyiapan perangkat diperlukan"); return }
         val token = ++generation
-        ++audioGeneration
-        duplex.disconnected()
-        invalidateVoiceprint("Sesi suara berakhir • status suara belum diketahui")
-        audioRecorder.stopRecording()
-        audioPlayer.stop()
-        webSocketClient?.disconnect()
-        webSocketClient = null
-        if (bearerToken == null) {
-            publish(NexoState.ERROR, "Penyiapan perangkat diperlukan • tekan lama status untuk token pemilik")
-            return
-        }
-        publish(NexoState.DISCONNECTED, "Menghubungkan ke server...")
-        if (!foregroundAllowed) return
-        // Fence callbacks from the old endpoint during Remote Config changes.
         val events = object : NexoWebSocketClient.WebSocketEventListener {
-            private fun dispatch(action: () -> Unit) { main.post { if (isVoiceEnabled && token == generation) action() } }
-            override fun onConnected() = dispatch { this@NexoKioskService.onConnected() }
-            override fun onDisconnected() = dispatch { this@NexoKioskService.onDisconnected() }
-            override fun onStateChanged(state: NexoState, message: String?, expression: String?) =
-                dispatch { this@NexoKioskService.onStateChanged(state, message, expression) }
-            override fun onTelemetryReceived(amplitude: Float, bands: List<Float>?) =
-                dispatch { this@NexoKioskService.onTelemetryReceived(amplitude, bands) }
-            override fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean) =
-                dispatch { this@NexoKioskService.onTranscriptionReceived(role, text, isFinal) }
-            override fun onAudioChunkReceived(audioData: ByteArray) {
-                if (isVoiceEnabled && token == generation) this@NexoKioskService.onAudioChunkReceived(audioData)
+            private fun dispatch(action: () -> Unit) { main.post { if (!destroyed && token == generation) action() } }
+            override fun usesTaggedOutput() = true
+            override fun onOutdoorProtocolReady(session: OutdoorSession) = dispatch {
+                // No connected/reconnect callback enables the mic. Only a pending explicit action may proceed.
+                ownership.connected(session.connectionId, session.outputEpoch)
+                ownership.foreground(permitted())
+                if (sheetState == "ACQUIRING") {
+                    ownership.openSheet(sheetOwner ?: return@dispatch, sheetOpened)
+                    tryAcquire()
+                } else if (resumeOnHello) requestResume()
             }
-            override fun onTTSStarted() {
-                if (isVoiceEnabled && token == generation) this@NexoKioskService.onTTSStarted()
-            }
-            override fun onTTSEnded() {
-                if (isVoiceEnabled && token == generation) this@NexoKioskService.onTTSEnded()
-            }
-            override fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog) =
-                dispatch { this@NexoKioskService.onVoiceprintDialogReceived(dialog) }
-        }
-        webSocketClient = NexoWebSocketClient(serverUrl, deviceId, bearerToken, events)
-        webSocketClient?.connect()
-    }
-
-    fun startVoiceprintEnrollment(): Boolean {
-        if (!isVoiceEnabled || !foregroundAllowed || !voiceprintConnectionReady ||
-            checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ||
-            !audioRecorder.isRecording() || !duplex.canSendAudio ||
-            currentState == NexoState.THINKING || currentState == NexoState.SPEAKING ||
-            (currentState != NexoState.IDLE && currentState != NexoState.LISTENING)) return false
-        val client = webSocketClient ?: return false
-        val requestId = UUID.randomUUID().toString()
-        val token = generation
-        synchronized(enrollmentLock) {
-            if (enrollmentActive || pendingUnenrollId != null || !duplex.canSendAudio) return false
-            pendingEnrollmentId = requestId
-            enrollmentGeneration = generation
-            enrollmentPhase = EnrollmentPhase.STARTING
-            lastVoiceprintDialog = null
-            if (::earconManager.isInitialized) earconManager.release()
-            enrollmentSilencedChimes = true
-            if (!client.startVoiceprintEnrollment(requestId)) {
-                // A failed control send leaves server state unknown; do not reopen the mic.
+            override fun onConnected() {}
+            override fun onDisconnected() = dispatch { fail("Koneksi terputus • percakapan tetap Paused") }
+            override fun onOutdoorControl(message: JsonObject) = dispatch { control(message) }
+            private var outputBarrier = java.util.concurrent.CompletableFuture<Boolean>()
+            override fun onOutputControl(message: JsonObject) {
+                if (destroyed || token != generation) return
+                val connection = OutdoorProtocol.uuid(message, "connection_id") ?: return
+                val outputEpoch = OutdoorProtocol.integer(message, "output_epoch", 0, Long.MAX_VALUE) ?: return
+                if (!ownership.outputAllowed(connection, outputEpoch)) return
+                val start = OutdoorProtocol.string(message, "type") == "tts_start"
+                val barrier = if (start) java.util.concurrent.CompletableFuture<Boolean>().also { outputBarrier = it } else outputBarrier
                 main.post {
-                    if (token == generation && pendingEnrollmentId == requestId)
-                        failAudioSession("Pendaftaran suara gagal dikirim • hubungkan ulang")
-                }
-                return false
-            }
-        }
-        serviceCallback?.onTelemetryReceived(0f, null)
-        serviceCallback?.onEnrollmentLevel(0f)
-        armEnrollmentTimeout(10_000L)
-        return true
-    }
-
-    fun finishVoiceprintEnrollment(): Boolean {
-        val token = generation
-        synchronized(enrollmentLock) {
-            val requestId = pendingEnrollmentId ?: return false
-            if (enrollmentGeneration != generation || enrollmentPhase != EnrollmentPhase.RECORDING) return false
-            enrollmentPhase = EnrollmentPhase.SAVING
-            lastVoiceprintDialog = null
-            if (webSocketClient?.finishVoiceprintEnrollment(requestId) != true) {
-                main.post {
-                    if (token == generation && pendingEnrollmentId == requestId)
-                        failAudioSession("Penyimpanan suara gagal dikirim • hubungkan ulang")
-                }
-                return false
-            }
-        }
-        pauseEnrollmentCapture()
-        serviceCallback?.onEnrollmentLevel(0f)
-        armEnrollmentTimeout(15_000L)
-        return true
-    }
-
-    fun cancelVoiceprintEnrollment() {
-        val token = generation
-        synchronized(enrollmentLock) {
-            val requestId = pendingEnrollmentId ?: return
-            if (enrollmentPhase == EnrollmentPhase.CANCELLING) return
-            enrollmentPhase = EnrollmentPhase.CANCELLING
-            lastVoiceprintDialog = null
-            if (webSocketClient?.cancelVoiceprintEnrollment(requestId) != true) {
-                main.post {
-                    if (token == generation && pendingEnrollmentId == requestId)
-                        failAudioSession("Pembatalan suara gagal dikirim • hubungkan ulang")
-                }
-                return
-            }
-        }
-        pauseEnrollmentCapture()
-        serviceCallback?.onEnrollmentLevel(0f)
-        armEnrollmentTimeout(5_000L)
-    }
-
-    override fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog) {
-        if (!isVoiceEnabled || !voiceprintConnectionReady) return
-        if (enrollmentActive) {
-            if (dialog.requestId != pendingEnrollmentId || enrollmentGeneration != generation) return
-            when (dialog.action) {
-                "recording" -> {
-                    if (enrollmentPhase != EnrollmentPhase.STARTING) return
-                    if (dialog.success == false || dialog.available == false) {
-                        // Contradictory recording ack: server capture may still be open.
-                        cancelVoiceprintEnrollment()
-                        return
+                    val id = OutdoorProtocol.uuid(message, "connection_id")
+                    val epoch = OutdoorProtocol.integer(message, "output_epoch", 0, Long.MAX_VALUE)
+                    if (destroyed || token != generation || id == null || epoch == null || !ownership.outputAllowed(id, epoch)) {
+                        if (start) barrier.complete(false)
+                        return@post
                     }
-                    synchronized(enrollmentLock) { enrollmentPhase = EnrollmentPhase.RECORDING }
-                    armEnrollmentTimeout(15_000L)
+                    if (start) {
+                        playbackReady = false
+                        val capture = nextCapture()
+                        val recorder = audioRecorder
+                        lifecycle.execute {
+                            local.cancel("server_output")
+                            val stopped = recorder?.stopAndJoin() != false
+                            main.post {
+                                if (destroyed || token != generation || capture != captureGeneration || !ownership.outputAllowed(id, epoch)) {
+                                    barrier.complete(false); return@post
+                                }
+                                // A timed-out barrier cannot later reopen this response.
+                                if (barrier.isDone) return@post
+                                playbackReady = stopped
+                                barrier.complete(stopped)
+                                if (!stopped) fail("Mikrofon belum berhenti sebelum jawaban")
+                            }
+                        }
+                    }
+                    output(message)
                 }
-                "enrolled", "error", "cancelled" -> {
-                    // A late save/start reply cannot acknowledge cancellation.
-                    if (enrollmentPhase == EnrollmentPhase.CANCELLING && dialog.action != "cancelled") return
-                    if (dialog.action == "enrolled" && enrollmentPhase != EnrollmentPhase.SAVING) return
-                    completeEnrollment()
-                    serviceCallback?.onVoiceprintDialogReceived(dialog)
-                    queryVoiceprint()
+            }
+            override fun onOutdoorAudio(connectionId: String, epoch: Long, audioData: ByteArray) {
+                if (destroyed || token != generation || !ownership.outputAllowed(connectionId, epoch)) return
+                val barrier = outputBarrier
+                val ready = runCatching { barrier.get(1600, TimeUnit.MILLISECONDS) }.getOrDefault(false)
+                if (!ready) {
+                    barrier.complete(false)
+                    dispatch {
+                        if (ownership.outputAllowed(connectionId, epoch)) fail("playback_barrier_timeout • jawaban dibatalkan")
+                    }
                     return
                 }
-                else -> return
+                if (token != generation || !ownership.outputAllowed(connectionId, epoch)) return
+                val player = audioPlayer
+                if (!player.writeChunk(audioData) && token == generation && ownership.outputAllowed(connectionId, epoch)) {
+                    dispatch { fail("Pemutaran audio gagal") }
+                }
             }
-        } else if (pendingUnenrollId != null && dialog.requestId == pendingUnenrollId) {
-            pendingUnenrollId = null
-            lastVoiceprintDialog = null
-            serviceCallback?.onVoiceprintDialogReceived(dialog)
-            queryVoiceprint()
-            return
-        } else if (dialog.requestId != null || dialog.action == "recording" ||
-            dialog.action == "enrolled" || dialog.action == "cancelled") {
-            // Completed, cancelled, or previous-connection replies never revive enrollment.
-            return
+            override fun onStateChanged(state: NexoState, message: String?, expression: String?) = dispatch {
+                if (state == NexoState.ERROR || state == NexoState.DISCONNECTED) fail(message ?: "Koneksi suara gagal")
+            }
+            override fun onVoiceprintDialogReceived(dialog: VoiceprintDialog) = dispatch { voiceprint(dialog) }
+            // Untagged callbacks cannot affect v2 state, output or microphone ownership.
+            override fun onTelemetryReceived(amplitude: Float, bands: List<Float>?) {}
+            override fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean) {}
+            override fun onAudioChunkReceived(audioData: ByteArray) {}
+            override fun onTTSStarted() {}
+            override fun onTTSEnded() {}
         }
+        webSocketClient = NexoWebSocketClient(key.first, key.second, bearer, events).also { it.connect() }
+    }
+
+    private var sheetOwner: String? = null
+    /** Called synchronously BEFORE constructing/showing the non-ready sheet shell. */
+    fun openRecordingSheet(diagnosticOnly: Boolean = false): Boolean {
+        if (!permitted() || sheetOwner != null || ownership.releasing()) return false
+        sheetOwner = uuid(); sheetPurpose = if (diagnosticOnly) "diagnostic" else "enrollment"
+        sheetOpened = now(); sheetLocalStopped = false; acquireSent = false; querySent = false
+        queryRequest = null; pendingDelete = null; lastVoiceprintDialog = null
+        enrollmentId = null; enrollmentRequest = null; enrollmentOperation = null
+        samples.clear(); sampleCount = 0; resumeOnHello = false; resumeOnRelease = false
+        webSocketClient?.fenceCapture()
+        persistOff()
+        ownership.openSheet(sheetOwner!!, sheetOpened)
+        webSocketClient?.fenceOutput()
+        invalidateCapture("sheet_open")
+        playbackPending = false
+        earconManager.stop()
+        sheet("ACQUIRING", "Menjeda percakapan dan menghentikan audio…")
+        publish(NexoState.IDLE, "Paused • panel rekam memiliki mikrofon", sleepExpression)
+        val playerStopped = java.util.concurrent.CompletableFuture<Boolean>()
+        audioPlayer.stopAndConfirm { playerStopped.complete(it) }
+        val earconsStopped = earconManager.stopAndConfirm()
+        val owner = sheetOwner
+        val recorder = audioRecorder
+        lifecycle.execute {
+            val stopped = recorder?.stopAndJoin() != false
+            val outputStopped = runCatching { playerStopped.get(1500, TimeUnit.MILLISECONDS) }.getOrDefault(false)
+            val chimesStopped = runCatching { earconsStopped.get(1500, TimeUnit.MILLISECONDS) }.getOrDefault(false)
+            val diagnosticStopped = runCatching { diagnostic.dismiss().get(2, TimeUnit.SECONDS); true }.getOrDefault(false)
+            main.post {
+                if (owner != sheetOwner || sheetState != "ACQUIRING") return@post
+                if (!stopped || !outputStopped || !chimesStopped || !diagnosticStopped) { fail("Audio lokal belum berhenti"); return@post }
+                sheetLocalStopped = true
+                ownership.localStopped(ownership.generation(), now())
+            }
+        }
+        ensureConnection()
+        tryAcquire()
+        return sheetOwner != null
+    }
+    private fun tryAcquire() {
+        if (sheetState != "ACQUIRING" || acquireSent || webSocketClient?.outdoorSession == null) return
+        val request = uuid()
+        if (!ownership.acquire(request, now())) { fail("Batas waktu kepemilikan mikrofon"); return }
+        acquireSent = true
+        // Stop may finish before socket negotiation/acquire: reapply its confirmed barrier now.
+        if (sheetLocalStopped) ownership.localStopped(ownership.generation(), now())
+        if (webSocketClient?.sendOutdoorControl("audio_owner_acquire", request,
+                mapOf("owner_id" to sheetOwner!!, "purpose" to sheetPurpose, "policy" to "cancel_active")) != true)
+            fail("Permintaan kepemilikan mikrofon gagal")
+    }
+    fun closeRecordingSheet(reason: String = "dismiss", resume: Boolean = false) {
+        val owner = sheetOwner ?: return
+        if (sheetState == "RELEASING") { if (resume && permitted()) resumeOnRelease = true; return }
+        releaseLocallyStopped = false; releaseAcknowledged = false; releaseDeadline = now() + 2000
+        resumeOnRelease = resume && permitted()
+        persistOff()
+        val request = uuid()
+        val lease = ownership.lease()
+        ownership.closeSheet(request, now()); webSocketClient?.fenceOutput()
+        invalidateCapture(reason)
+        diagnosticReady = false; diagnosticUntil = 0
+        val closedCapture = captureGeneration
+        val diagnosticStopped = diagnostic.dismiss()
+        lifecycle.execute {
+            val stopped = audioRecorder?.stopAndJoin() != false &&
+                runCatching { diagnosticStopped.get(1500, TimeUnit.MILLISECONDS); true }.getOrDefault(false)
+            main.post {
+                if (closedCapture == captureGeneration) {
+                    releaseLocallyStopped = stopped
+                    if (!stopped) fail("Penghentian rekaman belum terkonfirmasi")
+                    else completeReleaseIfReady()
+                }
+            }
+        }
+        enrollmentId?.let { id ->
+            if (lease != null) webSocketClient?.sendOutdoorControl("enrollment_cancel", uuid(),
+                mapOf("owner_id" to owner, "lease_id" to lease, "enrollment_id" to id))
+        }
+        enrollmentId = null; enrollmentOperation = null; pendingDelete = null; queryRequest = null
+        samples.clear(); sampleCount = 0
+        sheet("RELEASING", "Menutup rekaman • percakapan tetap Paused")
+        val fields = mutableMapOf<String, Any>("owner_id" to owner, "reason" to reason)
+        if (lease != null) fields["lease_id"] = lease
+        if (webSocketClient?.sendOutdoorControl("audio_owner_release", request, fields) != true) {
+            sheetOwner = null; pauseLocal("release_unconfirmed")
+            sheet("CLOSED", "Paused • koneksi ditutup karena pelepasan belum terkonfirmasi")
+        }
+    }
+    fun cancelVoiceprintEnrollment() { closeRecordingSheet("cancel") }
+    fun resumeAfterRecording() { closeRecordingSheet("explicit_resume", resume = true) }
+    fun recordingSession(): RecordingSession = session()
+    fun queryVoiceprint() {
+        if (!ownership.dedicatedAllowed(now()) || sheetPurpose != "enrollment" || querySent) return
+        querySent = true; queryRequest = uuid(); queryDeadline = now() + 10000
+        webSocketClient?.sendJson(VoiceprintControl("voiceprint_query", queryRequest!!))
+    }
+    fun unenrollVoiceprint() {
+        if (!ownership.dedicatedAllowed(now()) || pendingDelete != null || enrollmentId != null ||
+            sheetState != "READY" || lastVoiceprintDialog?.isEnrolled != true) return
+        pendingDelete = uuid(); deleteDeadline = now() + 10000
+        sheet("DELETING", "Menghapus profil setelah konfirmasi…")
+        if (webSocketClient?.unenrollVoiceprint(pendingDelete!!) != true) fail("Penghapusan gagal dikirim")
+    }
+    private fun voiceprint(dialog: VoiceprintDialog) {
+        if (sheetOwner == null || !ownership.dedicatedAllowed(now())) return
+        if (dialog.requestId != queryRequest && dialog.requestId != pendingDelete) return
+        if (dialog.requestId == null) return
+        if (dialog.requestId == pendingDelete) {
+            pendingDelete = null
+            sheet("READY", dialog.message ?: "Penghapusan selesai • percakapan tetap Paused")
+        } else queryRequest = null
         lastVoiceprintDialog = dialog
         serviceCallback?.onVoiceprintDialogReceived(dialog)
     }
-
-    private fun pauseEnrollmentCapture() {
-        // Do not release enrollment PCM (including a blocked read tail) to conversation.
-        duplex.microphoneReady(false)
-        audioRecorder.stopRecording()
-    }
-
-    private fun completeEnrollment() {
-        val wasEnrollment = enrollmentActive
-        if (wasEnrollment) pauseEnrollmentCapture()
-        enrollmentTimeout?.let { main.removeCallbacks(it) }
-        enrollmentTimeout = null
-        if (enrollmentSilencedChimes) {
-            earconManager = EarconManager(this)
-            enrollmentSilencedChimes = false
+    fun startVoiceprintEnrollment(): Boolean {
+        if (!permitted() || !ownership.dedicatedAllowed(now()) || sheetPurpose != "enrollment" ||
+            lastVoiceprintDialog?.available != true || sheetState !in setOf("READY", "SAMPLES_READY")) return false
+        if (enrollmentId == null) {
+            enrollmentId = uuid(); enrollmentRequest = uuid(); enrollmentOperation = "begin"
+            enrollmentDeadline = now() + 10000
+            sheet("STARTING", "Meminta sesi sampel dan aturan kualitas server…")
+            return sendEnrollment("enrollment_begin", enrollmentRequest!!)
         }
-        synchronized(enrollmentLock) {
-            pendingEnrollmentId = null
-            enrollmentPhase = null
-            enrollmentGeneration = -1
+        if (samples.size >= sampleCount + 1 || sampleCount == 0) return false
+        return startCapture("enrollment", false)
+    }
+    private fun sendEnrollment(type: String, request: String, extra: Map<String, Any> = emptyMap()): Boolean {
+        val fields = mutableMapOf<String, Any>("owner_id" to (sheetOwner ?: return false),
+            "lease_id" to (ownership.lease() ?: return false), "enrollment_id" to (enrollmentId ?: return false))
+        fields.putAll(extra)
+        val sent = webSocketClient?.sendOutdoorControl(type, request, fields) == true
+        if (!sent) fail("Kontrol pendaftaran gagal dikirim")
+        return sent
+    }
+    fun saveVoiceprintEnrollment(): Boolean {
+        if (!ownership.dedicatedAllowed(now()) || sampleCount < 2 || samples.size != sampleCount + 1 ||
+            pendingUtterance != null || sheetState != "SAMPLES_READY") return false
+        enrollmentOperation = "save"; enrollmentRequest = uuid(); enrollmentDeadline = now() + 30000
+        sheet("SAVING", "Memeriksa sampel dan holdout di server sebelum menyimpan…")
+        return sendEnrollment("enrollment_save", enrollmentRequest!!,
+            mapOf("sample_utterance_ids" to samples.take(sampleCount), "holdout_utterance_id" to samples.last()))
+    }
+    fun startDiagnosticCapture(): Boolean {
+        if (!ownership.dedicatedAllowed(now()) || sheetPurpose != "diagnostic" || sheetState != "READY") return false
+        diagnosticReady = false
+        return startCapture("diagnostic", false)
+    }
+    fun playDiagnostic(): Boolean {
+        if (!ownership.dedicatedAllowed(now()) || !diagnosticReady || now() >= diagnosticUntil) return false
+        val owner = sheetOwner
+        sheet("LOCAL_PLAYBACK", "Memutar klip privat • percakapan tetap Paused")
+        val operation = diagnostic.play(true)
+        lifecycle.execute {
+            val played = runCatching { operation.get(2, TimeUnit.SECONDS) }.getOrDefault(false)
+            if (!played) diagnostic.fencePlayback()
+            main.post { if (owner == sheetOwner) sheet("LOCAL_READY", if (played) "Klip diputar lokal. Tutup untuk menghapus." else "Klip tidak tersedia. Rekam ulang.") }
         }
-        lastVoiceprintDialog = null
-        serviceCallback?.onEnrollmentLevel(0f)
-        serviceCallback?.onTelemetryReceived(0f, null)
-        if (wasEnrollment && isVoiceEnabled && voiceprintConnectionReady) {
-            publish(NexoState.IDLE, "Pendaftaran selesai • tekan Mulai untuk melanjutkan mikrofon", "netral")
+        return true
+    }
+    fun deleteDiagnostic() {
+        if (sheetPurpose != "diagnostic") return
+        diagnosticReady = false; diagnosticUntil = 0
+        lifecycle.execute {
+            runCatching { diagnostic.dismiss().get(2, TimeUnit.SECONDS) }
+            main.post { if (sheetOwner != null && sheetPurpose == "diagnostic") sheet("READY", "Klip dihapus. Rekam ulang bila diperlukan.") }
         }
     }
-
-    private fun invalidateVoiceprint(message: String) {
-        voiceprintConnectionReady = false
-        val requestId = pendingEnrollmentId
-        pendingUnenrollId = null
-        completeEnrollment()
-        lastVoiceprintDialog = null
-        // Never replay old biometric status after STOP, endpoint change, or reconnect.
-        serviceCallback?.onVoiceprintDialogReceived(VoiceprintDialog(
-            action = "error", requestId = requestId, success = false,
-            available = null, message = message
-        ))
+    fun startManualUtterance(): Boolean {
+        if (automatic || !ownership.normalAllowed()) return false
+        return startCapture("conversation", false)
     }
+    fun finishVoiceprintEnrollment(): Boolean = finishCapture()
+    fun finishManualUtterance(): Boolean = finishCapture()
 
-    private fun armEnrollmentTimeout(delayMs: Long) {
-        enrollmentTimeout?.let { main.removeCallbacks(it) }
-        val requestId = pendingEnrollmentId ?: return
-        val token = generation
-        val phase = enrollmentPhase
-        enrollmentTimeout = Runnable {
-            if (requestId == pendingEnrollmentId && token == generation && phase == enrollmentPhase) {
-                if (phase == EnrollmentPhase.RECORDING || phase == EnrollmentPhase.SAVING) {
-                    cancelVoiceprintEnrollment()
-                } else {
-                    // No start/cancel acknowledgement: tear down the socket before reopening PCM.
-                    failAudioSession("Pendaftaran suara melewati batas waktu • hubungkan ulang")
+    private fun startCapture(purpose: String, auto: Boolean): Boolean {
+        if (!permitted() || playbackPending || (purpose == "conversation" && now() - playbackDrainedAt < 600) ||
+            startingCapture || audioRecorder?.isRecording() == true || pendingUtterance != null ||
+            sealedPending != null || finishPending || (auto && !vadAvailable)) return false
+        if (purpose == "conversation" && !ownership.normalAllowed()) return false
+        if (purpose != "conversation" && !ownership.dedicatedAllowed(now())) return false
+        startingCapture = true
+        val gate = ownership.generation()
+        val capture = nextCapture()
+        val socket = generation
+        lifecycle.execute {
+            val priorStopped = audioRecorder?.stopAndJoin() != false
+            if (!priorStopped) { main.post {
+                if (capture == captureGeneration && socket == generation) fail("Mikrofon lama belum berhenti")
+            }; return@execute }
+            if (capture != captureGeneration || gate != ownership.generation() || !permitted()) return@execute
+            vad?.reset()
+            local.cancel("new_capture")
+            val token = local.arm(purpose, auto, if (auto) vad else null)
+            if (!auto) local.start(token, now())
+            val recorder = AudioRecorderManager(options = CaptureOptions(automaticVad = auto),
+                audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager,
+                onError = { code -> captureFailed(capture, code) },
+                onRecoverableError = { code -> captureFailed(capture, code) },
+                onRouteInvalidated = { captureFailed(capture, "route_changed") }) { bytes, count ->
+                if (capture == captureGeneration) local.accept(token, bytes, count, now())
+            }
+            audioRecorder = recorder
+            val started = recorder.startRecording()
+            if (!started || capture != captureGeneration || gate != ownership.generation() || !permitted()) {
+                local.cancel("start_invalidated"); recorder.stopAndJoin()
+            }
+            main.post {
+                if (capture != captureGeneration || socket != generation) return@post
+                startingCapture = false
+                if (!started || !recorder.isRecording()) { fail("Mikrofon gagal dimulai • tetap Paused"); return@post }
+                if (purpose == "conversation") publish(NexoState.LISTENING, if (auto) "Siap • menunggu ucapan" else "Merekam • tekan Selesai", sleepExpression)
+                else sheet("RECORDING", if (purpose == "diagnostic") "Merekam klip privat • tekan Selesai" else
+                    "Merekam ${if (samples.size == sampleCount) "holdout" else "sampel ${samples.size + 1}"} • tekan Selesai")
+                activeToken = token; activePurpose = purpose; activeCaptureGeneration = capture
+            }
+        }
+        return true
+    }
+    private var activeCaptureGeneration = -1L
+    private var activeToken = 0L
+    private var activePurpose = "conversation"
+    private fun captureFailed(capture: Long, code: String) {
+        val revoked = captureAdmission.revoke(capture)
+        if (revoked < 0) return
+        main.post {
+            if (destroyed || revoked != captureGeneration) return@post
+            fail("Rekaman gagal: $code")
+        }
+    }
+    private fun invalidateCapture(reason: String) {
+        webSocketClient?.fenceCapture()
+        nextCapture()
+        diagnostic.fencePlayback()
+        val recorder = audioRecorder
+        webSocketClient?.cancelUtterance()
+        sealedPending = null; pendingUtterance = null; processing.clear(); finishPending = false; startingCapture = false
+        turnComplete = false
+        lifecycle.execute {
+            local.cancel(reason)
+            recorder?.stopAndJoin()
+        }
+        serviceCallback?.onEnrollmentLevel(0f); serviceCallback?.onTelemetryReceived(0f, null)
+    }
+    private fun finishCapture(): Boolean {
+        if (finishPending || startingCapture || audioRecorder?.isRecording() != true) return false
+        if (local.state() !in setOf("CAPTURING", "SEALED")) return false
+        finishPending = true
+        val capture = captureGeneration
+        val token = activeToken
+        val purpose = activePurpose
+        lifecycle.execute {
+            val joined = audioRecorder?.finishAndJoin() == true
+            val sealed = if (joined && capture == captureGeneration) local.sealed() ?: local.finish(token, now()) else null
+            main.post {
+                if (capture != captureGeneration) return@post
+                finishPending = false
+                if (!joined || sealed == null) { fail("Rekaman tidak utuh • ulangi ucapan"); return@post }
+                deliver(sealed, purpose, capture)
+            }
+        }
+        return true
+    }
+    private fun deliver(sealed: UtteranceBuffer.Sealed, purpose: String, capture: Long) {
+        sealedPending = sealed
+        if (purpose == "diagnostic") {
+            val owner = sheetOwner
+            lifecycle.execute {
+                val retained = if (capture == captureGeneration && ownership.dedicatedAllowed(now()))
+                    runCatching { diagnostic.retain(sealed, true).get(2, TimeUnit.SECONDS) }.getOrDefault(false) else false
+                local.release(sealed)
+                main.post {
+                    if (capture != captureGeneration || owner != sheetOwner) return@post
+                    sealedPending = null; diagnosticReady = retained; diagnosticUntil = now() + 300000
+                    sheet(if (retained) "LOCAL_READY" else "ERROR", if (retained)
+                        "Klip privat siap diputar, dihapus saat ditutup atau setelah 5 menit. Tidak diunggah." else "Klip gagal disimpan lokal.")
                 }
             }
-        }.also { main.postDelayed(it, delayMs) }
-    }
-
-    fun queryVoiceprint() {
-        if (isVoiceEnabled && voiceprintConnectionReady && !enrollmentActive) webSocketClient?.queryVoiceprint()
-    }
-
-    fun unenrollVoiceprint() {
-        if (!isVoiceEnabled || !voiceprintConnectionReady || enrollmentActive) return
-        val requestId = UUID.randomUUID().toString()
-        pendingUnenrollId = requestId
-        if (webSocketClient?.unenrollVoiceprint(requestId) != true) {
-            pendingUnenrollId = null
-            failAudioSession("Penghapusan suara gagal dikirim • hubungkan ulang")
-        }
-    }
-
-    private fun foregroundDenied() {
-        foregroundAllowed = false
-        cancelAudioRecovery()
-        ++generation
-        ++audioGeneration
-        duplex.disconnected()
-        invalidateVoiceprint("Sesi suara berakhir • status suara belum diketahui")
-        if (::audioRecorder.isInitialized) audioRecorder.stopRecording()
-        if (::audioPlayer.isInitialized) audioPlayer.stop()
-        webSocketClient?.disconnect()
-        webSocketClient = null
-        currentState = NexoState.ERROR
-        currentMessage = "Android membatasi mikrofon latar belakang • buka aplikasi untuk melanjutkan"
-        currentExpression = null
-        serviceCallback?.onStateChanged(currentState, currentMessage, currentExpression)
-        stopSelf() // Do not retry denied background microphone startup or change saved ON/OFF.
-    }
-
-    private fun startForegroundNotification() {
-        if (!foregroundAllowed) return
-        val channelId = "nexo_kiosk_service"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "Nexo Appliance Service", NotificationManager.IMPORTANCE_LOW)
-            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
-        }
-        val status = when {
-            !isVoiceEnabled -> "Mikrofon nonaktif • suara dijeda"
-            ::audioRecorder.isInitialized && audioRecorder.isRecording() ->
-                "Mikrofon aktif • lihat layar untuk status percakapan"
-            else -> "Suara diaktifkan • mikrofon belum aktif"
-        }
-        val notification: Notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Nexo Appliance")
-            .setContentText(status)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentIntent(PendingIntent.getActivity(this, 0,
-                Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-            .setOngoing(isVoiceEnabled)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-        try {
-            startForeground(1001, notification)
-        } catch (e: SecurityException) {
-            Log.w("NexoKioskService", "Microphone foreground permission denied")
-            foregroundDenied()
-        } catch (e: IllegalStateException) {
-            Log.w("NexoKioskService", "Foreground startup not allowed in current app state")
-            foregroundDenied()
-        }
-    }
-
-    override fun onConnected() {
-        if (!isVoiceEnabled) return
-        if (audioRecorder.isRecording()) return // Duplicate hello must not chop capture or playback.
-        voiceprintConnectionReady = true
-        // The client's onConnected is server_hello acknowledgement, not raw socket open.
-        createAudioSession()
-        duplex.connected()
-        val started = audioRecorder.startRecording()
-        duplex.microphoneReady(started)
-        if (started) {
-            webSocketClient?.queryVoiceprint()
-            val wasDisconnected = currentState == NexoState.DISCONNECTED
-            if (wasDisconnected) {
-                // Joyful reconnect greeting before settling into neutral listening
-                publish(NexoState.LISTENING, "Terhubung kembali! • Nexo Siaga", "senang")
-                main.postDelayed({
-                    if (isVoiceEnabled && !enrollmentActive && audioRecorder.isRecording() && currentState == NexoState.LISTENING && currentExpression == "senang") {
-                        publishListening()
-                    }
-                }, 2500L)
-            } else {
-                publishListening()
-            }
-            val audioToken = audioGeneration
-            main.postDelayed({
-                if (isVoiceEnabled && audioToken == audioGeneration && audioRecorder.isRecording()) {
-                    audioRecoveryAttempts = 0
-                }
-            }, 30_000L)
-        }
-        // startRecording reports the typed failure exactly once via its callback.
-    }
-
-    override fun onDisconnected() {
-        if (!isVoiceEnabled) return
-        ++audioGeneration
-        duplex.disconnected()
-        invalidateVoiceprint("Sesi suara berakhir • status suara belum diketahui")
-        audioRecorder.stopRecording()
-        audioPlayer.stop()
-        publish(NexoState.DISCONNECTED, "Koneksi terputus • mencari sinyal server...", "bingung")
-    }
-
-    override fun onStateChanged(state: NexoState, message: String?, expression: String?) {
-        if (!isVoiceEnabled) return
-        if (state == NexoState.ERROR) {
-            failAudioSession(message ?: "Sesi suara gagal")
             return
         }
-        if (state == NexoState.DISCONNECTED) {
-            ++audioGeneration
-            duplex.disconnected()
-            invalidateVoiceprint(message ?: "Koneksi suara terputus")
-            audioRecorder.stopRecording()
-            audioPlayer.stop()
-        }
-        if (enrollmentActive || audioRecovery != null) return
-        if (state == NexoState.THINKING && !duplex.playbackPending && ::earconManager.isInitialized) {
-            earconManager.playThinking()
-        }
-        duplex.stateChanged(state)
-        if (duplex.playbackPending && (state == NexoState.IDLE || state == NexoState.LISTENING)) {
-            publish(NexoState.SPEAKING, "Menyelesaikan pemutaran • mikrofon dijeda", currentExpression)
-        } else if (state == NexoState.IDLE || state == NexoState.LISTENING) {
-            if (audioRecorder.isRecording()) publishListening()
-            else publish(NexoState.ERROR, "Mikrofon tidak aktif. Periksa izin dan perangkat audio.")
-        } else {
-            publish(state, message ?: when (state) {
-                NexoState.THINKING -> "Memproses • mikrofon dijeda"
-                NexoState.SPEAKING -> "Berbicara • mikrofon dijeda"
-                else -> null
-            }, expression)
+        val client = webSocketClient ?: run { fail("Koneksi tidak tersedia"); return }
+        val lease = if (purpose == "enrollment") ownership.lease() else null
+        val enrollment = enrollmentId
+        pendingUtterance = sealed.id
+        processing.begin(sealed.id)
+        turnComplete = false
+        if (purpose == "conversation") publish(NexoState.THINKING, "Mengirim • menunggu pemeriksaan integritas", sleepExpression)
+        else sheet("UPLOADING", "Mengirim sampel ke server • menunggu pemeriksaan integritas")
+        upload.execute {
+            val admitted = runCatching {
+                if (capture != captureGeneration) false
+                else client.uploadUtterance(sealed, lease, enrollment) { capture == captureGeneration && !destroyed }
+            }.getOrDefault(false)
+            main.post { if (capture == captureGeneration && !admitted) fail("Unggahan tidak diterima • tidak ada fallback audio mentah") }
         }
     }
 
-    override fun onTelemetryReceived(amplitude: Float, bands: List<Float>?) {
-        if (!isVoiceEnabled) return
-        if (enrollmentActive) return
-        serviceCallback?.onTelemetryReceived(amplitude, bands)
-    }
-
-    override fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean) {
-        if (!isVoiceEnabled) return
-        if (enrollmentActive) return
-        serviceCallback?.onTranscriptionReceived(role, text, isFinal)
-    }
-
-    override fun onAudioChunkReceived(audioData: ByteArray) {
-        if (!isVoiceEnabled) return
-        if (enrollmentActive) return
-        duplex.ttsStarted()
-        val token = generation
-        val audioToken = audioGeneration
-        val player = audioPlayer
-        val accepted = player.writeChunk(audioData)
-        if (!accepted) main.post {
-            if (isVoiceEnabled && token == generation && audioToken == audioGeneration && !enrollmentActive) {
-                failAudioSession("Pemutaran audio gagal • hubungkan ulang")
-            }
-        }
-    }
-
-    override fun onTTSStarted() {
-        if (!isVoiceEnabled) return
-        if (enrollmentActive) return
-        val turn = playbackTurn.incrementAndGet()
-        val token = generation
-        val audioToken = audioGeneration
-        duplex.ttsStarted()
-        audioPlayer.start()
-        main.post {
-            if (isVoiceEnabled && token == generation && audioToken == audioGeneration &&
-                turn == playbackTurn.get() && !enrollmentActive) {
-                earconManager.stop()
-                publish(NexoState.SPEAKING, "Berbicara • mikrofon dijeda", currentExpression)
-            }
-        }
-    }
-
-    override fun onTTSEnded() {
-        if (!isVoiceEnabled) return
-        if (enrollmentActive) return
-        val token = generation
-        val audioToken = audioGeneration
-        val turn = playbackTurn.get()
-        audioPlayer.finish {
-            main.post {
-                if (isVoiceEnabled && token == generation && audioToken == audioGeneration && turn == playbackTurn.get()) {
-                    if (enrollmentActive) return@post
-                    duplex.playbackDrained()
-                    publishListening()
+    private fun control(json: JsonObject) {
+        val id = OutdoorProtocol.uuid(json, "connection_id") ?: return
+        if (id != ownership.connection()) return
+        val type = OutdoorProtocol.string(json, "type") ?: return
+        val request = OutdoorProtocol.uuid(json, "request_id") ?: return
+        val epoch = OutdoorProtocol.integer(json, "output_epoch", 0, Long.MAX_VALUE)
+        when (type) {
+            "audio_owner_ack" -> {
+                val owner = OutdoorProtocol.uuid(json, "owner_id") ?: return
+                val state = OutdoorProtocol.string(json, "state") ?: return
+                val paused = json.get("conversation_paused")?.let { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean && it.asBoolean } == true
+                if (owner != ownership.owner() || epoch == null) return
+                when (state) {
+                    "granted" -> {
+                        val lease = OutdoorProtocol.uuid(json, "lease_id") ?: return
+                        val ttl = OutdoorProtocol.integer(json, "lease_ms", 1, 15000)?.toInt() ?: return
+                        ownership.grant(id, request, owner, lease, ttl, paused, epoch, now())
+                    }
+                    "renewed" -> ownership.renewed(id, request, owner, OutdoorProtocol.uuid(json, "lease_id") ?: return,
+                        OutdoorProtocol.integer(json, "lease_ms", 1, 15000)?.toInt() ?: return, now())
+                    "released" -> if (ownership.released(id, request, owner, paused, epoch)) {
+                        releaseAcknowledged = true; completeReleaseIfReady()
+                    }
+                    "denied", "expired" -> fail("Kepemilikan mikrofon ditolak atau kedaluwarsa")
                 }
             }
+            "conversation_resumed" -> {
+                val paused = json.get("conversation_paused")?.let { if (it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) it.asBoolean else true } ?: true
+                if (epoch == null || !ownership.resumed(id, request, paused, epoch) || !permitted()) return
+                startResumedRecorder(id, epoch)
+            }
+            "enrollment_ack" -> {
+                if (!ownership.dedicatedAllowed(now()) || request != enrollmentRequest ||
+                    OutdoorProtocol.uuid(json, "owner_id") != sheetOwner || OutdoorProtocol.uuid(json, "lease_id") != ownership.lease() ||
+                    OutdoorProtocol.uuid(json, "enrollment_id") != enrollmentId) return
+                when (OutdoorProtocol.string(json, "state")) {
+                    "collecting" -> if (enrollmentOperation == "begin") {
+                        // Additive policy fields are mandatory: do not guess quality/count from RMS or elapsed time.
+                        val count = OutdoorProtocol.integer(json, "required_samples", 2, 5)?.toInt()
+                        val holdout = OutdoorProtocol.integer(json, "required_holdouts", 1, 1)
+                        if (count == null || holdout != 1L) { fail("Server belum mendukung kebijakan beberapa sampel dan holdout"); return }
+                        sampleCount = count; enrollmentOperation = null
+                        sheet("SAMPLES_READY", "Siap merekam $count sampel dan satu holdout. Penilaian kualitas dilakukan server.")
+                    }
+                    "saved" -> if (enrollmentOperation == "save") {
+                        enrollmentOperation = null
+                        sheet("SAVED", "Server mengonfirmasi profil tersimpan. Percakapan tetap Paused.")
+                        querySent = false
+                        queryVoiceprint()
+                    }
+                    "rejected", "cancelled" -> fail("Pendaftaran tidak disimpan: ${OutdoorProtocol.string(json, "code") ?: "quality_insufficient"}")
+                }
+            }
+            "utterance_ack" -> {
+                val utterance = OutdoorProtocol.uuid(json, "utterance_id") ?: return
+                if (pendingUtterance == null || utterance != pendingUtterance) return
+                if (webSocketClient?.uploader?.state() in setOf("ACCEPTED", "COMPLETED")) {
+                    processing.accepted(pendingUtterance!!, now())
+                    sealedPending?.let { sealed -> local.release(sealed) }; sealedPending = null
+                    if (sheetOwner == null) publish(NexoState.THINKING, "Memahami • audio diterima utuh oleh server", sleepExpression)
+                    else sheet("PROCESSING", "Memeriksa sampel di server • level sinyal bukan bukti kualitas")
+                }
+            }
+            "utterance_result" -> {
+                val utterance = OutdoorProtocol.uuid(json, "utterance_id") ?: return
+                if (utterance != pendingUtterance) return
+                if (!processing.complete(utterance, now())) { fail("Hasil ucapan terlambat atau belum dikonfirmasi"); return }
+                val completed = OutdoorProtocol.string(json, "status") == "completed"
+                pendingUtterance = null
+                sealedPending?.let { sealed -> local.release(sealed) }; sealedPending = null
+                if (!completed) { fail("Ucapan gagal: ${OutdoorProtocol.string(json, "code") ?: "processing_failed"}"); return }
+                if (sheetOwner != null) {
+                    samples.add(utterance)
+                    sheet("SAMPLES_READY", if (samples.size > sampleCount) "Sampel dan holdout diterima. Tekan Simpan untuk validasi dan publikasi profil." else
+                        "Sampel diterima. Berikutnya: ${if (samples.size == sampleCount) "holdout terpisah" else "ucapan berbeda"}.")
+                } else { turnComplete = true; maybeNextTurn() }
+            }
+            "utterance_error" -> if (OutdoorProtocol.uuid(json, "utterance_id") == pendingUtterance) fail("Unggahan ditolak")
         }
     }
-
+    private fun startResumedRecorder(id: String, epoch: Long) {
+        val gate = ownership.generation()
+        val capture = nextCapture()
+        startingCapture = true
+        audioPlayer.release(); audioPlayer = newPlayer()
+        lifecycle.execute {
+            if (audioRecorder?.stopAndJoin() == false) { main.post {
+                if (capture == captureGeneration && gate == ownership.generation()) fail("Mikrofon lama belum berhenti")
+            }; return@execute }
+            if (gate != ownership.generation() || capture != captureGeneration || !permitted()) return@execute
+            vad?.reset(); local.cancel("resume")
+            val token = local.arm("conversation", automatic, if (automatic) vad else null)
+            if (!automatic) local.start(token, now())
+            val recorder = AudioRecorderManager(options = CaptureOptions(automaticVad = automatic),
+                audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager,
+                onError = { captureFailed(capture, it) }, onRecoverableError = { captureFailed(capture, it) },
+                onRouteInvalidated = { captureFailed(capture, "route_changed") }) { bytes, count ->
+                if (capture == captureGeneration) local.accept(token, bytes, count, now())
+            }
+            audioRecorder = recorder
+            val started = recorder.startRecording()
+            if (capture != captureGeneration || gate != ownership.generation()) { local.cancel("stale_resume"); recorder.stopAndJoin(); return@execute }
+            main.post {
+                if (capture != captureGeneration || gate != ownership.generation()) return@post
+                startingCapture = false
+                if (!ownership.recorderReady(gate, started && recorder.isRecording()) || !permitted()) { fail("Mikrofon gagal dimulai"); return@post }
+                webSocketClient?.allowOutput(id, epoch)
+                activeToken = token; activePurpose = "conversation"; activeCaptureGeneration = capture
+                publish(NexoState.LISTENING, if (automatic) "Siap • menunggu ucapan" else "Merekam • tekan Selesai", sleepExpression)
+            }
+        }
+    }
+    private fun output(json: JsonObject) {
+        val id = OutdoorProtocol.uuid(json, "connection_id") ?: return
+        val epoch = OutdoorProtocol.integer(json, "output_epoch", 0, Long.MAX_VALUE) ?: return
+        if (!ownership.outputAllowed(id, epoch)) return
+        when (OutdoorProtocol.string(json, "type")) {
+            "tts_start" -> {
+                startingCapture = false
+                playbackPending = true; playbackTurn.incrementAndGet()
+                earconManager.stop()
+                if (playbackReady) audioPlayer.start()
+                publish(NexoState.SPEAKING, "Menjawab • mikrofon dijeda", currentExpression)
+            }
+            "tts_end" -> {
+                val turn = playbackTurn.get()
+                audioPlayer.finish { main.post {
+                    if (ownership.outputAllowed(id, epoch) && turn == playbackTurn.get()) {
+                        playbackPending = false; playbackDrainedAt = now(); maybeNextTurn()
+                    }
+                } }
+            }
+            "state_change", "cognitive" -> {
+                val expression = OutdoorProtocol.string(json, "expression")
+                if (expression == "sleeping" || expression == "tidur") sleepExpression = expression
+                else if (expression != null) sleepExpression = null
+                when (OutdoorProtocol.string(json, "state")) {
+                    "THINKING" -> publish(NexoState.THINKING, "Memahami • mikrofon dijeda", expression)
+                    "SPEAKING" -> publish(NexoState.SPEAKING, "Menjawab • mikrofon dijeda", expression)
+                    "ERROR" -> fail("Server gagal memproses ucapan")
+                    // IDLE/LISTENING are not permission to arm hardware or publish ready.
+                }
+            }
+            "transcription" -> serviceCallback?.onTranscriptionReceived(OutdoorProtocol.string(json, "role") ?: "assistant",
+                OutdoorProtocol.string(json, "text") ?: "", json.get("is_final")?.asBoolean ?: true)
+        }
+    }
+    private fun maybeNextTurn() {
+        if (!turnComplete || playbackPending || !ownership.normalAllowed() || now() - playbackDrainedAt < 600) return
+        turnComplete = false
+        if (automatic && vadAvailable) startCapture("conversation", true)
+        else publish(NexoState.IDLE, "Siap • tekan Mulai bicara untuk ucapan berikutnya", sleepExpression)
+    }
+    private val tick = object : Runnable {
+        override fun run() {
+            if (destroyed) return
+            val time = now()
+            if (!permitted() && (sheetOwner != null || voiceEnabled)) { fail("Izin atau tampilan mikrofon tidak aktif") }
+            if (sheetOwner != null && sheetState == "RELEASING" && time >= releaseDeadline) fail("Pelepasan mikrofon belum terkonfirmasi")
+            else if (sheetOwner != null && sheetState == "ACQUIRING" && time - sheetOpened >= 3000) fail("Batas waktu akuisisi mikrofon")
+            else if (ownership.expired(time)) fail("Lease atau konfirmasi mikrofon kedaluwarsa")
+            else if (sheetOwner != null && !ownership.releasing()) {
+                if (ownership.renewDue(time)) {
+                    val request = uuid()
+                    if (ownership.renew(request, time) && webSocketClient?.sendOutdoorControl("audio_owner_renew", request,
+                            mapOf("owner_id" to sheetOwner!!, "lease_id" to ownership.lease()!!)) != true) fail("Pembaruan lease gagal")
+                }
+                if (sheetState == "ACQUIRING" && sheetLocalStopped && ownership.dedicatedAllowed(time)) {
+                    sheet("READY", if (sheetPurpose == "diagnostic") "Siap • rekam klip lokal hanya dengan persetujuan Anda" else "Siap • memuat status profil, percakapan tetap Paused")
+                    queryVoiceprint()
+                }
+            }
+            if (queryRequest != null && time >= queryDeadline) fail("Status profil tidak tersedia")
+            if (pendingDelete != null && time >= deleteDeadline) fail("Hasil penghapusan belum diketahui • periksa pada pembukaan berikutnya")
+            if (enrollmentOperation != null && time >= enrollmentDeadline) fail("Pendaftaran melewati batas waktu")
+            if (audioRecorder?.isRecording() == true && !finishPending && !startingCapture) {
+                when (local.state()) {
+                    "SEALED" -> finishCapture()
+                    "ERROR", "PAUSED" -> fail("Rekaman gagal: ${local.error() ?: "capture_failed"}")
+                    "CAPTURING", "ARMED" -> {
+                        val rms = local.metrics().rms().toFloat().coerceIn(0f, 1f)
+                        if (sheetOwner != null) serviceCallback?.onEnrollmentLevel(rms)
+                        else {
+                            serviceCallback?.onTelemetryReceived(rms, null)
+                            if (local.state() == "CAPTURING") publish(NexoState.LISTENING, "Merekam • tekan Selesai", sleepExpression)
+                        }
+                    }
+                }
+            }
+            if (processing.expired(time)) fail("Pemeriksaan ucapan melewati batas waktu • percakapan tetap Paused, lanjutkan secara eksplisit untuk mencoba ulang")
+            val uploadState = webSocketClient?.uploader?.state()
+            if (pendingUtterance != null && uploadState in setOf("ERROR", "EXPIRED", "DELIVERY_UNKNOWN", "DISCONNECTED")) fail("Unggahan terhenti • ucapkan ulang setelah lanjut")
+            if (diagnosticReady && time >= diagnosticUntil) { diagnosticReady = false; sheet("READY", "Klip kedaluwarsa dan dihapus. Rekam ulang bila diperlukan.") }
+            maybeNextTurn()
+            main.postDelayed(this, 100)
+        }
+    }
+    private fun startForegroundNotification() {
+        val channelId = "nexo_kiosk_service"
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(NotificationChannel(channelId, "Nexo Appliance Service", NotificationManager.IMPORTANCE_LOW))
+        val notification = NotificationCompat.Builder(this, channelId).setContentTitle("Nexo Appliance")
+            .setContentText("Kontrol audio Nexo • lihat layar untuk status mikrofon")
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)).build()
+        try { startForeground(1001, notification) }
+        catch (_: SecurityException) { foregroundAllowed = false; persistOff(); publish(NexoState.ERROR, "Izin layanan mikrofon diperlukan") }
+        catch (_: IllegalStateException) { foregroundAllowed = false; persistOff(); publish(NexoState.ERROR, "Buka aplikasi untuk memakai mikrofon") }
+    }
     override fun onDestroy() {
-        cancelAudioRecovery()
-        main.removeCallbacksAndMessages(null)
-        voiceEnabled = false
-        ++generation
-        ++audioGeneration
-        duplex.disconnected()
-        invalidateVoiceprint("Sesi suara berakhir • status suara belum diketahui")
-        serviceCallback = null
-        if (::earconManager.isInitialized) earconManager.release()
+        closeRecordingSheet("service_destroy")
+        destroyed = true; ++generation; persistOff()
+        ownership.disconnected(); webSocketClient?.fenceOutput()
+        invalidateCapture("service_destroy")
+        captureAdmission.close()
+        main.removeCallbacksAndMessages(null); serviceCallback = null
+        earconManager.release(); audioPlayer.release(); webSocketClient?.disconnect(); webSocketClient = null
+        lifecycle.execute {
+            val joined = audioRecorder?.stopAndJoin() != false
+            diagnostic.close()
+            // A timed-out consumer may still use ONNX. Do not close/reset its session concurrently.
+            if (joined) { vad?.close(); vad = null }
+        }
+        lifecycle.shutdown(); upload.shutdownNow()
         super.onDestroy()
-        audioRecorder.stopRecording()
-        audioPlayer.release()
-        webSocketClient?.disconnect()
-        Log.i("NexoKioskService", "NexoKioskService destroyed.")
     }
 }

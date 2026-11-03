@@ -1,6 +1,7 @@
 """Static analysis guards for Android client: XML drawables, resource tags, Kotlin integrity,
 
 sleeping expression, and earcon audio files without calling Gradle or AAPT.
+These are source/resource checks, not Kotlin compilation or Android runtime evidence.
 """
 
 from pathlib import Path
@@ -374,18 +375,23 @@ def test_earcon_manager_soundpool_wiring():
 # 6. Service & Visualizer Integration Guards
 # ---------------------------------------------------------------------------
 
-def test_kiosk_service_earcon_and_bounded_audio():
-    """Verify NexoKioskService triggers earcons on state changes and bounds audio playback."""
+def test_kiosk_service_suppresses_earcons_and_fences_audio_queue():
+    """Guard source wiring for silent v2 transitions and owner-tagged playback."""
     service_file = JAVA_MAIN / "id/my/yhdev/nexo/service/NexoKioskService.kt"
     source = service_file.read_text()
 
-    # Triggering earcons
-    assert "earconManager.playListening()" in source
-    assert "earconManager.playThinking()" in source
-
-    # Bounded audio track queue usage
-    assert "val player = audioPlayer" in source
-    assert "player.writeChunk(audioData)" in source
+    assert not re.search(r'earconManager\.play(?:Listening|Thinking)\s*\(', source)
+    assert 'EarconManager(this, ::outputGuard)' in source
+    opening = source.split('fun openRecordingSheet(', 1)[1].split('private fun tryAcquire()', 1)[0]
+    assert opening.index('ownership.openSheet(') < opening.index('earconManager.stop()')
+    assert 'webSocketClient?.fenceOutput()' in opening
+    assert 'audioPlayer.stopAndConfirm {' in opening
+    output = source.split('override fun onOutdoorAudio(', 1)[1].split('override fun onStateChanged(', 1)[0]
+    assert output.index('token != generation || !ownership.outputAllowed(connectionId, epoch)') < output.index('player.writeChunk(audioData)')
+    assert 'val player = audioPlayer' in output
+    assert 'if (!player.writeChunk(audioData)' in output
+    assert 'dispatch { fail("Pemutaran audio gagal") }' in output
+    assert 'earconManager.release()' in source
 
 
 def test_visualizer_burn_in_protection_and_ambient_sleeping():

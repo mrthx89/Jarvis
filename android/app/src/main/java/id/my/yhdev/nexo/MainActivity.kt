@@ -44,6 +44,9 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
     private lateinit var tvStatus: TextView
     private lateinit var tvSubtitle: TextView
     private lateinit var toggleVoice: Button
+    private lateinit var captureMode: com.google.android.material.switchmaterial.SwitchMaterial
+    private lateinit var startUtterance: Button
+    private lateinit var finishUtterance: Button
     private var voiceEnabled = false
     private var voiceStateKnown = false
     private lateinit var voiceMood: TextView
@@ -92,14 +95,12 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         }
     }
 
-    // Inactivity & Ambient Sleep Dimming (> 5 minutes idle)
+    // Visible HUD actions retain full contrast; sleeping mode hides the HUD separately.
     private var lastInteractionTime = SystemClock.uptimeMillis()
     private val ambientCheckRunnable = object : Runnable {
         override fun run() {
             if (isDestroyed || !uiActive) return
-            val idleDuration = SystemClock.uptimeMillis() - lastInteractionTime
-            val isIdleQuiet = lastState == NexoState.IDLE || lastState == NexoState.DISCONNECTED
-            val targetAlpha = if (isIdleQuiet && idleDuration > 300_000L) 0.42f else 1.0f
+            val targetAlpha = 1.0f // Interactive boundaries, including focus, must remain readable.
             if (::pillStatus.isInitialized && pillStatus.alpha != targetAlpha) {
                 pillStatus.animate().alpha(targetAlpha).setDuration(1200).start()
             }
@@ -200,6 +201,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as NexoKioskService.LocalBinder
             kioskService = binder.getService()
+            kioskService?.setUiForeground(uiActive)
             kioskService?.serviceCallback = this@MainActivity
             isBound = true
             bindingRequested = false
@@ -277,13 +279,23 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         pillStatus = findViewById(R.id.pillStatus)
         visualizerView = findViewById(R.id.visualizerView)
         tvStatus = findViewById(R.id.tvStatus)
-        tvStatus.setOnLongClickListener { showCredentialSetup(); true }
-        tvStatus.setOnClickListener {
-            Toast.makeText(this, tvStatus.contentDescription, Toast.LENGTH_LONG).show()
+        pillStatus.setOnLongClickListener { showCredentialSetup(); true }
+        pillStatus.setOnClickListener {
+            Toast.makeText(this, pillStatus.contentDescription, Toast.LENGTH_LONG).show()
         }
+        ViewCompat.replaceAccessibilityAction(pillStatus,
+            androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_LONG_CLICK,
+            getString(R.string.status_setup_action)) { _, _ -> showCredentialSetup(); true }
         pillVoiceprint = findViewById(R.id.pillVoiceprint)
         ivVoiceprintLed = findViewById(R.id.ivVoiceprintLed)
         tvVoiceprintStatus = findViewById(R.id.tvVoiceprintStatus)
+        tvVoiceprintStatus.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                pillVoiceprint.contentDescription = s
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
         pillVoiceprint.setOnClickListener {
             resetActivity()
             showVoiceprintManagement()
@@ -296,6 +308,22 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             resetActivity()
             val service = kioskService ?: return@setOnClickListener
             if (service.isVoiceEnabled) service.stopVoice() else service.startVoice()
+        }
+        captureMode = findViewById(R.id.captureMode)
+        startUtterance = findViewById(R.id.startUtterance)
+        finishUtterance = findViewById(R.id.finishUtterance)
+        captureMode.setOnClickListener {
+            val selected = captureMode.isChecked
+            if (kioskService?.setAutomaticCapture(selected) != true) {
+                captureMode.isChecked = !selected
+                Toast.makeText(this, R.string.capture_mode_busy, Toast.LENGTH_LONG).show()
+            }
+        }
+        startUtterance.setOnClickListener {
+            if (kioskService?.startManualUtterance() != true) Toast.makeText(this, R.string.capture_start_unavailable, Toast.LENGTH_LONG).show()
+        }
+        finishUtterance.setOnClickListener {
+            if (kioskService?.finishManualUtterance() != true) Toast.makeText(this, R.string.recording_finish_failed, Toast.LENGTH_LONG).show()
         }
         tvSubtitle = findViewById(R.id.tvSubtitle)
         tvSubtitle.movementMethod = android.text.method.ScrollingMovementMethod.getInstance()
@@ -342,21 +370,54 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         ).also { it.show() }
     }
 
+    private var recordingResumeRequested = false
+    private var pendingDiagnosticOpen = false
     private fun showVoiceprintManagement() {
-        if (voiceprintSheet != null || isFinishing || isDestroyed) return
+        if (voiceprintSheet != null || isFinishing || isDestroyed || !uiActive) return
+        val service = kioskService ?: return
+        if (!service.openRecordingSheet()) return
+        recordingResumeRequested = false
         voiceprintSheet = id.my.yhdev.nexo.ui.VoiceprintManagementSheet(
             activity = this,
-            currentDialog = lastVoiceprintDialog,
-            onEnroll = { kioskService?.startVoiceprintEnrollment() == true },
-            onFinish = { kioskService?.finishVoiceprintEnrollment() == true },
-            onCancel = { kioskService?.cancelVoiceprintEnrollment() },
-            onResumeMicrophone = { kioskService?.startVoice() },
-            onUnenroll = {
-                kioskService?.unenrollVoiceprint()
+            currentDialog = null,
+            onEnroll = {
+                if (service.recordingSession().diagnostic) service.startDiagnosticCapture()
+                else service.startVoiceprintEnrollment()
             },
-            onDismiss = { voiceprintSheet = null }
-        ).also { it.show() }
-        kioskService?.queryVoiceprint()
+            onFinish = { service.finishVoiceprintEnrollment() },
+            onSave = { service.saveVoiceprintEnrollment() },
+            onCancel = { service.cancelVoiceprintEnrollment() },
+            onResumeMicrophone = { recordingResumeRequested = true; service.resumeAfterRecording() },
+            onUnenroll = { service.unenrollVoiceprint() },
+            onDiagnostic = { pendingDiagnosticOpen = true; service.closeRecordingSheet("switch_diagnostic") },
+            onPlayDiagnostic = { service.playDiagnostic() },
+            onDeleteDiagnostic = { service.deleteDiagnostic() },
+            onDismiss = {
+                voiceprintSheet = null
+                if (!recordingResumeRequested) service.closeRecordingSheet("dismiss")
+                pendingDiagnosticOpen = false
+            }
+        ).also { it.show(); it.onSessionChanged(service.recordingSession()) }
+    }
+
+    override fun onRecordingSessionChanged(session: NexoKioskService.RecordingSession) {
+        runOnUiThread {
+            if (isDestroyed) return@runOnUiThread
+            voiceprintSheet?.onSessionChanged(session)
+            if (session.state == "CLOSED" && pendingDiagnosticOpen && uiActive) {
+                pendingDiagnosticOpen = false
+                kioskService?.openRecordingSheet(diagnosticOnly = true)
+            }
+        }
+    }
+
+    override fun onCaptureModeChanged(automatic: Boolean, available: Boolean) {
+        runOnUiThread {
+            if (!::captureMode.isInitialized) return@runOnUiThread
+            captureMode.isChecked = automatic
+            captureMode.isEnabled = available
+            captureMode.text = getString(if (available) R.string.capture_automatic else R.string.capture_auto_unavailable)
+        }
     }
 
     override fun onEnrollmentLevel(amplitude: Float) {
@@ -412,6 +473,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
     override fun onResume() {
         super.onResume()
         uiActive = true
+        kioskService?.setUiForeground(true)
         renderVoiceMood()
         uiHandler.removeCallbacks(pixelShiftRunnable)
         uiHandler.postDelayed(pixelShiftRunnable, 210_000L)
@@ -421,6 +483,8 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
     }
 
     override fun onStop() {
+        pendingDiagnosticOpen = false
+        kioskService?.setUiForeground(false)
         voiceprintSheet?.dismiss()
         uiActive = false
         uiHandler.removeCallbacks(hideVoiceMood)
@@ -500,7 +564,9 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             (state == NexoState.IDLE || state == NexoState.LISTENING)
         applySleepModeUi(isSleeping)
         visualizerView.setState(if (voiceEnabled) state else NexoState.IDLE, lastExpression)
-        val status = getString(when {
+        val status = message?.substringBefore(" •")?.takeIf {
+            it in setOf("Siap", "Merekam", "Mengirim", "Memahami", "Menjawab", "Paused")
+        } ?: getString(when {
             state == NexoState.ERROR -> R.string.voice_error
             !voiceEnabled -> R.string.voice_paused
             else -> when (state) {
@@ -519,6 +585,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             tvStatus.text = status
         }
         tvStatus.contentDescription = message ?: status
+        pillStatus.contentDescription = message ?: status
         // Actionable errors and disconnect states remain visible; copy still retains the full last reply.
         if (!hasTranscription || state == NexoState.ERROR || state == NexoState.DISCONNECTED) {
             tvSubtitle.text = message?.takeIf { it.isNotBlank() } ?: status
@@ -536,6 +603,8 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             }
         }
         ivStatusLed.setColorFilter(ledColor)
+        startUtterance.isEnabled = voiceEnabled && status == "Siap" && !captureMode.isChecked
+        finishUtterance.isEnabled = voiceEnabled && status == "Merekam"
     }
 
     override fun onTelemetryReceived(amplitude: Float, bands: List<Float>?) {

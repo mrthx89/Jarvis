@@ -10,7 +10,6 @@ import okio.ByteString.Companion.toByteString
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.Executors
 import android.os.SystemClock
 import id.my.yhdev.nexo.audio.core.UploadSession
 import id.my.yhdev.nexo.audio.core.UtteranceBuffer
@@ -45,13 +44,19 @@ class NexoWebSocketClient(
     @Volatile private var outputEpoch = 0L
     @Volatile private var outputAllowed = false
     private val uploadLifecycle = Any()
-    private val uploadWorker = Executors.newSingleThreadScheduledExecutor { runnable ->
+    @Volatile private var captureSendAllowed: () -> Boolean = { false }
+    /** No uploader monitor is taken here. Actual sends share only the bounded send fence. */
+    fun fenceCapture() { synchronized(sendLock) { captureSendAllowed = { false } } }
+    private val uploadWorker = java.util.concurrent.ScheduledThreadPoolExecutor(1) { runnable ->
         Thread(runnable, "Nexo-UtteranceUpload").apply { isDaemon = true }
+    }.apply {
+        setExecuteExistingDelayedTasksAfterShutdownPolicy(false)
+        setContinueExistingPeriodicTasksAfterShutdownPolicy(false)
     }
     val uploader = UploadSession(object : UploadSession.Transport {
         override fun control(value: MutableMap<String, Any>): Boolean = sendV2Map(value)
         override fun binary(value: ByteArray): Boolean = synchronized(sendLock) {
-            if (outdoorSession == null || !protocolReady.get()) false
+            if (outdoorSession == null || !protocolReady.get() || !captureSendAllowed()) false
             else webSocket?.send(value.toByteString()) == true
         }
         override fun queuedBytes(): Long = webSocket?.queueSize() ?: 131072
@@ -80,6 +85,11 @@ class NexoWebSocketClient(
         fun onVoiceprintDialogReceived(dialog: VoiceprintDialog)
         fun onOutdoorControl(message: JsonObject) {}
         fun onOutdoorProtocolReady(session: OutdoorSession) {}
+        fun usesTaggedOutput(): Boolean = false
+        fun onOutputControl(message: JsonObject) {}
+        fun onOutdoorAudio(connectionId: String, epoch: Long, audioData: ByteArray) {
+            onAudioChunkReceived(audioData)
+        }
     }
 
     fun connect() {
@@ -131,7 +141,8 @@ class NexoWebSocketClient(
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
                 if (shouldRun.get() && protocolReady.get() && outputAllowed && acceptingPlayback.get() &&
                     !ended.get() && token == socketGeneration.get()) {
-                    listener.onAudioChunkReceived(bytes.toByteArray())
+                    val session = outdoorSession ?: return
+                    listener.onOutdoorAudio(session.connectionId, outputEpoch, bytes.toByteArray())
                 }
             }
 
@@ -177,6 +188,19 @@ class NexoWebSocketClient(
                     val epoch = OutdoorProtocol.integer(json, "output_epoch", 0, Long.MAX_VALUE) ?: return
                     if (!outputAllowed || epoch != outputEpoch) return
                 }
+            }
+            if (listener.usesTaggedOutput() && type in setOf("state_change", "cognitive", "transcription", "tts_start", "tts_end", "visual_telemetry")) {
+                if (type == "tts_start") {
+                    val valid = OutdoorProtocol.string(json, "format") == "audio/pcm" &&
+                        OutdoorProtocol.integer(json, "sample_rate", 24000, 24000) == 24000L &&
+                        OutdoorProtocol.integer(json, "channels", 1, 1) == 1L &&
+                        OutdoorProtocol.integer(json, "bit_depth", 16, 16) == 16L
+                    if (!valid) error("invalid_format")
+                    acceptingPlayback.set(true)
+                }
+                if (type == "tts_end" && !acceptingPlayback.getAndSet(false)) return
+                listener.onOutputControl(json)
+                return
             }
             when (type) {
                 "server_hello" -> {
@@ -310,10 +334,23 @@ class NexoWebSocketClient(
     @Deprecated("Raw PCM is forbidden in v2; use uploadUtterance after local seal")
     fun sendAudioChunk(chunk: ByteArray, length: Int): Boolean = false
 
-    fun uploadUtterance(pcm: UtteranceBuffer.Sealed, leaseId: String? = null, enrollmentId: String? = null): Boolean =
-        uploader.begin(pcm, leaseId, enrollmentId, SystemClock.elapsedRealtime())
+    fun uploadUtterance(pcm: UtteranceBuffer.Sealed, leaseId: String? = null, enrollmentId: String? = null,
+        stillCurrent: () -> Boolean = { true }): Boolean {
+        val result = java.util.concurrent.CompletableFuture<Boolean>()
+        runCatching { uploadWorker.execute {
+            if (!shouldRun.get() || !stillCurrent()) { result.complete(false); return@execute }
+            synchronized(sendLock) { captureSendAllowed = stillCurrent }
+            result.complete(runCatching {
+                uploader.begin(pcm, leaseId, enrollmentId, SystemClock.elapsedRealtime())
+            }.getOrDefault(false))
+        } }.onFailure { result.complete(false) }
+        return runCatching { result.get(5, TimeUnit.SECONDS) }.getOrDefault(false)
+    }
 
-    fun cancelUtterance() { uploader.cancel(SystemClock.elapsedRealtime()) }
+    fun cancelUtterance() {
+        fenceCapture()
+        runCatching { uploadWorker.execute { uploader.cancel(SystemClock.elapsedRealtime()) } }
+    }
 
     fun fenceOutput() { outputAllowed = false; acceptingPlayback.set(false) }
 
@@ -339,7 +376,8 @@ class NexoWebSocketClient(
 
     private fun sendV2Map(value: Map<String, Any>): Boolean = synchronized(sendLock) {
         val session = outdoorSession
-        if (session == null || value["connection_id"] != session.connectionId || !protocolReady.get() || !shouldRun.get()) false
+        val captureControl = value["type"] in setOf("utterance_begin", "utterance_commit")
+        if ((captureControl && !captureSendAllowed()) || session == null || value["connection_id"] != session.connectionId || !protocolReady.get() || !shouldRun.get()) false
         else {
             val text = gson.toJson(value)
             val bytes = text.toByteArray(Charsets.UTF_8).size
@@ -390,11 +428,14 @@ class NexoWebSocketClient(
     fun disconnect() {
         socketGeneration.incrementAndGet()
         fenceOutput()
-        uploader.cancel(SystemClock.elapsedRealtime())
-        uploader.clear()
-        uploadWorker.shutdownNow()
-        outdoorSession = null
+        fenceCapture()
         shouldRun.set(false)
+        runCatching { uploadWorker.execute {
+            uploader.cancel(SystemClock.elapsedRealtime())
+            uploader.clear()
+        } }
+        uploadWorker.shutdown()
+        outdoorSession = null
         isConnected.set(false)
         protocolReady.set(false)
         webSocket?.cancel()

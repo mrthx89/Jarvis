@@ -1,4 +1,4 @@
-"""Static analysis guards for Android mascot visual effects, burn-in protection, earcons, and audio queue."""
+"""Source/resource guards only; not Android compilation, rendering or runtime evidence."""
 
 import os
 from pathlib import Path
@@ -93,8 +93,15 @@ def test_audiotrack_bounded_queue_guard():
     service_source = (JAVA_SERVICE / "NexoKioskService.kt").read_text()
     assert "val player = audioPlayer" in service_source
     assert "player.writeChunk(audioData)" in service_source
-    assert "earconManager.playListening()" in service_source
-    assert "earconManager.playThinking()" in service_source
+    assert 'queuedBytes.get() >= maxBufferedBytes' in source
+    assert 'minOf(data.size - offset, maxBufferedBytes - queuedBytes.get(), 9600)' in source
+    assert 'if (token == generation.get()) queuedBytes.addAndGet(-count)' in source
+    assert 'outputGuard { if (current(token)) written = output?.write(' in source
+    assert 'EarconManager(this, ::outputGuard)' in service_source
+    assert 'earconManager.playListening(' not in service_source
+    assert 'earconManager.playThinking(' not in service_source
+    assert 'if (destroyed || !ownership.outputAllowed(connection, epoch))' in service_source
+    assert 'outputGuard = { action -> playbackReady && connection != null && outputGuard(connection, epoch, action) }' in service_source
 
 
 def test_visualizer_living_eyes_and_physics_spring():
@@ -146,8 +153,8 @@ def test_main_activity_hud_pixel_shifting_and_ambient_dim():
     assert "pillStatus.animate()" in source
 
 
-def test_disconnected_expression_and_searching_flow():
-    """Verify disconnected state uses searching/inquisitive expressions (BINGUNG/SEDIH) with amber aura and living saccades."""
+def test_disconnected_visual_assets_and_v2_pause_wiring():
+    """Keep disconnected visuals available without treating reconnect as mic consent."""
     vis_source = (JAVA_UI / "VisualizerView.kt").read_text()
     assert "NexoState.DISCONNECTED -> MascotExpression.BINGUNG" in vis_source
     assert "currentState == NexoState.DISCONNECTED && now >= nextGlanceTime" in vis_source
@@ -158,11 +165,29 @@ def test_disconnected_expression_and_searching_flow():
     assert "NexoState.DISCONNECTED -> 0xFFFFB300.toInt()" in activity_source
 
     service_source = (JAVA_SERVICE / "NexoKioskService.kt").read_text()
-    assert 'publish(NexoState.DISCONNECTED, "Koneksi terputus • mencari sinyal server...", "bingung")' in service_source
-    assert 'wasDisconnected = currentState == NexoState.DISCONNECTED' in service_source
-    assert '"Terhubung kembali! • Nexo Siaga"' in service_source
+    assert 'override fun onDisconnected() = dispatch { fail("Koneksi terputus • percakapan tetap Paused") }' in service_source
+    failure = service_source.split('private fun fail(', 1)[1].split('fun initializeConnection(', 1)[0]
+    assert 'resumeOnHello = false; resumeOnRelease = false' in failure
+    assert 'closeRecordingSheet("error")' in failure
+    assert 'pauseLocal("error")' in failure
+    assert 'publish(NexoState.ERROR, message, sleepExpression)' in failure
+    pause = service_source.split('private fun pauseLocal(', 1)[1].split('private fun fail(', 1)[0]
+    assert 'persistOff()' in pause
+    assert 'ownership.disconnected()' in pause
+    assert 'invalidateCapture(reason)' in pause
+    assert 'webSocketClient?.disconnect(); webSocketClient = null' in pause
+    connected = service_source.split('override fun onOutdoorProtocolReady(', 1)[1].split('override fun onDisconnected()', 1)[0]
+    assert 'ownership.connected(session.connectionId, session.outputEpoch)' in connected
+    assert 'else if (resumeOnHello) requestResume()' in connected
+    assert 'override fun onConnected() {}' in connected
+    assert 'startRecording(' not in connected
+    created = service_source.split('override fun onCreate()', 1)[1].split('private fun newPlayer()', 1)[0]
+    assert 'persistOff()' in created
+    assert 'requestResume()' not in created
 
     net_source = (ANDROID_MAIN / "java/id/my/yhdev/nexo/network/NexoWebSocketClient.kt").read_text()
-    assert "reconnectAttempt++" in net_source
-    assert "Koneksi terputus • mencoba ulang dalam" in net_source
-    assert "Menghubungkan ke server (percobaan" in net_source
+    disconnect = net_source.split('fun disconnect()', 1)[1]
+    assert 'shouldRun.set(false)' in disconnect
+    assert 'fenceOutput()' in disconnect
+    assert 'uploader.clear()' in disconnect
+    assert 'socketGeneration.incrementAndGet()' in disconnect

@@ -1,6 +1,8 @@
-"""Source contracts only: no Android compilation, timing, or hardware claims.
+"""Source-only v2 fail-closed guards; not Android runtime/build/timing evidence.
 
-Run with python -m unittest discover -s server/tests -p test_android_capture_recovery_static.py.
+The production Java ownership/capture/generation gates execute independently via
+OwnershipHarness/CaptureHarness/GenerationHarness in test_android_audio_core.py.
+These source checks do not execute the Kotlin service or establish hardware recovery.
 """
 from pathlib import Path
 import re
@@ -15,7 +17,9 @@ def source(relative):
 
 
 def body(text, marker):
-    start = text.index("{", text.index(marker))
+    offset = text.index(marker)
+    assert "{" in text[offset:].splitlines()[0], f"Expected block body: {marker}"
+    start = text.index("{", offset)
     depth, end = 1, start + 1
     while depth:
         depth += (text[end] == "{") - (text[end] == "}")
@@ -24,30 +28,27 @@ def body(text, marker):
 
 
 class CaptureRecoveryStaticTests(unittest.TestCase):
-    def test_gate_reads_and_transitions_share_monitor(self):
+    def test_legacy_duplex_gate_reads_and_transitions_still_share_monitor(self):
         gate = source("audio/HalfDuplexGate.kt")
         self.assertRegex(gate, r"val canSendAudio: Boolean\s+@Synchronized get")
         for method in ("connected", "disconnected", "microphoneReady", "stateChanged",
                        "ttsStarted", "playbackDrained", "playbackFailed"):
             self.assertRegex(gate, rf"@Synchronized\s+fun {method}\(")
-        # Duplicate readiness must not erase THINKING/SPEAKING or microphone readiness.
         self.assertIn("if (ready) return", body(gate, "fun connected()"))
         self.assertIn("playbackPending = false", body(gate, "fun connected()"))
 
-    def test_dead_recorder_is_retryable_but_permission_is_terminal(self):
+    def test_recorder_error_types_and_generation_fences_are_preserved(self):
         recorder = source("audio/AudioRecorderManager.kt")
         self.assertIn("private val onRecoverableError: (String) -> Unit = onError", recorder)
-        # Runtime error codes, blocked STOP and generation fencing are exercised by
-        # test_android_audio_core.py against production Java, not source spelling.
+        # Typed low-level errors do NOT grant the v2 service permission to retry.
         self.assertIn("CapturePump(source", recorder)
         self.assertIn('catch (_: SecurityException)', recorder)
         self.assertIn('onError("permission_loss")', recorder)
+        self.assertIn('if (code == "permission_loss") onError(code) else onRecoverableError(code)', recorder)
         self.assertIn("generation.matches(token)", recorder)
         self.assertIn("generation.activate(token)", recorder)
-        self.assertIn("generation.invalidate(captureToken)", body(recorder, "fun stopAndJoin("))
-        self.assertIn("pump?.stop(timeoutMs)", recorder)
-        initialized = body(source("service/NexoKioskService.kt"), "fun initializeConnection(")
-        self.assertRegex(initialized, r'publish\(NexoState.DISCONNECTED, "Menghubungkan ke server\.\.\."\)\s+if \(!foregroundAllowed\) return')
+        stop = body(recorder, "fun stopAndJoin(")
+        self.assertLess(stop.index("generation.invalidate(captureToken)"), stop.index("pump?.stop(timeoutMs)"))
         self.assertIn("stopAndJoin()", body(recorder, "fun startRecording()"))
         options = source("audio/CaptureOptions.kt")
         self.assertIn("MediaRecorder.AudioSource.VOICE_COMMUNICATION", options)
@@ -60,77 +61,102 @@ class CaptureRecoveryStaticTests(unittest.TestCase):
         self.assertIn("fun attachNoiseSuppressor", echo_helper)
         self.assertIn("NoiseSuppressor.isAvailable()", echo_helper)
 
-    def test_recorder_recovery_is_bounded_cancelled_and_session_fenced(self):
+    def test_recorder_failure_cancels_and_requires_explicit_retry_not_reconnect(self):
         service = source("service/NexoKioskService.kt")
-        session = body(service, "private fun createAudioSession()")
-        self.assertIn("onRecoverableError =", session)
-        self.assertIn("recoverAudioSession(message)", session)
-        recover = body(service, "private fun recoverAudioSession(")
-        self.assertIn("failAudioSession(message)", recover)
-        self.assertIn("audioRecoveryAttempts >= 3", recover)
-        self.assertIn("checkSelfPermission", recover)
-        self.assertIn("postDelayed", recover)
-        self.assertIn("if (!foregroundAllowed) return", recover)
+        for marker in ("private fun startCapture(", "private fun startResumedRecorder("):
+            capture = body(service, marker)
+            self.assertIn("onError =", capture)
+            self.assertIn("onRecoverableError =", capture)
+            self.assertEqual(capture.count("captureFailed(capture,"), 3)
+        failed = body(service, "private fun captureFailed(")
+        self.assertIn("captureAdmission.revoke(capture)", failed)
+        self.assertIn("if (revoked < 0) return", failed)
+        self.assertNotIn("local.fail(", failed)
+        self.assertNotIn("lifecycle.execute", failed)
+        self.assertIn("destroyed || revoked != captureGeneration", failed)
+        self.assertIn('fail("Rekaman gagal: $code")', failed)
+        fail = body(service, "private fun fail(")
+        self.assertIn('closeRecordingSheet("error")', fail)
+        self.assertIn('pauseLocal("error")', fail)
+        self.assertIn("Tutup dan buka lagi", fail)
+        pause = body(service, "private fun pauseLocal(")
+        for fragment in ("persistOff()", "ownership.disconnected()", "fenceOutput()",
+                         "invalidateCapture(reason)", "webSocketClient?.disconnect()"):
+            self.assertIn(fragment, pause)
+        for forbidden in ("postDelayed", "ensureConnection()", "requestResume()", "startRecording()"):
+            self.assertNotIn(forbidden, failed + fail + pause)
+        self.assertNotIn("recoverAudioSession", service)
+        self.assertNotIn("audioRecoveryAttempts", service)
+        self.assertIn("override fun onDisconnected() = dispatch { fail(", service)
         self.assertIn("stopSelf()", body(service, "fun stopVoice()"))
-        self.assertIn("catch (e: IllegalStateException)", body(service, "fun startVoice()"))
-        self.assertIn("catch (e: SecurityException)", body(service, "fun startVoice()"))
-        self.assertIn("token == generation", recover)
-        self.assertIn("isVoiceEnabled", recover)
-        self.assertIn("forceReconnect = true", recover)
-        self.assertNotIn("putBoolean", recover)
-        for marker in ("fun stopVoice()", "private fun failAudioSession(", "override fun onDestroy()"):
-            self.assertIn("cancelAudioRecovery()", body(service, marker))
-        connected = body(service, "override fun onConnected() {")
-        self.assertIn("if (audioRecorder.isRecording()) return", connected)
-        self.assertNotIn("else failAudioSession", connected)  # typed recorder callback owns failures
-        self.assertIn("30_000L", connected)  # stable capture, not handshake, resets budget
-        changed = body(service, "override fun onStateChanged(state: NexoState, message: String?, expression: String?) {")
-        self.assertIn("audioRecovery != null", changed)  # queued idle cannot overwrite recovery ERROR
 
-    def test_sticky_restart_restores_endpoint_only_for_saved_on(self):
+    def test_process_restart_is_non_sticky_paused_and_cannot_restore_saved_on(self):
         service = source("service/NexoKioskService.kt")
-        started = body(service, "override fun onStartCommand(")
-        self.assertIn("if (!isVoiceEnabled)", started)
-        self.assertIn("return START_NOT_STICKY", started)
-        self.assertIn("return START_STICKY", started)
-        self.assertIn("checkSelfPermission", started)
-        self.assertIn("foregroundAllowed", started)
-        self.assertIn("restoreConnectionKey()", started)
-        self.assertIn("initializeConnection(it.first, it.second)", started)
-        self.assertNotIn("voiceEnabled = true", started)
-        restored = body(service, "private fun restoreConnectionKey()")
-        self.assertIn("ServerEndpointPolicy.isValid", restored)
+        self.assertRegex(service, r"override fun onStartCommand\([^\n]+\): Int = START_NOT_STICKY")
+        self.assertNotRegex(service, r"\bSTART_STICKY\b")
+        self.assertIn("persistOff()", body(service, "override fun onCreate()"))
+        self.assertNotIn('getBoolean("enabled"', service)
+        self.assertNotIn("restoreConnectionKey()", service)
         initialized = body(service, "fun initializeConnection(")
+        self.assertIn("ServerEndpointPolicy.isValid", initialized)
         self.assertIn('putString("server_url", serverUrl)', initialized)
         self.assertIn('putString("device_id", deviceId)', initialized)
-        self.assertNotIn("bearerToken", restored)
-        # Native task removal is not a user privacy stop or a resurrection hook.
+        self.assertNotIn("credentialStore.read", initialized)
+        self.assertNotIn("connect()", initialized)
         removed = body(service, "override fun onTaskRemoved(")
+        self.assertIn("setUiForeground(false)", removed)
         self.assertIn("super.onTaskRemoved(rootIntent)", removed)
-        for forbidden in ("stopVoice(", "stopSelf(", "startService(", "startForegroundService(", "AlarmManager"):
-            self.assertNotIn(forbidden, removed)
+        foreground = body(service, "fun setUiForeground(")
+        self.assertIn('closeRecordingSheet("background")', foreground)
+        self.assertIn('pauseLocal("background")', foreground)
+        for forbidden in ("startService(", "startForegroundService(", "AlarmManager", "requestResume()"):
+            self.assertNotIn(forbidden, removed + foreground)
         import xml.etree.ElementTree as ET
         manifest = ET.parse(ROOT / "android/app/src/main/AndroidManifest.xml")
         ns = "{http://schemas.android.com/apk/res/android}"
         kiosk = next(s for s in manifest.findall("application/service") if s.get(ns + "name") == ".service.NexoKioskService")
         self.assertEqual(kiosk.get(ns + "stopWithTask"), "false")
 
-    def test_background_start_denial_is_actionable_not_retried(self):
+    def test_background_start_denial_is_actionable_paused_and_not_retried(self):
         service = source("service/NexoKioskService.kt")
         notification = body(service, "private fun startForegroundNotification()")
-        self.assertIn("catch (e: SecurityException)", notification)
-        self.assertIn("catch (e: IllegalStateException)", notification)
-        self.assertIn("foregroundAllowed = false", service)
-        denied = body(service, "private fun foregroundDenied()")
-        self.assertIn("stopSelf()", denied)
-        self.assertNotIn("putBoolean", denied)
-        self.assertNotIn("postDelayed", denied)
-        activity = source("MainActivity.kt")
-        bind = body(activity, "private fun bindKioskService()")
+        for exception in ("SecurityException", "IllegalStateException"):
+            self.assertRegex(notification, rf"catch \([^:]+: {exception}\)")
+            denied = body(notification, f": {exception})")
+            self.assertIn("foregroundAllowed = false", denied)
+            self.assertIn("persistOff()", denied)
+            self.assertIn("publish(NexoState.ERROR", denied)
+            self.assertNotIn("postDelayed", denied)
+            self.assertNotIn("startRecording()", denied)
+        self.assertIn("Izin layanan mikrofon diperlukan", notification)
+        self.assertIn("Buka aplikasi untuk memakai mikrofon", notification)
+        self.assertIn("PendingIntent.getActivity", notification)
+        permitted = service.split("private fun permitted() =", 1)[1].split("private fun persistOff()", 1)[0]
+        for gate in ("uiForeground", "foregroundAllowed", "RECORD_AUDIO", "PERMISSION_GRANTED"):
+            self.assertIn(gate, permitted)
+        bind = body(source("MainActivity.kt"), "private fun bindKioskService()")
         self.assertIn("catch (e: SecurityException)", bind)
         self.assertIn("catch (e: IllegalStateException)", bind)
         self.assertIn("bindingRequested = false", bind)
-        self.assertIn("PendingIntent.getActivity", notification)
+
+    def test_service_recorder_joins_are_confined_to_lifecycle_worker_blocks(self):
+        service = source("service/NexoKioskService.kt")
+        self.assertIn('Executors.newSingleThreadExecutor { Thread(it, "Nexo-AudioLifecycle") }', service)
+        workers = [body(service[match.start():], "lifecycle.execute")
+                   for match in re.finditer(r"lifecycle\.execute\s*\{", service)]
+        for join in ("stopAndJoin()", "finishAndJoin()"):
+            self.assertGreater(service.count(join), 0)
+            self.assertEqual(service.count(join), sum(worker.count(join) for worker in workers))
+        self.assertNotIn(".stopRecording()", service)
+        invalidation = body(service, "private fun invalidateCapture(")
+        ordered = ["webSocketClient?.fenceCapture()", "nextCapture()",
+                   "webSocketClient?.cancelUtterance()", "sealedPending = null", "lifecycle.execute", "local.cancel(reason)"]
+        self.assertIn("val recorder = audioRecorder", invalidation)
+        self.assertNotIn("audioRecorder?.stopAndJoin()", invalidation)
+        positions = [invalidation.index(fragment) for fragment in ordered]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("onEnrollmentLevel(0f)", invalidation)
+        self.assertIn("onTelemetryReceived(0f, null)", invalidation)
 
 
 if __name__ == "__main__":

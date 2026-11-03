@@ -10,6 +10,10 @@
     <!-- Top 3D Glassmorphic Status Pill -->
     <LinearLayout
         android:id="@+id/pillStatus"
+        android:clickable="true"
+        android:longClickable="true"
+        android:focusable="true"
+        android:tooltipText="@string/status_setup_action"
         android:layout_width="wrap_content"
         android:layout_gravity="center_horizontal"
         app:layout_constrainedWidth="true"
@@ -17,7 +21,9 @@
         android:layout_marginStart="20dp"
         android:layout_marginEnd="20dp"
         android:layout_marginTop="16dp"
-        android:background="@drawable/bg_hud_pill"
+        android:background="@drawable/bg_hud_control"
+        android:minWidth="48dp"
+        android:minHeight="48dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:elevation="6dp"
@@ -31,10 +37,11 @@
             android:layout_height="10dp"
             android:layout_marginEnd="10dp"
             android:src="@drawable/led_dot"
-            android:contentDescription="Status LED" />
+            android:importantForAccessibility="no" />
 
         <TextView
             android:id="@+id/tvStatus"
+            android:importantForAccessibility="no"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:fontFamily="sans-serif-medium"
@@ -48,6 +55,7 @@
     <!-- Voiceprint Biometric Status Pill -->
     <LinearLayout
         android:id="@+id/pillVoiceprint"
+        android:contentDescription="@string/voiceprint_hud_unregistered"
         android:layout_width="wrap_content"
         android:layout_gravity="center_horizontal"
         app:layout_constrainedWidth="true"
@@ -55,7 +63,9 @@
         android:layout_marginStart="20dp"
         android:layout_marginEnd="20dp"
         android:layout_marginTop="8dp"
-        android:background="@drawable/bg_hud_pill"
+        android:background="@drawable/bg_hud_control"
+        android:minWidth="48dp"
+        android:minHeight="48dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:elevation="6dp"
@@ -71,10 +81,11 @@
             android:layout_height="10dp"
             android:layout_marginEnd="8dp"
             android:src="@drawable/led_dot"
-            android:contentDescription="Voiceprint Status LED" />
+            android:importantForAccessibility="no" />
 
         <TextView
             android:id="@+id/tvVoiceprintStatus"
+            android:importantForAccessibility="no"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:fontFamily="sans-serif-medium"
@@ -91,6 +102,11 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:minHeight="48dp"
+        android:minWidth="48dp"
+        android:focusable="true"
+        android:background="@drawable/bg_hud_control"
+        android:backgroundTint="@null"
+        app:backgroundTint="@null"
         android:layout_marginStart="20dp"
         android:layout_marginEnd="20dp"
         android:enabled="false"
@@ -104,6 +120,62 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <LinearLayout
+        android:id="@+id/captureControls"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        app:layout_constraintTop_toBottomOf="@id/toggleVoice"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/captureMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:minWidth="48dp"
+            android:focusable="true"
+            android:background="@drawable/bg_hud_control"
+            android:backgroundTint="@null"
+            app:backgroundTint="@null"
+            android:enabled="false"
+            android:text="@string/capture_auto_unavailable"
+            android:textSize="14sp"
+            android:textColor="@color/text_primary" />
+        <Button
+            android:id="@+id/startUtterance"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:minWidth="48dp"
+            android:focusable="true"
+            android:background="@drawable/bg_hud_control"
+            android:backgroundTint="@null"
+            app:backgroundTint="@null"
+            android:enabled="false"
+            android:singleLine="false"
+            android:textAllCaps="false"
+            android:text="@string/capture_start"
+            android:textColor="@color/nexo_cyan" />
+        <Button
+            android:id="@+id/finishUtterance"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:minWidth="48dp"
+            android:focusable="true"
+            android:background="@drawable/bg_hud_control"
+            android:backgroundTint="@null"
+            app:backgroundTint="@null"
+            android:layout_marginTop="8dp"
+            android:enabled="false"
+            android:singleLine="false"
+            android:textAllCaps="false"
+            android:text="@string/recording_finish"
+            android:textColor="@color/nexo_cyan" />
+    </LinearLayout>
     <TextView
         android:id="@+id/voiceMood"
         android:layout_width="0dp"
@@ -115,7 +187,7 @@
         android:textSize="13sp"
         android:textColor="@color/text_primary"
         android:accessibilityLiveRegion="polite"
-        app:layout_constraintTop_toBottomOf="@id/toggleVoice"
+        app:layout_constraintTop_toBottomOf="@id/captureControls"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
@@ -171,7 +243,10 @@
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:layout_marginStart="4dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/bg_hud_control"
+                android:focusable="true"
+                android:backgroundTint="@null"
+                app:backgroundTint="@null"
                 android:padding="13dp"
                 android:enabled="false"
                 android:alpha="0.35"

@@ -15,6 +15,7 @@ class AudioPlayerManagerTest {
         var now = 0L
         val player = AudioPlayerManager(worker = worker, outputFactory = {
             object : PcmOutput {
+                override fun start() {}
                 override val playbackHeadFrames = 0L
                 override fun write(data: ByteArray, offset: Int, length: Int) = length
                 override fun close() {}
@@ -40,6 +41,7 @@ class AudioPlayerManagerTest {
         val errors = AtomicInteger()
         val player = AudioPlayerManager(worker = worker, outputFactory = {
             object : PcmOutput {
+                override fun start() {}
                 override val playbackHeadFrames = 0L
                 override fun write(data: ByteArray, offset: Int, length: Int): Int {
                     attempted.countDown()
@@ -69,6 +71,7 @@ class AudioPlayerManagerTest {
         val worker = Executors.newSingleThreadExecutor()
         val player = AudioPlayerManager(worker = worker, outputFactory = {
             object : PcmOutput {
+                override fun start() {}
                 override val playbackHeadFrames = 0L
                 override fun write(data: ByteArray, offset: Int, length: Int): Int {
                     writeEntered.countDown()
@@ -108,6 +111,7 @@ class AudioPlayerManagerTest {
         val player = AudioPlayerManager(worker = worker, maxBufferedBytes = 16,
             outputFactory = {
                 object : PcmOutput {
+                override fun start() {}
                     override val playbackHeadFrames get() = written.size().toLong() / 2
                     override fun write(data: ByteArray, offset: Int, length: Int): Int {
                         entered.countDown()
@@ -153,6 +157,7 @@ class AudioPlayerManagerTest {
         val player = AudioPlayerManager(worker = worker, maxBufferedBytes = 4,
             outputFactory = {
                 object : PcmOutput {
+                override fun start() {}
                     override val playbackHeadFrames = 0L
                     override fun write(data: ByteArray, offset: Int, length: Int): Int {
                         entered.countDown()
