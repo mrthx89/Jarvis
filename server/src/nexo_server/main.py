@@ -323,6 +323,8 @@ async def websocket_appliance_endpoint(websocket: WebSocket):
         agent_name="Nexo",
         session_hub=hub,
         speaker_verifier=speaker_engine,
+        vad_threshold_db=config.vad.threshold_db,
+        silence_timeout_seconds=config.vad.silence_timeout_seconds,
     )
     try:
         await websocket.accept()

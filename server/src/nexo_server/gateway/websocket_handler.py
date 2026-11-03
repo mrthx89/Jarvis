@@ -53,7 +53,7 @@ class ApplianceSession:
     PROCESSING_TIMEOUT = 120.0
     SEND_TIMEOUT = 5.0
     AUDIO_GAP_TIMEOUT = 2.0
-    SILENCE_BYTES = 48000  # 1500 ms PCM16 mono at 16 kHz
+    SILENCE_BYTES = 32000  # 1000 ms PCM16 mono at 16 kHz (calibrated fast endpointing)
     MAX_AUDIO_BYTES = 30 * 32000
     MAX_FRAME_BYTES = 32000 * 2
     PREROLL_BYTES = 8000  # 250 ms at 16 kHz, bounded even in hours of silence
@@ -71,6 +71,8 @@ class ApplianceSession:
         agent_name: str = "Nexo",
         session_hub: Optional[Any] = None,
         speaker_verifier: Optional[Any] = None,
+        vad_threshold_db: float = -38.0,
+        silence_timeout_seconds: float = 1.0,
     ):
         self.authenticated_device_id = authenticated_device_id
         self.agent_name = agent_name
@@ -83,7 +85,8 @@ class ApplianceSession:
         self.hermes = hermes
         self.hub = session_hub
         self.speaker_verifier = speaker_verifier
-        self.vad = EnergyVAD()
+        self.vad = EnergyVAD(threshold_db=vad_threshold_db)
+        self.silence_bytes = int(silence_timeout_seconds * 32000)
         self.state = NexoState.IDLE
         self.audio_buffer = bytearray()
         self.is_recording = False
@@ -350,7 +353,7 @@ class ApplianceSession:
             await self.send_json_message(
                 VisualTelemetry(amplitude=amp, frequency_bands=[amp * 0.8, amp, amp * 0.6])
             )
-            if self._silence_bytes >= self.SILENCE_BYTES or len(self.audio_buffer) >= self.MAX_AUDIO_BYTES:
+            if self._silence_bytes >= self.silence_bytes or len(self.audio_buffer) >= self.MAX_AUDIO_BYTES:
                 await self._finish_recording()
 
     async def process_recorded_audio(self):

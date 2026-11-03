@@ -53,12 +53,20 @@ class SpeakerSettings:
 
 
 @dataclass
+class VADSettings:
+    threshold_db: float = -38.0
+    continuation_margin_db: float = 8.0
+    silence_timeout_seconds: float = 1.0
+
+
+@dataclass
 class AppConfig:
     server: ServerSettings = field(default_factory=ServerSettings)
     stt: STTSettings = field(default_factory=STTSettings)
     tts: TTSSettings = field(default_factory=TTSSettings)
     hermes: HermesSettings = field(default_factory=HermesSettings)
     speaker: SpeakerSettings = field(default_factory=SpeakerSettings)
+    vad: VADSettings = field(default_factory=VADSettings)
 
 
 def load_config(config_path: str | Path | None = None) -> AppConfig:
@@ -86,6 +94,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
             tts_data = raw.get("tts", {})
             hermes_data = raw.get("hermes", {})
             speaker_data = raw.get("speaker", {})
+            vad_data = raw.get("vad", {})
 
             return AppConfig(
                 server=ServerSettings(**server_data),
@@ -93,6 +102,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
                 tts=TTSSettings(**tts_data),
                 hermes=HermesSettings(**hermes_data),
                 speaker=SpeakerSettings(**speaker_data),
+                vad=VADSettings(**vad_data),
             )
 
     return AppConfig()

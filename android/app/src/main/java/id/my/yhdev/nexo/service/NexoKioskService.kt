@@ -201,16 +201,47 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         }) { chunk, length ->
             // Continuous PCM for server endpointing. No local voice_end, no barge-in.
             // Use this session's socket, never a replacement endpoint's socket.
-            if (isVoiceEnabled && audioToken == audioGeneration && duplex.canSendAudio &&
-                client?.sendAudioChunk(chunk, length) != true) {
-                val token = generation
-                main.post {
-                    if (isVoiceEnabled && token == generation && audioToken == audioGeneration) {
-                        onDisconnected()
+            if (isVoiceEnabled && audioToken == audioGeneration && duplex.canSendAudio) {
+                // Immediate local VU amplitude calculation for instant tactile visual feedback on mascot
+                if (currentState == NexoState.LISTENING || currentState == NexoState.IDLE) {
+                    val localAmp = calculateNormalizedRms(chunk, length)
+                    if (localAmp > 0.05f) {
+                        main.post {
+                            if (isVoiceEnabled && audioToken == audioGeneration &&
+                                (currentState == NexoState.LISTENING || currentState == NexoState.IDLE)) {
+                                serviceCallback?.onTelemetryReceived(localAmp, null)
+                            }
+                        }
+                    }
+                }
+                if (client?.sendAudioChunk(chunk, length) != true) {
+                    val token = generation
+                    main.post {
+                        if (isVoiceEnabled && token == generation && audioToken == audioGeneration) {
+                            onDisconnected()
+                        }
                     }
                 }
             }
         }
+    }
+
+    private fun calculateNormalizedRms(chunk: ByteArray, length: Int): Float {
+        val numSamples = length / 2
+        if (numSamples <= 0) return 0f
+        var sumSquares = 0.0
+        var i = 0
+        while (i < length - 1) {
+            val low = chunk[i].toInt() and 0xFF
+            val high = chunk[i + 1].toInt()
+            val sample = (high shl 8) or low
+            sumSquares += (sample * sample).toDouble()
+            i += 2
+        }
+        val rms = Math.sqrt(sumSquares / numSamples)
+        if (rms <= 1.0) return 0f
+        val db = 20.0 * Math.log10(rms / 32767.0)
+        return Math.max(0.0, Math.min(1.0, (db + 55.0) / 40.0)).toFloat()
     }
 
     private fun cancelAudioRecovery() {
