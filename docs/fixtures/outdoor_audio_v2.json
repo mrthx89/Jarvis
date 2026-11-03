@@ -1,0 +1,102 @@
+{
+  "fixture_revision": "2.0",
+  "evidence_kind": "synthetic_contract_vectors_not_device_audio",
+  "ids": {
+    "utterance_id": "00000000-0000-4000-8000-000000000001",
+    "request_id": "00000000-0000-4000-8000-000000000002",
+    "owner_id": "00000000-0000-4000-8000-000000000003",
+    "lease_id": "00000000-0000-4000-8000-000000000004",
+    "enrollment_id": "00000000-0000-4000-8000-000000000005",
+    "connection_id": "00000000-0000-4000-8000-000000000010",
+    "server_instance_id": "00000000-0000-4000-8000-000000000020"
+  },
+  "limits": {
+    "sample_rate": 16000,
+    "channels": 1,
+    "bit_depth": 16,
+    "max_samples": 320000,
+    "max_chunk_bytes": 16384,
+    "retry_ttl_ms": 30000,
+    "owner_lease_ms": 15000,
+    "owner_renew_ms": 5000,
+    "acquire_deadline_ms": 3000,
+    "quiesce_deadline_ms": 1500,
+    "release_ack_ms": 2000
+  },
+  "hello_vectors": [
+    {
+      "name": "old_client_stays_legacy",
+      "client": {"type": "client_hello", "protocol_version": "1.0", "device_id": "fixture-device", "audio_spec": {"format": "audio/pcm", "sample_rate": 16000, "channels": 1, "bit_depth": 16}},
+      "server": {"type": "server_hello", "session_id": "fixture-session", "agent_name": "Nexo", "status": "IDLE"},
+      "expected_mode": "legacy"
+    },
+    {
+      "name": "new_client_old_server_blocks_outdoor_capture",
+      "client": {"type": "client_hello", "protocol_version": "1.0", "device_id": "fixture-device", "audio_spec": {"format": "audio/pcm", "sample_rate": 16000, "channels": 1, "bit_depth": 16}, "capabilities": ["utterance_upload_v2", "exclusive_audio_v1"]},
+      "server": {"type": "server_hello", "session_id": "fixture-session", "status": "IDLE"},
+      "expected_mode": "update_required"
+    },
+    {
+      "name": "v2_selected",
+      "client": {"type": "client_hello", "protocol_version": "1.0", "device_id": "fixture-device", "audio_spec": {"format": "audio/pcm", "sample_rate": 16000, "channels": 1, "bit_depth": 16}, "capabilities": ["utterance_upload_v2", "exclusive_audio_v1"]},
+      "server": {"type": "server_hello", "session_id": "fixture-session", "status": "IDLE", "protocol_version": "2.0", "capabilities": ["utterance_upload_v2", "exclusive_audio_v1"], "connection_id": "00000000-0000-4000-8000-000000000010", "server_instance_id": "00000000-0000-4000-8000-000000000020", "conversation_paused": true, "output_epoch": 0, "limits": {"max_samples": 320000, "max_chunk_bytes": 16384, "retry_ttl_ms": 30000, "owner_lease_ms": 15000}},
+      "expected_mode": "v2"
+    }
+  ],
+  "upload": {
+    "begin": {"type": "utterance_begin", "connection_id": "00000000-0000-4000-8000-000000000010", "request_id": "00000000-0000-4000-8000-000000000002", "utterance_id": "00000000-0000-4000-8000-000000000001", "purpose": "conversation", "total_samples": 8, "sha256": "089b7ba2e8ba613255a1812dca037fd83d79aff20f983860d9d5ee4300dcac55", "end_reason": "manual_finish"},
+    "pcm_hex": "00000100ffffff7f008064009cff0000",
+    "frames_hex": ["4e58413200000000000040008000000000000001000000000000001000000100ffffff7f008064009cff0000"],
+    "commit": {"type": "utterance_commit", "connection_id": "00000000-0000-4000-8000-000000000010", "request_id": "00000000-0000-4000-8000-000000000006", "utterance_id": "00000000-0000-4000-8000-000000000001", "total_samples": 8, "sha256": "089b7ba2e8ba613255a1812dca037fd83d79aff20f983860d9d5ee4300dcac55"},
+    "accepted": {"type": "utterance_ack", "connection_id": "00000000-0000-4000-8000-000000000010", "request_id": "00000000-0000-4000-8000-000000000006", "utterance_id": "00000000-0000-4000-8000-000000000001", "stage": "accepted", "total_samples": 8, "sha256": "089b7ba2e8ba613255a1812dca037fd83d79aff20f983860d9d5ee4300dcac55", "duplicate": false},
+    "metrics": {"bytes": 16, "samples": 8, "duration_ms": 0.5, "peak": 32768, "clipped_samples": 2}
+  },
+  "invalid_upload_vectors": [
+    {"name": "boolean_sample_count", "mutation": "boolean_samples", "expected_code": "invalid_length"},
+    {"name": "zero_sample_count", "mutation": "zero_samples", "expected_code": "invalid_length"},
+    {"name": "over_duration", "mutation": "too_many_samples", "expected_code": "invalid_length"},
+    {"name": "gap_before_first_frame", "mutation": "gap", "expected_code": "sequence_gap"},
+    {"name": "odd_payload", "mutation": "odd_payload", "expected_code": "invalid_length"},
+    {"name": "truncated_header", "mutation": "short_header", "expected_code": "invalid_message"},
+    {"name": "wrong_utterance", "mutation": "wrong_id", "expected_code": "id_conflict"},
+    {"name": "payload_changed", "mutation": "checksum", "expected_code": "checksum_mismatch"},
+    {"name": "overlap_changed", "mutation": "conflicting_duplicate", "expected_code": "overlap_conflict"},
+    {"name": "missing_payload", "mutation": "incomplete", "expected_code": "invalid_length"}
+  ],
+  "owner_messages": {
+    "acquire": {"type": "audio_owner_acquire", "connection_id": "00000000-0000-4000-8000-000000000010", "request_id": "00000000-0000-4000-8000-000000000002", "owner_id": "00000000-0000-4000-8000-000000000003", "purpose": "enrollment", "policy": "cancel_active"},
+    "grant": {"type": "audio_owner_ack", "connection_id": "00000000-0000-4000-8000-000000000010", "request_id": "00000000-0000-4000-8000-000000000002", "owner_id": "00000000-0000-4000-8000-000000000003", "state": "granted", "output_epoch": 1, "lease_id": "00000000-0000-4000-8000-000000000004", "lease_ms": 15000, "conversation_paused": true},
+    "release": {"type": "audio_owner_release", "connection_id": "00000000-0000-4000-8000-000000000010", "request_id": "00000000-0000-4000-8000-000000000007", "owner_id": "00000000-0000-4000-8000-000000000003", "lease_id": "00000000-0000-4000-8000-000000000004", "reason": "dismiss"},
+    "resume": {"type": "conversation_resume", "connection_id": "00000000-0000-4000-8000-000000000010", "request_id": "00000000-0000-4000-8000-000000000008"}
+  },
+  "enrollment_messages": {
+    "begin": {"type": "enrollment_begin", "connection_id": "00000000-0000-4000-8000-000000000010", "request_id": "00000000-0000-4000-8000-000000000002", "owner_id": "00000000-0000-4000-8000-000000000003", "lease_id": "00000000-0000-4000-8000-000000000004", "enrollment_id": "00000000-0000-4000-8000-000000000005"},
+    "cancel": {"type": "enrollment_cancel", "connection_id": "00000000-0000-4000-8000-000000000010", "request_id": "00000000-0000-4000-8000-000000000007", "owner_id": "00000000-0000-4000-8000-000000000003", "lease_id": "00000000-0000-4000-8000-000000000004", "enrollment_id": "00000000-0000-4000-8000-000000000005"}
+  },
+  "ownership_traces": [
+    {"name": "grant_alone_not_ready", "initial": "conversation_on", "events": ["open_sheet", "server_grant"], "expect": {"ready": false, "normal_mic": false, "playback": false, "sleep_changed": false}},
+    {"name": "local_stop_alone_not_ready", "initial": "conversation_on", "events": ["open_sheet", "local_stop_complete", "echo_tail_complete"], "expect": {"ready": false, "normal_mic": false}},
+    {"name": "both_barriers_ready", "initial": "conversation_on", "events": ["open_sheet", "local_stop_complete", "echo_tail_complete", "server_grant"], "expect": {"ready": true, "normal_mic": false}},
+    {"name": "enrollment_while_muted", "initial": "conversation_off", "events": ["open_sheet", "local_stop_complete", "echo_tail_complete", "server_grant", "dedicated_start_ok"], "expect": {"dedicated_mic": true, "normal_mic": false}},
+    {"name": "no_invisible_active_turn", "initial": "hermes_running", "events": ["open_sheet", "late_tts", "quiesce_timeout"], "expect": {"ready": false, "normal_mic": false, "playback": false, "denied": true}},
+    {"name": "tts_and_chime_stopped", "initial": "tts_chime_queued", "events": ["open_sheet", "local_stop_complete", "late_chime", "echo_tail_complete", "server_quiescent", "server_grant", "late_tts"], "expect": {"ready": true, "playback": false, "normal_mic": false}},
+    {"name": "release_before_grant", "initial": "conversation_on", "events": ["open_sheet", "dismiss", "local_stop_complete", "late_server_grant"], "expect": {"ready": false, "normal_mic": false, "dedicated_mic": false}},
+    {"name": "stale_connection_grant", "initial": "conversation_off", "events": ["open_sheet", "local_stop_complete", "echo_tail_complete", "reconnect", "old_connection_grant"], "expect": {"ready": false, "normal_mic": false}},
+    {"name": "saved_does_not_resume", "initial": "sheet_capturing", "events": ["finish", "save", "server_saved", "dismiss", "server_released", "idle_callback"], "expect": {"normal_mic": false, "dedicated_mic": false}},
+    {"name": "explicit_resume_waits_capture", "initial": "sheet_ready", "events": ["dismiss", "server_released", "explicit_resume", "server_resumed"], "expect": {"normal_mic": false}},
+    {"name": "explicit_resume_after_all_barriers", "initial": "sheet_ready", "events": ["dismiss", "server_released", "explicit_resume", "server_resumed", "normal_capture_start_ok"], "expect": {"normal_mic": true}},
+    {"name": "new_sheet_wins_stale_resume", "initial": "paused", "events": ["explicit_resume", "open_sheet", "stale_server_resumed", "late_normal_capture_start"], "expect": {"normal_mic": false, "ready": false}},
+    {"name": "renew_timeout_stops_local", "initial": "sheet_capturing", "events": ["renew_sent", "renew_ack_timeout", "late_renewed"], "expect": {"normal_mic": false, "dedicated_mic": false, "ready": false}},
+    {"name": "cancel_wins_before_publish", "initial": "sheet_saving", "events": ["dismiss", "server_cancel_linearized", "embedding_worker_returns"], "expect": {"profile_written": false, "normal_mic": false}},
+    {"name": "save_wins_before_cancel", "initial": "sheet_saving", "events": ["server_publish_linearized", "dismiss", "server_cancel"], "expect": {"save_result": "already_saved", "normal_mic": false}},
+    {"name": "background_is_not_sleep", "initial": "sheet_capturing_sleep_on", "events": ["background", "late_server_grant", "idle_callback"], "expect": {"normal_mic": false, "dedicated_mic": false, "sleep_changed": false}}
+  ],
+  "exit_paths": ["close_button", "back", "swipe", "outside_tap", "cancel", "background", "service_teardown", "route_change", "permission_loss", "timeout", "error", "reconnect"],
+  "retry_traces": [
+    {"name": "lost_commit_ack", "events": ["accepted", "disconnect", "same_instance_reconnect", "status_accepted", "duplicate_commit"], "expected_dispatch_count": 1},
+    {"name": "incomplete_upload_retry", "events": ["begin", "half_audio", "disconnect", "same_instance_reconnect", "status_unknown", "same_id_begin_at_zero", "commit"], "expected_dispatch_count": 1},
+    {"name": "restart_ambiguous", "events": ["commit_sent", "disconnect", "new_instance_reconnect"], "expected_code": "delivery_unknown", "automatic_replay": false},
+    {"name": "expired_retry", "events": ["seal", "elapsed_30001_ms", "reconnect"], "automatic_replay": false},
+    {"name": "enrollment_never_replays", "events": ["enrollment_upload", "disconnect", "reconnect"], "automatic_replay": false, "profile_written": false}
+  ]
+}

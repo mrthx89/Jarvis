@@ -1,0 +1,37 @@
+{
+  "evidence_kind": "synthetic_host_only",
+  "metrics": {
+    "bytes": 16,
+    "samples": 8,
+    "duration_ms": 0.5,
+    "peak": 32768,
+    "clipped_samples": 2,
+    "rms_dbfs": -6.020691997521137,
+    "sha256": "089b7ba2e8ba613255a1812dca037fd83d79aff20f983860d9d5ee4300dcac55"
+  },
+  "partial_read_integrity": "pass",
+  "fixture_integrity": "pass",
+  "device_evidence": "pending",
+  "vad_smoke": {
+    "evidence_kind": "host_synthetic_not_android",
+    "ort_version": "1.31.1",
+    "model_sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+    "model_bytes": 2327524,
+    "windows": 200,
+    "state_shape": [
+      2,
+      1,
+      128
+    ],
+    "input_shape": [
+      1,
+      576
+    ],
+    "p95_ms": 0.1895590499999999,
+    "p99_ms": 0.21584609999999999,
+    "probability_min": 0.002482205629348755,
+    "probability_max": 0.35333412885665894,
+    "device_budget": "pending",
+    "speech_accuracy": "not_measured"
+  }
+}
