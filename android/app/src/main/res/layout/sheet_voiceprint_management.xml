@@ -4,6 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
+    android:background="@drawable/bg_bottom_sheet_modal"
     android:clipToPadding="false">
 
     <LinearLayout
@@ -16,10 +17,17 @@
         android:paddingBottom="28dp">
 
         <View
-            android:layout_width="36dp"
-            android:layout_height="4dp"
+            android:layout_width="48dp"
+            android:layout_height="5dp"
             android:layout_gravity="center_horizontal"
             android:background="@drawable/bg_sheet_handle"
+            android:importantForAccessibility="no" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1.5dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/bg_sheet_top_rim"
             android:importantForAccessibility="no" />
 
         <TextView

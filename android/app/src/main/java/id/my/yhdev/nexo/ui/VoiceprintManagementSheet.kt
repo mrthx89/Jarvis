@@ -79,6 +79,20 @@ class VoiceprintManagementSheet(
             onDismiss()
         }
 
+        dialog.setOnShowListener {
+            dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.let { sheet ->
+                val displayMetrics = activity.resources.displayMetrics
+                val maxSheetWidth = (560 * displayMetrics.density).toInt()
+                val isTablet = displayMetrics.widthPixels > maxSheetWidth
+                sheet.layoutParams = sheet.layoutParams.apply {
+                    if (isTablet) {
+                        width = maxSheetWidth
+                    }
+                }
+                sheet.setBackgroundResource(R.drawable.bg_bottom_sheet_modal)
+            }
+        }
+
         renderState(currentDialog)
         dialog.setContentView(content)
         dialog.show()

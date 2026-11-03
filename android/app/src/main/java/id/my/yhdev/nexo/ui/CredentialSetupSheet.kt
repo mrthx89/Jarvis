@@ -159,6 +159,7 @@ class CredentialSetupSheet(
                         width = maxSheetWidth
                     }
                 }
+                sheet.setBackgroundResource(R.drawable.bg_bottom_sheet_modal)
             }
             dialog.behavior.apply {
                 skipCollapsed = true
