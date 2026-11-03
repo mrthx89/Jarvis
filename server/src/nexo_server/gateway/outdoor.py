@@ -29,6 +29,7 @@ class OutdoorStore:
         self.connections: dict[str, Any] = {}
         self.ledger: dict[tuple[str, str], dict[str, Any]] = {}
         self.owners: dict[tuple[str, str], dict[str, Any]] = {}
+        self.enrollments: dict[tuple[str, str], dict[str, Any]] = {}
         self.metrics = Counter()
         self.extracting = set()
         self.clock = time.monotonic
@@ -41,6 +42,9 @@ class OutdoorStore:
         for key, entry in list(self.owners.items()):
             if "released_at" in entry and now - entry["released_at"] >= 120:
                 del self.owners[key]
+        for key, entry in list(self.enrollments.items()):
+            if "terminal_at" in entry and now - entry["terminal_at"] >= 120:
+                del self.enrollments[key]
 
     def has_capacity(self, device):
         self.prune()
@@ -51,6 +55,7 @@ class OutdoorSession:
     MAX_SAMPLES = 320000
     MAX_CHUNK_BYTES = 16384
     UPLOAD_TIMEOUT = 30.0
+    INACTIVITY_TIMEOUT = 5.0
     PROCESSING_TIMEOUT = 25.0
     DRAIN_TIMEOUT = 1.5
     OWNER_LEASE = 15.0
@@ -65,7 +70,8 @@ class OutdoorSession:
         self.closed = False
         self.active_task = None
         self.assembly = None
-        self._output_generation = ContextVar("outdoor_generation", default=None)
+        self._output_generation: ContextVar[int | None] = ContextVar("outdoor_generation", default=None)
+        self.output_utterance: ContextVar[str | None] = ContextVar("outdoor_utterance", default=None)
         self.generation = 0
         self._upload_handle = None
         self._worker = None
@@ -106,13 +112,27 @@ class OutdoorSession:
             self.assembly.pop("pcm", None)
             self.assembly = None
 
+    def _arm_upload(self, entry):
+        if self._upload_handle:
+            self._upload_handle.cancel()
+        deadline = min(entry["wall_deadline"], entry["progress_deadline"])
+        self._upload_handle = asyncio.get_running_loop().call_later(
+            max(0, deadline - self.store.clock()),
+            lambda: self._spawn(self._upload_expired(entry)))
+
+    async def _check_upload_deadline(self, entry):
+        if self.store.clock() < min(entry["wall_deadline"], entry["progress_deadline"]):
+            return False
+        self.paused = True
+        self.epoch += 1
+        self._discard_assembly()
+        await self._error(entry["request"], entry["utterance_id"], "upload_timeout")
+        return True
+
     async def _upload_expired(self, entry):
         async with self._control_lock:
-            if self.assembly is entry:
-                self.paused = True
-                self.epoch += 1
-                self._discard_assembly()
-                await self._error(entry["request"], entry["utterance_id"], "upload_timeout")
+            if self.assembly is entry and not await self._check_upload_deadline(entry):
+                self._arm_upload(entry)
 
     def _cleanup_registration(self, task=None):
         if task is not None:
@@ -125,6 +145,8 @@ class OutdoorSession:
 
     async def _drain(self):
         self.generation += 1
+        for listener in getattr(self.session, "_output_boundary_listeners", ()):
+            listener()
         self._discard_assembly()
         if self._active_entry and self._active_entry["stage"] == "accepted":
             self._terminal(self._active_entry, "cancelled")
@@ -164,6 +186,13 @@ class OutdoorSession:
 
     def output_allowed(self):
         return not self.closed and not self.paused
+
+    def busy(self, owned_task=None):
+        return (self.device in self.store.extracting or self.assembly is not None
+                or self._active_entry is not None and self._active_entry["stage"] == "accepted"
+                or any(task is not None and task is not owned_task and not task.done()
+                       for task in (self.active_task, self._worker,
+                                    *getattr(self.session, "_output_tasks", ()))))
 
     @staticmethod
     def _uuid(value):
@@ -232,7 +261,7 @@ class OutdoorSession:
         async with self._control_lock:
             if self.owner is owner and self.store.clock() >= owner["deadline"]:
                 self._retire_owner()
-                self.enrollment = None
+                self._discard_enrollment()
                 self.paused = True
                 self.epoch += 1
                 await self._drain()
@@ -267,7 +296,7 @@ class OutdoorSession:
                 raise OutdoorViolation("capacity")
             self.paused = True
             self.epoch += 1
-            self.enrollment = None
+            self._discard_enrollment()
             self.store.owners[(self.device, owner_id)] = {}
             try:
                 await self._drain()
@@ -298,7 +327,7 @@ class OutdoorSession:
                 self.paused = True
                 self._retire_owner()
                 self.store.owners.setdefault((self.device, owner_id), {"released_at": self.store.clock()})
-                self.enrollment = None
+                self._discard_enrollment()
                 if self._lease_handle:
                     self._lease_handle.cancel()
                 await self._drain()
@@ -323,7 +352,7 @@ class OutdoorSession:
         if p["type"] == "voiceprint_unenroll":
             success = False
             if available:
-                self.enrollment = None
+                self._discard_enrollment()
                 await self._drain()
                 success, _ = verifier.unenroll("owner")
         await self._send("voiceprint_dialog", request,
@@ -332,10 +361,28 @@ class OutdoorSession:
             success=bool(success), code="ok" if success else "owner_required",
             metadata=verifier.get_metadata("owner") if available else None)
 
+    def _discard_enrollment(self):
+        if self.enrollment is not None:
+            entry = self.store.enrollments[(self.device, self.enrollment["enrollment_id"])]
+            if "result" not in entry:
+                entry.update(result=dict(state="cancelled"), terminal_at=self.store.clock())
+            self.enrollment["samples"].clear()
+            self.enrollment["order"].clear()
+            self.enrollment = None
+
     async def _enrollment_control(self, p, request):
         identity = {k: self._uuid(p.get(k)) for k in ("owner_id", "lease_id", "enrollment_id")}
         async def reply(state, **fields):
             await self._send("enrollment_ack", request, **identity, state=state, **fields)
+        self.store.prune()
+        key = (self.device, identity["enrollment_id"])
+        record = self.store.enrollments.get(key)
+        if record and any(record[k] != identity[k] for k in ("owner_id", "lease_id")):
+            await reply("rejected", code="id_conflict")
+            return
+        if record and "result" in record:
+            await reply(**record["result"])
+            return
         if not self._owner_valid(p, "enrollment"):
             await reply("rejected", code="owner_required")
             return
@@ -352,14 +399,27 @@ class OutdoorSession:
                 await reply("rejected", code="model_provenance")
                 return
             if enrollment is None or enrollment["enrollment_id"] != identity["enrollment_id"]:
+                if record is None and (len(self.store.enrollments) >= 512 or
+                        sum(k[0] == self.device for k in self.store.enrollments) >= 128):
+                    await reply("rejected", code="capacity")
+                    return
+                self._discard_enrollment()
+                self.store.enrollments[key] = dict(identity)
                 await self._drain()
                 self.enrollment = dict(**identity, samples={}, order=[], saved=False,
                     verifier=verifier, extractor=verifier.extract_embedding, contract=contract,
                     generation=self.generation)
             await reply("collecting", required_samples=3, required_holdouts=1)
         elif kind == "enrollment_cancel":
+            if record is None:
+                if (len(self.store.enrollments) >= 512 or
+                        sum(k[0] == self.device for k in self.store.enrollments) >= 128):
+                    await reply("rejected", code="capacity")
+                    return
+                self.store.enrollments[key] = dict(**identity,
+                    result=dict(state="cancelled"), terminal_at=self.store.clock())
             if enrollment and enrollment["enrollment_id"] == identity["enrollment_id"]:
-                self.enrollment = None
+                self._discard_enrollment()
                 await self._drain()
             await reply("cancelled")
         elif kind == "enrollment_save":
@@ -397,7 +457,11 @@ class OutdoorSession:
             ok, _ = enrollment["verifier"].save_embedding(
                 centroid, min(samples[value][1] for value in ids), "owner")
             enrollment["saved"] = bool(ok)
-            await reply("saved" if ok else "rejected", code="ok" if ok else "publication_failed")
+            result = dict(state="saved" if ok else "rejected",
+                          code="ok" if ok else "publication_failed")
+            self.store.enrollments[key].update(result=result, terminal_at=self.store.clock())
+            self._discard_enrollment()
+            await reply(**result)
         else:
             raise OutdoorViolation("invalid_message")
 
@@ -457,10 +521,20 @@ class OutdoorSession:
         kind = p["type"]
         self.store.prune()
         previous = self.store.ledger.get((self.device, utterance))
+        if previous is self.assembly and previous is not None:
+            if await self._check_upload_deadline(previous):
+                return
         if kind == "utterance_status":
             await self._replay(request, utterance, previous)
             return
         if kind == "utterance_cancel":
+            if previous is None:
+                if not self.store.has_capacity(self.device):
+                    await self._error(request, utterance, "capacity")
+                    return
+                previous = dict(utterance_id=utterance)
+                self._terminal(previous, "cancelled")
+                self.store.ledger[(self.device, utterance)] = previous
             if self.enrollment and not self.enrollment["saved"]:
                 self.enrollment["samples"].pop(utterance, None)
                 if utterance in self.enrollment["order"]:
@@ -471,7 +545,10 @@ class OutdoorSession:
                 self.store.ledger[(self.device, utterance)] = previous
             await self._send("utterance_ack", request, utterance_id=utterance, stage="cancelled")
             return
-        if kind in ("utterance_begin", "utterance_commit") and previous:
+        if previous and "total_samples" not in previous and kind == "utterance_commit":
+            await self._replay(request, utterance, previous, duplicate=True)
+            return
+        if kind in ("utterance_begin", "utterance_commit") and previous and "total_samples" in previous:
             fields = ("total_samples", "sha256")
             if kind == "utterance_begin":
                 fields += ("purpose", "end_reason", "lease_id", "enrollment_id")
@@ -496,13 +573,15 @@ class OutdoorSession:
             if p["purpose"] == "enrollment":
                 self._uuid(p.get("lease_id"))
                 self._uuid(p.get("enrollment_id"))
+            if previous and "total_samples" not in previous:
+                previous.update({k: p.get(k) for k in ("total_samples", "sha256", "purpose",
+                                                       "end_reason", "lease_id", "enrollment_id")})
+                await self._replay(request, utterance, previous, duplicate=True)
+                return
             if not self._upload_authorized(p):
                 await self._error(request, utterance, "owner_required")
                 return
-            if (self.device in self.store.extracting
-                or self.assembly is not None or self.active_task is not None and not self.active_task.done()
-                or self._worker is not None and not self._worker.done()
-                or any(not task.done() for task in getattr(self.session, "_output_tasks", ()))):
+            if self.busy():
                 await self._error(request, utterance, "busy")
                 return
             if not self.store.has_capacity(self.device):
@@ -515,8 +594,10 @@ class OutdoorSession:
                          enrollment_id=p.get("enrollment_id"))
             self.assembly = entry
             self.store.ledger[(self.device, utterance)] = entry
-            self._upload_handle = asyncio.get_running_loop().call_later(
-                self.UPLOAD_TIMEOUT, lambda: self._spawn(self._upload_expired(entry)))
+            now = self.store.clock()
+            entry.update(wall_deadline=now + self.UPLOAD_TIMEOUT,
+                         progress_deadline=now + self.INACTIVITY_TIMEOUT)
+            self._arm_upload(entry)
             await self._send("utterance_ack", request, utterance_id=utterance,
                              stage="begin", next_sample=0)
         elif kind == "utterance_commit":
@@ -562,12 +643,18 @@ class OutdoorSession:
             raise OutdoorViolation("invalid_message")
 
     async def binary(self, data):
+        async with self._control_lock:
+            await self._binary(data)
+
+    async def _binary(self, data):
         if type(data) is not bytes or len(data) < 28 or self.closed:
             raise OutdoorViolation("invalid_format")
         magic, raw_id, offset, count = struct.unpack(">4s16sII", data[:28])
         entry = self.assembly
         if magic != b"NXA2" or entry is None or str(uuid.UUID(bytes=raw_id)) != entry["utterance_id"]:
             raise OutdoorViolation("invalid_format")
+        if await self._check_upload_deadline(entry):
+            return
         if count != len(data) - 28:
             raise OutdoorViolation("invalid_format")
         if not 2 <= count <= self.MAX_CHUNK_BYTES or count % 2 or offset * 2 + count > entry["total_samples"] * 2:
@@ -581,6 +668,8 @@ class OutdoorSession:
                 raise OutdoorViolation("overlap_conflict")
         else:
             entry["pcm"].extend(data[28:])
+            entry["progress_deadline"] = self.store.clock() + self.INACTIVITY_TIMEOUT
+            self._arm_upload(entry)
         await self._send("utterance_ack", entry["request"],
                          utterance_id=entry["utterance_id"], stage="receiving",
                          next_sample=len(entry["pcm"])//2)
@@ -591,8 +680,9 @@ class OutdoorSession:
             if entry["stage"] == "receiving":
                 fields["next_sample"] = len(entry["pcm"])//2
             else:
-                fields.update(total_samples=entry["total_samples"], sha256=entry["sha256"],
-                              duplicate=duplicate)
+                fields["duplicate"] = duplicate
+                if "total_samples" in entry:
+                    fields.update(total_samples=entry["total_samples"], sha256=entry["sha256"])
         await self._send("utterance_ack", request, **fields)
 
     async def _conversation(self, pcm):
@@ -604,6 +694,8 @@ class OutdoorSession:
 
     async def _process(self, entry, pcm, generation):
         token = self._output_generation.set(generation)
+        identity_token = self.output_utterance.set(
+            entry["utterance_id"] if entry["purpose"] == "conversation" else None)
         try:
             remaining = entry["deadline"] - self.store.clock()
             if remaining <= 0:
@@ -649,13 +741,14 @@ class OutdoorSession:
                     await self._send("utterance_result", entry["request"],
                         utterance_id=entry["utterance_id"], status="failed", code="processing_failed")
         finally:
+            self.output_utterance.reset(identity_token)
             self._output_generation.reset(token)
 
     async def close(self):
         self.closed = True
         self.paused = True
         self._retire_owner()
-        self.enrollment = None
+        self._discard_enrollment()
         if self._lease_handle:
             self._lease_handle.cancel()
         try:

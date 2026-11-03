@@ -65,6 +65,9 @@ class SessionHub:
 
     def register_session(self, session: Any) -> None:
         self._active_sessions[session.session_id] = session
+        if not hasattr(session, "_output_boundary_listeners"):
+            session._output_boundary_listeners = set()
+        session._output_boundary_listeners.add(self._notify_session_change)
         self._notify_session_change()
         self.publish_event({
             "type": "appliance_connected",
@@ -77,6 +80,7 @@ class SessionHub:
     def unregister_session(self, session: Any) -> None:
         if session.session_id in self._active_sessions:
             del self._active_sessions[session.session_id]
+            session._output_boundary_listeners.discard(self._notify_session_change)
             self._notify_session_change()
             self.publish_event({
                 "type": "appliance_disconnected",

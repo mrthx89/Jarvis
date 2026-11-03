@@ -100,6 +100,8 @@ class ApplianceSession:
         self.outdoor = None
         self.outdoor_store = _OUTDOOR_STORE
         self._output_tasks = set()
+        self._legacy_quarantined = set()
+        self.LEGACY_DRAIN_TIMEOUT = 1.5
         self._send_lock = asyncio.Lock()
         self.max_json_bytes = max_json_bytes
         self.websocket = websocket
@@ -266,30 +268,45 @@ class ApplianceSession:
                 ok, message = False, "Modul sidik suara tidak aktif."
             await self._voiceprint_reply("unenroll", request_id, ok, message)
 
+    def _legacy_cleanup_done(self, task=None):
+        if task is not None:
+            self._legacy_quarantined.discard(task)
+            if not task.cancelled():
+                task.exception()
+        if (self._closed and not self._legacy_quarantined and self.authenticated_device_id is not None
+                and self.outdoor_store.connections.get(self.authenticated_device_id) is self):
+            del self.outdoor_store.connections[self.authenticated_device_id]
+
     async def close(self):
         self._closed = True
         try:
             if self.outdoor:
                 await self.outdoor.close()
         finally:
-            if self.outdoor_store.connections.get(self.authenticated_device_id) is self:
-                del self.outdoor_store.connections[self.authenticated_device_id]
+            tasks = {t for t in (self._processing_task, self._enroll_task,
+                     self._enroll_worker, self._enroll_deadline_task, *self._output_tasks)
+                     if t is not None and t is not asyncio.current_task() and not t.done()}
+            for task in tasks:
+                if task not in self._legacy_quarantined:
+                    self._legacy_quarantined.add(task)
+                    task.add_done_callback(self._legacy_cleanup_done)
+                task.cancel()
             self._clear_enrollment()
             if self.hub:
                 self.hub.unregister_session(self)
             if self._gap_handle:
                 self._gap_handle.cancel()
                 self._gap_handle = None
-            if self._processing_task:
-                self._processing_task.cancel()
-                await asyncio.gather(self._processing_task, return_exceptions=True)
+            if tasks:
+                await asyncio.wait(tasks, timeout=self.LEGACY_DRAIN_TIMEOUT)
+            self._legacy_cleanup_done()
             self.audio_buffer.clear()
             self._preroll.clear()
             self.is_recording = False
 
-    def _busy(self):
-        return (self.outdoor is not None and (self.outdoor.assembly is not None or not self.outdoor.output_allowed() or
-                (self.outdoor.active_task is not None and not self.outdoor.active_task.done()))) or self._closed or self._enrollment is not None or self._external_speech or time.monotonic() < self._cooldown_until or (
+    def _busy(self, owned_task=None):
+        return (self.outdoor is not None and (self.outdoor.busy(owned_task) or
+                not self.outdoor.output_allowed())) or self._closed or self._enrollment is not None or self._external_speech or time.monotonic() < self._cooldown_until or (
             self._processing_task is not None and not self._processing_task.done()
         )
 
@@ -320,6 +337,9 @@ class ApplianceSession:
                 if kind in {"state_change", "cognitive", "transcription", "tts_start", "tts_end", "visual_telemetry", "telemetry"}:
                     if not self._output_allowed():
                         return
+                    utterance = self.outdoor.output_utterance.get()
+                    if utterance is not None:
+                        payload["utterance_id"] = utterance
                 if kind not in {"ping", "pong", "server_hello"}:
                     import uuid
                     payload.update(connection_id=self.outdoor.connection_id, output_epoch=self.outdoor.epoch)
@@ -370,11 +390,13 @@ class ApplianceSession:
 
     async def speak_text(self, text: str, expression: Optional[str] = None) -> bool:
         """Stream TTS audio to the appliance speaker and animate the mascot."""
-        if self._busy() or not self.ready or self.is_recording:
+        owned = asyncio.current_task() if asyncio.current_task() in self._output_tasks else None
+        if self._busy(owned) or not self.ready or self.is_recording:
             return False
         self._external_speech = True
         async def deliver():
             token = self.outdoor._output_generation.set(self.outdoor.generation) if self.outdoor else None
+            identity_token = self.outdoor.output_utterance.set(None) if self.outdoor else None
             try:
                 tag_expr, clean_text = parse_and_strip_emotional_tags(text)
                 resolved_expr = tag_expr.value if tag_expr else (expression or "senang")
@@ -385,8 +407,16 @@ class ApplianceSession:
             finally:
                 if self.outdoor and token is not None:
                     self.outdoor._output_generation.reset(token)
+                if self.outdoor and identity_token is not None:
+                    self.outdoor.output_utterance.reset(identity_token)
         task = asyncio.create_task(deliver())
         self._output_tasks.add(task)
+        def delivery_done(delivery):
+            self._output_tasks.discard(delivery)
+            self._external_speech = False
+            if not delivery.cancelled():
+                delivery.exception()
+        task.add_done_callback(delivery_done)
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
@@ -394,9 +424,6 @@ class ApplianceSession:
                 task.cancel()
                 raise
             return False  # Ownership cancels this delivery, not its long-lived caller.
-        finally:
-            self._output_tasks.discard(task)
-            self._external_speech = False
 
     async def _speak_text_owned(self, text: str, expression: Optional[str]) -> bool:
         tag_expr, clean_text = parse_and_strip_emotional_tags(text)
