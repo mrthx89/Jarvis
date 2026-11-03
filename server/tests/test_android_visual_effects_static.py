@@ -84,12 +84,15 @@ def test_audiotrack_bounded_queue_guard():
     assert "maxBufferedBytes" in source
     assert "queuedBytes" in source
     assert "writeChunk(data: ByteArray): Boolean" in source
-    assert "dropping chunk to bound latency" in source
+    assert "dropping chunk to bound latency" not in source
+    assert "bufferLock.wait(" in source
+    assert "bufferLock.notifyAll()" in source
     assert "isQueueFull" in source
     assert "getQueuedBytes" in source
 
     service_source = (JAVA_SERVICE / "NexoKioskService.kt").read_text()
-    assert "audioPlayer.writeChunk(audioData)" in service_source
+    assert "val player = audioPlayer" in service_source
+    assert "player.writeChunk(audioData)" in service_source
     assert "earconManager.playListening()" in service_source
     assert "earconManager.playThinking()" in service_source
 

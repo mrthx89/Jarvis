@@ -16,6 +16,7 @@ from nexo_server.pipeline.speaker import (
     is_voice_cancel_command,
 )
 from jarvis_server.pipeline.speaker import SpeakerVerifier as JarvisSpeakerVerifier
+from tests.test_voiceprint_enrollment_protocol import FakeONNXSession
 
 
 def _generate_pcm(duration_s: float = 2.0, freq_hz: float = 440.0, sample_rate: int = 16000) -> bytes:
@@ -80,6 +81,7 @@ def test_speaker_enrollment_and_verification_lifecycle(tmp_path):
         voiceprints_dir=str(voiceprints_dir),
         threshold=0.65,
     )
+    verifier._session = FakeONNXSession()
 
     # 1. Unenrolled state: verification always returns True (open response mode)
     assert not verifier.is_enrolled("owner")
@@ -162,6 +164,7 @@ async def test_websocket_speaker_gating(tmp_path):
         voiceprints_dir=str(tmp_path),
         threshold=0.65,
     )
+    verifier._session = FakeONNXSession()
 
     session = ApplianceSession(
         websocket=mock_ws,
@@ -179,8 +182,9 @@ async def test_websocket_speaker_gating(tmp_path):
     # 1. Voice command: enroll
     mock_stt.transcribe.return_value = "daftarkan suara saya"
     await session._run_pipeline(owner_pcm)
-    assert verifier.is_enrolled("owner")
-    assert any("berhasil didaftarkan" in s for s in spoken)
+    assert not verifier.is_enrolled("owner")
+    assert any("Konfirmasi" in s for s in spoken)
+    assert verifier.enroll(owner_pcm)[0]
 
     # 2. General query from stranger (rejected)
     spoken.clear()
@@ -208,8 +212,8 @@ async def test_websocket_speaker_gating(tmp_path):
     spoken.clear()
     mock_stt.transcribe.return_value = "hapus sidik suara"
     await session._run_pipeline(owner_pcm)
-    assert not verifier.is_enrolled("owner")
-    assert any("berhasil dihapus" in s for s in spoken)
+    assert verifier.is_enrolled("owner")
+    assert any("Konfirmasi" in s for s in spoken)
 
 
 @pytest.mark.asyncio
@@ -220,6 +224,7 @@ async def test_websocket_voiceprint_control_frames(tmp_path):
 
     mock_ws = AsyncMock()
     verifier = SpeakerVerifier(voiceprints_dir=str(tmp_path))
+    verifier._session = FakeONNXSession()
     session = ApplianceSession(
         websocket=mock_ws,
         session_id="test_ctrl",
@@ -245,7 +250,7 @@ async def test_websocket_voiceprint_control_frames(tmp_path):
     assert msg["is_enrolled"] is True
 
     # 3. Unenroll via control frame
-    await session.handle_text_frame('{"type": "voiceprint_unenroll"}')
+    await session.handle_text_frame('{"type": "voiceprint_unenroll", "request_id": "delete-1"}')
     assert not verifier.is_enrolled("owner")
     dialogs = [json.loads(c[0][0]) for c in mock_ws.send_text.call_args_list if "voiceprint_dialog" in c[0][0]]
     assert len(dialogs) >= 1

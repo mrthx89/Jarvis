@@ -109,6 +109,66 @@ Ketika hening terdeteksi melebihi ambang batas (misal 800ms):
 
 ---
 
+### 3.3 Pendaftaran sidik suara melalui sentuhan
+
+Kontrol ini memakai otoritas koneksi WebSocket yang sudah terautentikasi dan selesai
+hello. Ucapan seperti “daftarkan suara saya” atau “hapus sidik suara” hanya membuka
+UI (`action=enroll` atau `manage`); ucapan tersebut **tidak** mendaftarkan,
+menimpa, menghapus, atau mengonfirmasi profil. Mulai rekaman dan konfirmasi hapus
+harus berasal dari sentuhan eksplisit di UI.
+
+| Client control | Server `voiceprint_dialog.action` | Makna |
+| --- | --- | --- |
+| `voiceprint_query` | `query` | Status profil dan kesiapan model saat ini |
+| `voiceprint_enroll_start` + `request_id` | `recording` atau `error` | Mulai capture khusus setelah diterima server |
+| `voiceprint_enroll_finish` + ID yang sama | `enrolled` atau `error` | Ekstraksi model dan penyimpanan hasil, bukan tanda berhasil optimistis |
+| `voiceprint_enroll_cancel` + ID yang sama | `cancelled` | Hapus capture dan batalkan commit yang belum terjadi |
+| `voiceprint_unenroll` + `request_id` | `unenroll` | Hasil hapus setelah konfirmasi sentuh |
+
+`request_id` adalah string non-kosong sepanjang 1–128 karakter. Query boleh tanpa
+ID. Gunakan ID baru untuk setiap capture: ID capture yang telah diterima tidak
+boleh dipakai ulang selama koneksi itu. Maksimal 1024 capture per koneksi, setelah
+itu sambungkan ulang. Kontrol dengan ID usang tidak mengubah capture yang baru.
+ID tidak valid adalah pelanggaran protokol.
+
+Contoh acknowledgment (field baru mempunyai default agar pesan lama tetap dapat dibaca):
+
+```json
+{
+  "type": "voiceprint_dialog",
+  "action": "recording",
+  "request_id": "capture-unique-id",
+  "success": null,
+  "available": true,
+  "is_enrolled": false,
+  "metadata": null,
+  "message": "Bicara selama 2 hingga 6 detik."
+}
+```
+
+- `available` berarti sesi ONNX sungguhan siap, bukan sekadar modul dikonfigurasi.
+  Model hilang/gagal dimuat menolak enrollment; tidak ada embedding tiruan produksi.
+- `success=null` untuk query, intent UI, dan acknowledgment `recording`;
+  hasil enrollment/hapus memakai `true` atau `false`. Cancel memakai `false`.
+  `is_enrolled` dan `metadata` selalu dibaca dari profil saat respons dikirim,
+  termasuk ketika gagal hapus (jangan menganggap profil sudah kosong).
+- Klien menahan PCM percakapan selama start pending, lalu hanya mengirim sampel
+  enrollment setelah `recording` dengan ID yang cocok. Selama capture maupun
+  ekstraksi, PCM **tidak** masuk VAD percakapan, pre-roll, STT, Hermes, atau TTS.
+  `voice_start`/`voice_end` tidak mengakhiri capture enrollment.
+- PCM16 16 kHz mono: minimal 64000 byte (2 detik), maksimal 192000 byte
+  (6 detik). Frame tetap maksimal 64000 byte dan harus berjumlah byte genap.
+  Kelebihan PCM dibuang, tidak memicu commit otomatis. Finish eksplisit wajib.
+- Deadline 15 detik sejak start mencakup rekaman dan ekstraksi. Cancel, timeout,
+  atau disconnect membersihkan buffer. Ekstraksi yang terlambat tidak dapat
+  menyimpan profil atau memengaruhi turn berikutnya; start baru ditolak selama
+  worker ekstraksi sebelumnya belum berhenti. Profil lama tetap aktif sampai
+  embedding valid berhasil disimpan dengan replace, tanpa penghapusan awal.
+- Start/hapus ditolak saat sesi sibuk, sedang merekam percakapan, berbicara,
+  atau masih dalam echo guard. Enrollment tidak menghasilkan balasan TTS.
+  Klien menghentikan capture dan menahan PCM enrollment sesudah cancel/finish;
+  hanya kembali ke percakapan setelah hasil/ack yang sesuai.
+
 ### 4. Siklus Status Sistem, Telemetri Visual & Stream Kognitif
 
 #### 4.1 Perubahan Status (State Change) & Ekspresi Maskot (Server -> Client)

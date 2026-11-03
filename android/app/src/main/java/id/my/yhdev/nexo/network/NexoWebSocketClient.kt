@@ -179,14 +179,21 @@ class NexoWebSocketClient(
         sendJson(VoiceprintQuery())
     }
 
-    fun unenrollVoiceprint() {
-        sendJson(VoiceprintUnenroll())
-    }
+    fun unenrollVoiceprint(requestId: String = java.util.UUID.randomUUID().toString()): Boolean =
+        sendJson(VoiceprintControl("voiceprint_unenroll", requestId))
 
-    fun sendJson(obj: Any) {
-        if (!isConnected.get()) return
-        val json = gson.toJson(obj)
-        webSocket?.send(json)
+    fun startVoiceprintEnrollment(requestId: String): Boolean =
+        sendJson(VoiceprintControl("voiceprint_enroll_start", requestId))
+
+    fun finishVoiceprintEnrollment(requestId: String): Boolean =
+        sendJson(VoiceprintControl("voiceprint_enroll_finish", requestId))
+
+    fun cancelVoiceprintEnrollment(requestId: String): Boolean =
+        sendJson(VoiceprintControl("voiceprint_enroll_cancel", requestId))
+
+    fun sendJson(obj: Any): Boolean {
+        if (!isConnected.get() || !shouldRun.get()) return false
+        return webSocket?.send(gson.toJson(obj)) == true
     }
 
     fun sendAudioChunk(chunk: ByteArray, length: Int): Boolean {

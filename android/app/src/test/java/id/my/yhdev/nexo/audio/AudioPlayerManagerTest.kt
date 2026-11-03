@@ -99,31 +99,84 @@ class AudioPlayerManagerTest {
         }
     }
 
-    @Test fun boundedQueueRejectsExcessChunksToPreventLatencyBuildup() {
+    @Test fun boundedQueueBackpressuresWithoutDroppingPcm() {
         val worker = Executors.newSingleThreadExecutor()
+        val sender = Executors.newSingleThreadExecutor()
         val writeBlocked = CountDownLatch(1)
-        val player = AudioPlayerManager(
-            worker = worker,
-            maxBufferedBytes = 16,
+        val entered = CountDownLatch(1)
+        val written = java.io.ByteArrayOutputStream()
+        val player = AudioPlayerManager(worker = worker, maxBufferedBytes = 16,
+            outputFactory = {
+                object : PcmOutput {
+                    override val playbackHeadFrames get() = written.size().toLong() / 2
+                    override fun write(data: ByteArray, offset: Int, length: Int): Int {
+                        entered.countDown()
+                        check(writeBlocked.await(2, TimeUnit.SECONDS))
+                        val partial = minOf(2, length)
+                        written.write(data, offset, partial)
+                        return partial
+                    }
+                    override fun close() {}
+                }
+            })
+        try {
+            val first = ByteArray(10) { it.toByte() }
+            val second = ByteArray(30) { (it + 10).toByte() }
+            assertTrue(player.writeChunk(first))
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            val pending = sender.submit<Boolean> { player.writeChunk(second) }
+            try {
+                pending.get(100, TimeUnit.MILLISECONDS)
+                fail("A full queue must backpressure, not discard the new PCM")
+            } catch (_: java.util.concurrent.TimeoutException) {}
+            assertTrue(player.getQueuedBytes() <= player.getMaxBufferedBytes())
+            writeBlocked.countDown()
+            assertTrue(pending.get(2, TimeUnit.SECONDS))
+            val drained = CountDownLatch(1)
+            player.finish { drained.countDown() }
+            assertTrue(drained.await(2, TimeUnit.SECONDS))
+            assertArrayEquals(first + second, written.toByteArray())
+            assertEquals(0, player.getQueuedBytes())
+        } finally {
+            writeBlocked.countDown()
+            player.release()
+            sender.shutdownNow()
+            assertTrue(worker.awaitTermination(2, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test fun stopUnblocksProducerWithoutNegativeAccountingOrStaleAudio() {
+        val worker = Executors.newSingleThreadExecutor()
+        val sender = Executors.newSingleThreadExecutor()
+        val entered = CountDownLatch(1)
+        val closed = CountDownLatch(1)
+        val player = AudioPlayerManager(worker = worker, maxBufferedBytes = 4,
             outputFactory = {
                 object : PcmOutput {
                     override val playbackHeadFrames = 0L
                     override fun write(data: ByteArray, offset: Int, length: Int): Int {
-                        writeBlocked.await(500, TimeUnit.MILLISECONDS)
-                        return length
+                        entered.countDown()
+                        return 0
                     }
-                    override fun close() {}
+                    override fun close() { closed.countDown() }
                 }
-            }
-        )
+            })
         try {
-            assertTrue(player.writeChunk(ByteArray(10)))
-            // Exceeds maxBufferedBytes (10 + 10 > 16)
-            assertFalse(player.writeChunk(ByteArray(10)))
+            assertTrue(player.writeChunk(ByteArray(4)))
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            val pending = sender.submit<Boolean> { player.writeChunk(ByteArray(8)) }
+            try {
+                pending.get(100, TimeUnit.MILLISECONDS)
+                fail("Producer must be waiting for capacity before cancellation")
+            } catch (_: java.util.concurrent.TimeoutException) {}
+            player.stop()
+            assertFalse(pending.get(2, TimeUnit.SECONDS))
+            assertTrue(closed.await(2, TimeUnit.SECONDS))
+            assertEquals(0, player.getQueuedBytes())
         } finally {
-            writeBlocked.countDown()
             player.release()
-            worker.awaitTermination(2, TimeUnit.SECONDS)
+            sender.shutdownNow()
+            assertTrue(worker.awaitTermination(2, TimeUnit.SECONDS))
         }
     }
 }

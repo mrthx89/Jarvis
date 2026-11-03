@@ -29,6 +29,8 @@ class EarconManager(private val context: Context) {
     private var thinkingChimeId: Int = 0
     private var listeningLoaded = false
     private var thinkingLoaded = false
+    private var listeningStream = 0
+    private var thinkingStream = 0
 
     init {
         soundPool?.let { pool ->
@@ -49,17 +51,27 @@ class EarconManager(private val context: Context) {
 
     fun playListening() {
         if (listeningLoaded && soundPool != null) {
-            soundPool.play(listeningChimeId, 0.65f, 0.65f, 1, 0, 1.0f)
+            stop()
+            listeningStream = soundPool.play(listeningChimeId, 0.65f, 0.65f, 1, 0, 1.0f)
         }
     }
 
     fun playThinking() {
         if (thinkingLoaded && soundPool != null) {
-            soundPool.play(thinkingChimeId, 0.55f, 0.55f, 1, 0, 1.0f)
+            stop()
+            thinkingStream = soundPool.play(thinkingChimeId, 0.55f, 0.55f, 1, 0, 1.0f)
         }
     }
 
+    fun stop() {
+        if (listeningStream != 0) soundPool?.stop(listeningStream)
+        if (thinkingStream != 0) soundPool?.stop(thinkingStream)
+        listeningStream = 0
+        thinkingStream = 0
+    }
+
     fun release() {
+        stop()
         try {
             soundPool?.release()
         } catch (e: Exception) {

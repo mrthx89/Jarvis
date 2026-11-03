@@ -24,6 +24,9 @@ import id.my.yhdev.nexo.audio.AudioRecorderManager
 import id.my.yhdev.nexo.audio.EarconManager
 import id.my.yhdev.nexo.audio.HalfDuplexGate
 import id.my.yhdev.nexo.network.NexoWebSocketClient
+import id.my.yhdev.nexo.network.VoiceprintDialog
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import id.my.yhdev.nexo.ui.NexoState
 import id.my.yhdev.nexo.security.DeviceCredentialStore
 
@@ -38,6 +41,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
     @Volatile private var webSocketClient: NexoWebSocketClient? = null
     @Volatile private var generation = 0
     @Volatile private var audioGeneration = 0
+    private val playbackTurn = AtomicInteger(0)
     private var connectionKey: Pair<String, String>? = null
     private var audioRecovery: Runnable? = null
     private var audioRecoveryAttempts = 0
@@ -50,7 +54,18 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
     private var currentState = NexoState.IDLE
     private var currentMessage: String? = "Suara dijeda • tekan Mulai untuk mendengarkan"
     private var currentExpression: String? = null
-    private var lastVoiceprintDialog: id.my.yhdev.nexo.network.VoiceprintDialog? = null
+    private var lastVoiceprintDialog: VoiceprintDialog? = null
+    private enum class EnrollmentPhase { STARTING, RECORDING, SAVING, CANCELLING }
+    private val enrollmentLock = Any()
+    @Volatile private var pendingEnrollmentId: String? = null
+    @Volatile private var enrollmentPhase: EnrollmentPhase? = null
+    private var enrollmentGeneration = -1
+    @Volatile private var voiceprintConnectionReady = false
+    private var pendingUnenrollId: String? = null
+    private var enrollmentTimeout: Runnable? = null
+    private var enrollmentSilencedChimes = false
+    private val enrollmentActive: Boolean
+        get() = pendingEnrollmentId != null
 
     var serviceCallback: ServiceCallback? = null
         set(value) {
@@ -64,6 +79,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         fun onVoiceEnabledChanged(enabled: Boolean)
         fun onStateChanged(state: NexoState, message: String?, expression: String?)
         fun onTelemetryReceived(amplitude: Float, bands: List<Float>?)
+        fun onEnrollmentLevel(amplitude: Float) {}
         fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean)
         fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog)
     }
@@ -83,6 +99,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
     }
 
     private fun publishListening() {
+        if (enrollmentActive) return
         if (isVoiceEnabled && duplex.canSendAudio) {
             val now = SystemClock.uptimeMillis()
             val isSleeping = currentExpression == "sleeping"
@@ -98,7 +115,8 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
 
     // Called by the visible Activity after microphone permission has been granted.
     fun startVoice() {
-        if (isVoiceEnabled && webSocketClient != null) return
+        if (isVoiceEnabled && webSocketClient != null &&
+            (::audioRecorder.isInitialized && audioRecorder.isRecording() || enrollmentActive)) return
         cancelAudioRecovery()
         audioRecoveryAttempts = 0
         voicePreferences.edit().putBoolean("enabled", true).commit()
@@ -129,6 +147,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         ++generation
         ++audioGeneration
         duplex.disconnected()
+        invalidateVoiceprint("Sesi suara berakhir • status suara belum diketahui")
         audioRecorder.stopRecording()
         audioPlayer.stop()
         webSocketClient?.disconnect()
@@ -199,26 +218,33 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
                 if (isVoiceEnabled && audioToken == audioGeneration) recoverAudioSession(message)
             }
         }) { chunk, length ->
-            // Continuous PCM for server endpointing. No local voice_end, no barge-in.
+            // Serialize PCM with enrollment controls: no chunk can cross start/finish/cancel.
             // Use this session's socket, never a replacement endpoint's socket.
-            if (isVoiceEnabled && audioToken == audioGeneration && duplex.canSendAudio) {
-                // Immediate local VU amplitude calculation for instant tactile visual feedback on mascot
-                if (currentState == NexoState.LISTENING || currentState == NexoState.IDLE) {
-                    val localAmp = calculateNormalizedRms(chunk, length)
-                    if (localAmp > 0.05f) {
+            synchronized(enrollmentLock) {
+                if (isVoiceEnabled && audioToken == audioGeneration) {
+                    val requestId = pendingEnrollmentId
+                    val enrollmentRecording = requestId != null && enrollmentPhase == EnrollmentPhase.RECORDING
+                    val normalRecording = requestId == null &&
+                        isVoiceEnabled && audioToken == audioGeneration && duplex.canSendAudio
+                    if (enrollmentRecording || normalRecording) {
+                        val localAmp = calculateNormalizedRms(chunk, length)
                         main.post {
-                            if (isVoiceEnabled && audioToken == audioGeneration &&
-                                (currentState == NexoState.LISTENING || currentState == NexoState.IDLE)) {
-                                serviceCallback?.onTelemetryReceived(localAmp, null)
+                            if (isVoiceEnabled && audioToken == audioGeneration) {
+                                if (enrollmentRecording && pendingEnrollmentId == requestId &&
+                                    enrollmentPhase == EnrollmentPhase.RECORDING) {
+                                    serviceCallback?.onEnrollmentLevel(localAmp)
+                                } else if (normalRecording && !enrollmentActive && duplex.canSendAudio) {
+                                    serviceCallback?.onTelemetryReceived(localAmp, null)
+                                }
                             }
                         }
-                    }
-                }
-                if (client?.sendAudioChunk(chunk, length) != true) {
-                    val token = generation
-                    main.post {
-                        if (isVoiceEnabled && token == generation && audioToken == audioGeneration) {
-                            onDisconnected()
+                        if (client?.sendAudioChunk(chunk, length) != true) {
+                            val token = generation
+                            main.post {
+                                if (isVoiceEnabled && token == generation && audioToken == audioGeneration) {
+                                    failAudioSession("Pengiriman audio gagal • coba hubungkan ulang")
+                                }
+                            }
                         }
                     }
                 }
@@ -278,6 +304,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         ++generation
         ++audioGeneration
         duplex.disconnected()
+        invalidateVoiceprint("Sesi suara berakhir • status suara belum diketahui")
         audioRecorder.stopRecording()
         audioPlayer.stop()
         webSocketClient?.disconnect()
@@ -293,7 +320,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
     fun initializeConnection(serverUrl: String, deviceId: String, forceReconnect: Boolean = false) {
         val sameEndpoint = connectionKey == Pair(serverUrl, deviceId)
         if (!ServerEndpointPolicy.isValid(serverUrl) || deviceId.isBlank()) {
-            publish(NexoState.ERROR, "Endpoint suara tidak valid")
+            failAudioSession("Endpoint suara tidak valid")
             return
         }
         connectionKey = Pair(serverUrl, deviceId)
@@ -307,6 +334,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         val token = ++generation
         ++audioGeneration
         duplex.disconnected()
+        invalidateVoiceprint("Sesi suara berakhir • status suara belum diketahui")
         audioRecorder.stopRecording()
         audioPlayer.stop()
         webSocketClient?.disconnect()
@@ -328,10 +356,15 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
                 dispatch { this@NexoKioskService.onTelemetryReceived(amplitude, bands) }
             override fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean) =
                 dispatch { this@NexoKioskService.onTranscriptionReceived(role, text, isFinal) }
-            override fun onAudioChunkReceived(audioData: ByteArray) =
-                dispatch { this@NexoKioskService.onAudioChunkReceived(audioData) }
-            override fun onTTSStarted() = dispatch { this@NexoKioskService.onTTSStarted() }
-            override fun onTTSEnded() = dispatch { this@NexoKioskService.onTTSEnded() }
+            override fun onAudioChunkReceived(audioData: ByteArray) {
+                if (isVoiceEnabled && token == generation) this@NexoKioskService.onAudioChunkReceived(audioData)
+            }
+            override fun onTTSStarted() {
+                if (isVoiceEnabled && token == generation) this@NexoKioskService.onTTSStarted()
+            }
+            override fun onTTSEnded() {
+                if (isVoiceEnabled && token == generation) this@NexoKioskService.onTTSEnded()
+            }
             override fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog) =
                 dispatch { this@NexoKioskService.onVoiceprintDialogReceived(dialog) }
         }
@@ -339,17 +372,190 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         webSocketClient?.connect()
     }
 
+    fun startVoiceprintEnrollment(): Boolean {
+        if (!isVoiceEnabled || !foregroundAllowed || !voiceprintConnectionReady ||
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ||
+            !audioRecorder.isRecording() || !duplex.canSendAudio ||
+            currentState == NexoState.THINKING || currentState == NexoState.SPEAKING ||
+            (currentState != NexoState.IDLE && currentState != NexoState.LISTENING)) return false
+        val client = webSocketClient ?: return false
+        val requestId = UUID.randomUUID().toString()
+        val token = generation
+        synchronized(enrollmentLock) {
+            if (enrollmentActive || pendingUnenrollId != null || !duplex.canSendAudio) return false
+            pendingEnrollmentId = requestId
+            enrollmentGeneration = generation
+            enrollmentPhase = EnrollmentPhase.STARTING
+            lastVoiceprintDialog = null
+            if (::earconManager.isInitialized) earconManager.release()
+            enrollmentSilencedChimes = true
+            if (!client.startVoiceprintEnrollment(requestId)) {
+                // A failed control send leaves server state unknown; do not reopen the mic.
+                main.post {
+                    if (token == generation && pendingEnrollmentId == requestId)
+                        failAudioSession("Pendaftaran suara gagal dikirim • hubungkan ulang")
+                }
+                return false
+            }
+        }
+        serviceCallback?.onTelemetryReceived(0f, null)
+        serviceCallback?.onEnrollmentLevel(0f)
+        armEnrollmentTimeout(10_000L)
+        return true
+    }
+
+    fun finishVoiceprintEnrollment(): Boolean {
+        val token = generation
+        synchronized(enrollmentLock) {
+            val requestId = pendingEnrollmentId ?: return false
+            if (enrollmentGeneration != generation || enrollmentPhase != EnrollmentPhase.RECORDING) return false
+            enrollmentPhase = EnrollmentPhase.SAVING
+            lastVoiceprintDialog = null
+            if (webSocketClient?.finishVoiceprintEnrollment(requestId) != true) {
+                main.post {
+                    if (token == generation && pendingEnrollmentId == requestId)
+                        failAudioSession("Penyimpanan suara gagal dikirim • hubungkan ulang")
+                }
+                return false
+            }
+        }
+        pauseEnrollmentCapture()
+        serviceCallback?.onEnrollmentLevel(0f)
+        armEnrollmentTimeout(15_000L)
+        return true
+    }
+
+    fun cancelVoiceprintEnrollment() {
+        val token = generation
+        synchronized(enrollmentLock) {
+            val requestId = pendingEnrollmentId ?: return
+            if (enrollmentPhase == EnrollmentPhase.CANCELLING) return
+            enrollmentPhase = EnrollmentPhase.CANCELLING
+            lastVoiceprintDialog = null
+            if (webSocketClient?.cancelVoiceprintEnrollment(requestId) != true) {
+                main.post {
+                    if (token == generation && pendingEnrollmentId == requestId)
+                        failAudioSession("Pembatalan suara gagal dikirim • hubungkan ulang")
+                }
+                return
+            }
+        }
+        pauseEnrollmentCapture()
+        serviceCallback?.onEnrollmentLevel(0f)
+        armEnrollmentTimeout(5_000L)
+    }
+
     override fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog) {
+        if (!isVoiceEnabled || !voiceprintConnectionReady) return
+        if (enrollmentActive) {
+            if (dialog.requestId != pendingEnrollmentId || enrollmentGeneration != generation) return
+            when (dialog.action) {
+                "recording" -> {
+                    if (enrollmentPhase != EnrollmentPhase.STARTING) return
+                    if (dialog.success == false || dialog.available == false) {
+                        // Contradictory recording ack: server capture may still be open.
+                        cancelVoiceprintEnrollment()
+                        return
+                    }
+                    synchronized(enrollmentLock) { enrollmentPhase = EnrollmentPhase.RECORDING }
+                    armEnrollmentTimeout(15_000L)
+                }
+                "enrolled", "error", "cancelled" -> {
+                    // A late save/start reply cannot acknowledge cancellation.
+                    if (enrollmentPhase == EnrollmentPhase.CANCELLING && dialog.action != "cancelled") return
+                    if (dialog.action == "enrolled" && enrollmentPhase != EnrollmentPhase.SAVING) return
+                    completeEnrollment()
+                    serviceCallback?.onVoiceprintDialogReceived(dialog)
+                    queryVoiceprint()
+                    return
+                }
+                else -> return
+            }
+        } else if (pendingUnenrollId != null && dialog.requestId == pendingUnenrollId) {
+            pendingUnenrollId = null
+            lastVoiceprintDialog = null
+            serviceCallback?.onVoiceprintDialogReceived(dialog)
+            queryVoiceprint()
+            return
+        } else if (dialog.requestId != null || dialog.action == "recording" ||
+            dialog.action == "enrolled" || dialog.action == "cancelled") {
+            // Completed, cancelled, or previous-connection replies never revive enrollment.
+            return
+        }
         lastVoiceprintDialog = dialog
         serviceCallback?.onVoiceprintDialogReceived(dialog)
     }
 
+    private fun pauseEnrollmentCapture() {
+        // Do not release enrollment PCM (including a blocked read tail) to conversation.
+        duplex.microphoneReady(false)
+        audioRecorder.stopRecording()
+    }
+
+    private fun completeEnrollment() {
+        val wasEnrollment = enrollmentActive
+        if (wasEnrollment) pauseEnrollmentCapture()
+        enrollmentTimeout?.let { main.removeCallbacks(it) }
+        enrollmentTimeout = null
+        if (enrollmentSilencedChimes) {
+            earconManager = EarconManager(this)
+            enrollmentSilencedChimes = false
+        }
+        synchronized(enrollmentLock) {
+            pendingEnrollmentId = null
+            enrollmentPhase = null
+            enrollmentGeneration = -1
+        }
+        lastVoiceprintDialog = null
+        serviceCallback?.onEnrollmentLevel(0f)
+        serviceCallback?.onTelemetryReceived(0f, null)
+        if (wasEnrollment && isVoiceEnabled && voiceprintConnectionReady) {
+            publish(NexoState.IDLE, "Pendaftaran selesai • tekan Mulai untuk melanjutkan mikrofon", "netral")
+        }
+    }
+
+    private fun invalidateVoiceprint(message: String) {
+        voiceprintConnectionReady = false
+        val requestId = pendingEnrollmentId
+        pendingUnenrollId = null
+        completeEnrollment()
+        lastVoiceprintDialog = null
+        // Never replay old biometric status after STOP, endpoint change, or reconnect.
+        serviceCallback?.onVoiceprintDialogReceived(VoiceprintDialog(
+            action = "error", requestId = requestId, success = false,
+            available = null, message = message
+        ))
+    }
+
+    private fun armEnrollmentTimeout(delayMs: Long) {
+        enrollmentTimeout?.let { main.removeCallbacks(it) }
+        val requestId = pendingEnrollmentId ?: return
+        val token = generation
+        val phase = enrollmentPhase
+        enrollmentTimeout = Runnable {
+            if (requestId == pendingEnrollmentId && token == generation && phase == enrollmentPhase) {
+                if (phase == EnrollmentPhase.RECORDING || phase == EnrollmentPhase.SAVING) {
+                    cancelVoiceprintEnrollment()
+                } else {
+                    // No start/cancel acknowledgement: tear down the socket before reopening PCM.
+                    failAudioSession("Pendaftaran suara melewati batas waktu • hubungkan ulang")
+                }
+            }
+        }.also { main.postDelayed(it, delayMs) }
+    }
+
     fun queryVoiceprint() {
-        webSocketClient?.queryVoiceprint()
+        if (isVoiceEnabled && voiceprintConnectionReady && !enrollmentActive) webSocketClient?.queryVoiceprint()
     }
 
     fun unenrollVoiceprint() {
-        webSocketClient?.unenrollVoiceprint()
+        if (!isVoiceEnabled || !voiceprintConnectionReady || enrollmentActive) return
+        val requestId = UUID.randomUUID().toString()
+        pendingUnenrollId = requestId
+        if (webSocketClient?.unenrollVoiceprint(requestId) != true) {
+            pendingUnenrollId = null
+            failAudioSession("Penghapusan suara gagal dikirim • hubungkan ulang")
+        }
     }
 
     private fun foregroundDenied() {
@@ -358,6 +564,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         ++generation
         ++audioGeneration
         duplex.disconnected()
+        invalidateVoiceprint("Sesi suara berakhir • status suara belum diketahui")
         if (::audioRecorder.isInitialized) audioRecorder.stopRecording()
         if (::audioPlayer.isInitialized) audioPlayer.stop()
         webSocketClient?.disconnect()
@@ -405,6 +612,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
     override fun onConnected() {
         if (!isVoiceEnabled) return
         if (audioRecorder.isRecording()) return // Duplicate hello must not chop capture or playback.
+        voiceprintConnectionReady = true
         // The client's onConnected is server_hello acknowledgement, not raw socket open.
         createAudioSession()
         duplex.connected()
@@ -417,7 +625,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
                 // Joyful reconnect greeting before settling into neutral listening
                 publish(NexoState.LISTENING, "Terhubung kembali! • Nexo Siaga", "senang")
                 main.postDelayed({
-                    if (isVoiceEnabled && audioRecorder.isRecording() && currentState == NexoState.LISTENING && currentExpression == "senang") {
+                    if (isVoiceEnabled && !enrollmentActive && audioRecorder.isRecording() && currentState == NexoState.LISTENING && currentExpression == "senang") {
                         publishListening()
                     }
                 }, 2500L)
@@ -438,6 +646,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         if (!isVoiceEnabled) return
         ++audioGeneration
         duplex.disconnected()
+        invalidateVoiceprint("Sesi suara berakhir • status suara belum diketahui")
         audioRecorder.stopRecording()
         audioPlayer.stop()
         publish(NexoState.DISCONNECTED, "Koneksi terputus • mencari sinyal server...", "bingung")
@@ -445,8 +654,19 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
 
     override fun onStateChanged(state: NexoState, message: String?, expression: String?) {
         if (!isVoiceEnabled) return
-        if (audioRecovery != null) return
-        if (state == NexoState.THINKING && ::earconManager.isInitialized) {
+        if (state == NexoState.ERROR) {
+            failAudioSession(message ?: "Sesi suara gagal")
+            return
+        }
+        if (state == NexoState.DISCONNECTED) {
+            ++audioGeneration
+            duplex.disconnected()
+            invalidateVoiceprint(message ?: "Koneksi suara terputus")
+            audioRecorder.stopRecording()
+            audioPlayer.stop()
+        }
+        if (enrollmentActive || audioRecovery != null) return
+        if (state == NexoState.THINKING && !duplex.playbackPending && ::earconManager.isInitialized) {
             earconManager.playThinking()
         }
         duplex.stateChanged(state)
@@ -466,37 +686,58 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
 
     override fun onTelemetryReceived(amplitude: Float, bands: List<Float>?) {
         if (!isVoiceEnabled) return
+        if (enrollmentActive) return
         serviceCallback?.onTelemetryReceived(amplitude, bands)
     }
 
     override fun onTranscriptionReceived(role: String, text: String, isFinal: Boolean) {
         if (!isVoiceEnabled) return
+        if (enrollmentActive) return
         serviceCallback?.onTranscriptionReceived(role, text, isFinal)
     }
 
     override fun onAudioChunkReceived(audioData: ByteArray) {
         if (!isVoiceEnabled) return
+        if (enrollmentActive) return
         duplex.ttsStarted()
-        val accepted = audioPlayer.writeChunk(audioData)
-        if (!accepted) {
-            Log.w("NexoKioskService", "Audio buffer queue full; chunk dropped to bound playback latency")
+        val token = generation
+        val audioToken = audioGeneration
+        val player = audioPlayer
+        val accepted = player.writeChunk(audioData)
+        if (!accepted) main.post {
+            if (isVoiceEnabled && token == generation && audioToken == audioGeneration && !enrollmentActive) {
+                failAudioSession("Pemutaran audio gagal • hubungkan ulang")
+            }
         }
     }
 
     override fun onTTSStarted() {
         if (!isVoiceEnabled) return
+        if (enrollmentActive) return
+        val turn = playbackTurn.incrementAndGet()
+        val token = generation
+        val audioToken = audioGeneration
         duplex.ttsStarted()
-        publish(NexoState.SPEAKING, "Berbicara • mikrofon dijeda", currentExpression)
         audioPlayer.start()
+        main.post {
+            if (isVoiceEnabled && token == generation && audioToken == audioGeneration &&
+                turn == playbackTurn.get() && !enrollmentActive) {
+                earconManager.stop()
+                publish(NexoState.SPEAKING, "Berbicara • mikrofon dijeda", currentExpression)
+            }
+        }
     }
 
     override fun onTTSEnded() {
         if (!isVoiceEnabled) return
+        if (enrollmentActive) return
         val token = generation
         val audioToken = audioGeneration
+        val turn = playbackTurn.get()
         audioPlayer.finish {
             main.post {
-                if (isVoiceEnabled && token == generation && audioToken == audioGeneration) {
+                if (isVoiceEnabled && token == generation && audioToken == audioGeneration && turn == playbackTurn.get()) {
+                    if (enrollmentActive) return@post
                     duplex.playbackDrained()
                     publishListening()
                 }
@@ -511,6 +752,7 @@ open class NexoKioskService : Service(), NexoWebSocketClient.WebSocketEventListe
         ++generation
         ++audioGeneration
         duplex.disconnected()
+        invalidateVoiceprint("Sesi suara berakhir • status suara belum diketahui")
         serviceCallback = null
         if (::earconManager.isInitialized) earconManager.release()
         super.onDestroy()

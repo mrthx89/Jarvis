@@ -76,7 +76,15 @@ data class VoiceprintDialog(
     @SerializedName("action") val action: String = "manage",
     @SerializedName("is_enrolled") val isEnrolled: Boolean = false,
     @SerializedName("message") val message: String? = null,
-    @SerializedName("metadata") val metadata: VoiceprintMetadata? = null
+    @SerializedName("metadata") val metadata: VoiceprintMetadata? = null,
+    @SerializedName("request_id") val requestId: String? = null,
+    @SerializedName("success") val success: Boolean? = null,
+    @SerializedName("available") val available: Boolean? = null
+)
+
+data class VoiceprintControl(
+    @SerializedName("type") val type: String,
+    @SerializedName("request_id") val requestId: String
 )
 
 data class VoiceprintQuery(

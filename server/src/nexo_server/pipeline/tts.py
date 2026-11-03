@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 import asyncio
+from contextlib import aclosing
 from typing import AsyncGenerator
 
 
@@ -15,6 +16,56 @@ class BaseTTS(ABC):
         """Yield raw signed little-endian PCM16, 24 kHz, mono chunks."""
         if False:
             yield b""
+
+
+async def prefetch_tts(
+    tts: BaseTTS,
+    sentences: AsyncGenerator[str, None],
+    *,
+    buffer_bytes: int = 120_000,
+) -> AsyncGenerator[tuple[str, bytes | None], None]:
+    """Overlap synthesis with sending; yield (sentence, None) before its PCM.
+
+    PCM is split into <=100 ms messages. A bounded queue applies backpressure,
+    never drops speech. Consumers must use aclosing when exiting early so the
+    provider and sentence source are cancelled immediately.
+    """
+    chunk_bytes = 4800
+    if buffer_bytes < chunk_bytes:
+        raise ValueError("TTS buffer must hold at least 100 ms of PCM")
+    queue = asyncio.Queue(maxsize=buffer_bytes // chunk_bytes)
+    done = object()
+
+    async def produce():
+        try:
+            async with aclosing(sentences) as source:
+                async for sentence in source:
+                    if not sentence.strip():
+                        continue
+                    await queue.put((sentence, None))
+                    async with aclosing(tts.synthesize_stream(sentence)) as audio:
+                        async for pcm in audio:
+                            if len(pcm) % 2:
+                                raise ValueError("TTS returned incomplete PCM16 sample")
+                            for offset in range(0, len(pcm), chunk_bytes):
+                                await queue.put((sentence, pcm[offset:offset + chunk_bytes]))
+        except Exception as error:
+            await queue.put(error)
+        else:
+            await queue.put(done)
+
+    producer = asyncio.create_task(produce())
+    try:
+        while True:
+            item = await queue.get()
+            if item is done:
+                return
+            if isinstance(item, Exception):
+                raise item
+            yield item
+    finally:
+        producer.cancel()
+        await asyncio.gather(producer, return_exceptions=True)
 
 
 class MockTTS(BaseTTS):
@@ -62,8 +113,14 @@ class EdgeTTS(BaseTTS):
         prefix = bytearray()
         header_checked = False
         produced = False
-        async with asyncio.timeout(45):
-            async for chunk in communicate.stream():
+        async with aclosing(communicate.stream()) as stream:
+            while True:
+                try:
+                    # Time only the provider read: a yield may wait on playback for minutes.
+                    async with asyncio.timeout(45):
+                        chunk = await anext(stream)
+                except StopAsyncIteration:
+                    break
                 if chunk.get("type") != "audio":
                     continue
                 data = chunk["data"]
@@ -85,16 +142,16 @@ class EdgeTTS(BaseTTS):
                     for pcm in pcm_chunks(decoder.decode(packet)):
                         produced = True
                         yield pcm
-            for packet in decoder.parse(b""):
-                for pcm in pcm_chunks(decoder.decode(packet)):
-                    produced = True
-                    yield pcm
-            for pcm in pcm_chunks(decoder.decode(None)):
+        for packet in decoder.parse(b""):
+            for pcm in pcm_chunks(decoder.decode(packet)):
                 produced = True
                 yield pcm
-            for pcm in resampler.resample(None):
-                produced = True
-                yield pcm.to_ndarray().astype("<i2", copy=False).tobytes()
+        for pcm in pcm_chunks(decoder.decode(None)):
+            produced = True
+            yield pcm
+        for pcm in resampler.resample(None):
+            produced = True
+            yield pcm.to_ndarray().astype("<i2", copy=False).tobytes()
         if not produced:
             raise RuntimeError("Edge TTS returned no decodable audio")
 

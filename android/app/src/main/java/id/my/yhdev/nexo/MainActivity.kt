@@ -347,11 +347,20 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         voiceprintSheet = id.my.yhdev.nexo.ui.VoiceprintManagementSheet(
             activity = this,
             currentDialog = lastVoiceprintDialog,
+            onEnroll = { kioskService?.startVoiceprintEnrollment() == true },
+            onFinish = { kioskService?.finishVoiceprintEnrollment() == true },
+            onCancel = { kioskService?.cancelVoiceprintEnrollment() },
+            onResumeMicrophone = { kioskService?.startVoice() },
             onUnenroll = {
                 kioskService?.unenrollVoiceprint()
             },
             onDismiss = { voiceprintSheet = null }
         ).also { it.show() }
+        kioskService?.queryVoiceprint()
+    }
+
+    override fun onEnrollmentLevel(amplitude: Float) {
+        runOnUiThread { if (!isDestroyed) voiceprintSheet?.updateInputLevel(amplitude) }
     }
 
     private fun checkAndRequestAudioPermission() {
@@ -412,6 +421,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
     }
 
     override fun onStop() {
+        voiceprintSheet?.dismiss()
         uiActive = false
         uiHandler.removeCallbacks(hideVoiceMood)
         uiHandler.removeCallbacks(pixelShiftRunnable)
@@ -553,8 +563,8 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
     override fun onVoiceprintDialogReceived(dialog: id.my.yhdev.nexo.network.VoiceprintDialog) {
         runOnUiThread {
             if (isDestroyed) return@runOnUiThread
-            lastVoiceprintDialog = dialog
-            if (dialog.action == "enroll" && voiceprintSheet == null) {
+            lastVoiceprintDialog = dialog.takeIf { it.available != null }
+            if (uiActive && dialog.action == "enroll" && voiceprintSheet == null) {
                 showVoiceprintManagement()
             } else {
                 voiceprintSheet?.updateDialog(dialog)
@@ -562,10 +572,12 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             if (::tvVoiceprintStatus.isInitialized && ::ivVoiceprintLed.isInitialized) {
                 val isEnrolled = dialog.isEnrolled
                 tvVoiceprintStatus.setText(
-                    if (isEnrolled) R.string.voiceprint_hud_registered
+                    if (dialog.available == null) R.string.voiceprint_loading
+                    else if (isEnrolled) R.string.voiceprint_hud_registered
                     else R.string.voiceprint_hud_unregistered
                 )
-                val ledColor = if (isEnrolled) 0xFF00E676.toInt() else 0xFFFFB300.toInt()
+                val ledColor = if (dialog.available == null) 0xFFB0B7C2.toInt()
+                    else if (isEnrolled) 0xFF00E676.toInt() else 0xFFFFB300.toInt()
                 ivVoiceprintLed.setColorFilter(ledColor)
             }
         }

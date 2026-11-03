@@ -1,17 +1,18 @@
 package id.my.yhdev.nexo.ui
 
-import android.transition.ChangeBounds
-import android.transition.Fade
-import android.transition.TransitionManager
-import android.transition.TransitionSet
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
 import android.widget.ImageView
-import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
-import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -21,175 +22,237 @@ import id.my.yhdev.nexo.network.VoiceprintDialog
 class VoiceprintManagementSheet(
     private val activity: AppCompatActivity,
     private var currentDialog: VoiceprintDialog?,
+    private val onEnroll: () -> Boolean,
+    private val onFinish: () -> Boolean,
+    private val onCancel: () -> Unit,
+    private val onResumeMicrophone: () -> Unit,
     private val onUnenroll: () -> Unit,
     private val onDismiss: () -> Unit
 ) {
+    private enum class Phase { READY, STARTING, RECORDING, SAVING, CANCELLING, DELETING }
     private val dialog = BottomSheetDialog(activity, R.style.ThemeOverlay_Nexo_CredentialSheet)
-    private var rootView: View? = null
-    private var ivSheetStatusLed: ImageView? = null
-    private var tvVoiceprintCount: TextView? = null
-    private var tvVoiceprintDetails: TextView? = null
-    private var layoutVoiceprintMeta: LinearLayout? = null
-    private var tvVoiceprintMetaText: TextView? = null
-    private var btnVoiceprintEnroll: MaterialButton? = null
-    private var btnVoiceprintUnenroll: MaterialButton? = null
-    private var cardVoiceprintStatus: LinearLayout? = null
-    private var cardEnrollHint: View? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var phase = Phase.READY
+    private var startedAt = 0L
+    private var captureEnded = false
+    private var retainResult = false
+    private lateinit var close: MaterialButton
+    private var queryTimeout: Runnable? = null
+    private val operationTimeout = Runnable {
+        if (dialog.isShowing && phase == Phase.DELETING) {
+            phase = Phase.READY
+            currentDialog = null
+            feedback.setText(R.string.voiceprint_failed)
+            renderProfile()
+            renderControls()
+        }
+    }
+    private var confirmation: AlertDialog? = null
+    private lateinit var content: View
+    private lateinit var feedback: TextView
+    private lateinit var hint: TextView
+    private lateinit var progress: ProgressBar
+    private lateinit var inputLevel: ProgressBar
+    private lateinit var enroll: MaterialButton
+    private lateinit var cancel: MaterialButton
+    private lateinit var remove: MaterialButton
+    private val tick = object : Runnable {
+        override fun run() {
+            if (!dialog.isShowing || phase != Phase.RECORDING) return
+            val elapsed = SystemClock.elapsedRealtime() - startedAt
+            progress.progress = (elapsed * 100 / 4000L).toInt().coerceIn(0, 100)
+            feedback.text = activity.getString(R.string.voiceprint_recording, (elapsed / 1000L + 1).toInt().coerceAtMost(4))
+            if (elapsed >= 4000L) {
+                phase = Phase.SAVING
+                feedback.setText(R.string.voiceprint_saving)
+                renderControls()
+                if (!onFinish()) cancelWithError()
+            } else handler.postDelayed(this, 100L)
+        }
+    }
 
     fun show() {
-        val content = LayoutInflater.from(dialog.context).inflate(R.layout.sheet_voiceprint_management, null)
-        rootView = content
-
-        cardVoiceprintStatus = content.findViewById(R.id.cardVoiceprintStatus)
-        cardEnrollHint = content.findViewById(R.id.cardEnrollHint)
-        ivSheetStatusLed = content.findViewById(R.id.ivSheetStatusLed)
-        tvVoiceprintCount = content.findViewById(R.id.tvVoiceprintCount)
-        tvVoiceprintDetails = content.findViewById(R.id.tvVoiceprintDetails)
-        layoutVoiceprintMeta = content.findViewById(R.id.layoutVoiceprintMeta)
-        tvVoiceprintMetaText = content.findViewById(R.id.tvVoiceprintMetaText)
-        btnVoiceprintEnroll = content.findViewById(R.id.btnVoiceprintEnroll)
-        btnVoiceprintUnenroll = content.findViewById(R.id.btnVoiceprintUnenroll)
-
-        btnVoiceprintEnroll?.setOnClickListener {
-            // Pulse the hint card to direct focus
-            cardEnrollHint?.animate()
-                ?.scaleX(1.03f)
-                ?.scaleY(1.03f)
-                ?.setDuration(160)
-                ?.withEndAction {
-                    cardEnrollHint?.animate()?.scaleX(1.0f)?.scaleY(1.0f)?.setDuration(160)?.start()
-                }
-                ?.start()
-            Toast.makeText(
-                activity,
-                "Ucapkan kalimat panduan ke mikrofon selama minimal 2 detik...",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-
-        btnVoiceprintUnenroll?.setOnClickListener {
-            showUnenrollConfirmation()
-        }
-
-        content.findViewById<MaterialButton>(R.id.btnVoiceprintClose).setOnClickListener {
-            dialog.dismiss()
-        }
-
-        dialog.setOnDismissListener {
-            onDismiss()
-        }
-
-        dialog.setOnShowListener {
-            dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.let { sheet ->
-                val displayMetrics = activity.resources.displayMetrics
-                val maxSheetWidth = (560 * displayMetrics.density).toInt()
-                val isTablet = displayMetrics.widthPixels > maxSheetWidth
-                sheet.layoutParams = sheet.layoutParams.apply {
-                    if (isTablet) {
-                        width = maxSheetWidth
-                    }
-                }
-                sheet.setBackgroundResource(R.drawable.bg_bottom_sheet_modal)
+        content = LayoutInflater.from(dialog.context).inflate(R.layout.sheet_voiceprint_management, null)
+        feedback = content.findViewById(R.id.voiceprintFeedback)
+        hint = content.findViewById(R.id.tvEnrollHint)
+        progress = content.findViewById(R.id.voiceprintProgress)
+        inputLevel = content.findViewById(R.id.voiceprintInputLevel)
+        enroll = content.findViewById(R.id.btnVoiceprintEnroll)
+        cancel = content.findViewById(R.id.btnVoiceprintCancel)
+        remove = content.findViewById(R.id.btnVoiceprintUnenroll)
+        enroll.setOnClickListener {
+            retainResult = false
+            captureEnded = false
+            phase = Phase.STARTING
+            feedback.setText(R.string.voiceprint_wait)
+            renderControls()
+            if (!onEnroll()) {
+                phase = Phase.READY
+                feedback.setText(R.string.voiceprint_cannot_start)
+                renderControls()
             }
         }
-
-        renderState(currentDialog)
+        cancel.setOnClickListener { cancelCapture() }
+        remove.setOnClickListener { showDeleteConfirmation() }
+        close = content.findViewById(R.id.btnVoiceprintClose)
+        close.setOnClickListener {
+            val resume = captureEnded && phase == Phase.READY
+            dismiss()
+            if (resume) onResumeMicrophone()
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
         dialog.setContentView(content)
+        dialog.setOnShowListener {
+            dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+                ?.setBackgroundResource(R.drawable.bg_bottom_sheet_modal)
+            dialog.behavior.maxWidth = (560 * activity.resources.displayMetrics.density).toInt()
+            dialog.behavior.skipCollapsed = true
+            dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
+            ViewCompat.requestApplyInsets(content)
+        }
+        dialog.setOnDismissListener {
+            handler.removeCallbacksAndMessages(null)
+            confirmation?.dismiss()
+            if (phase != Phase.READY && phase != Phase.DELETING) onCancel()
+            onDismiss()
+        }
+        renderProfile()
+        feedback.setText(when {
+            currentDialog == null -> R.string.voiceprint_unknown
+            currentDialog?.available != true -> R.string.voiceprint_unavailable
+            else -> R.string.voiceprint_ready
+        })
+        renderControls()
         dialog.show()
-
-        // Subtle entrance scale animation for the status card
-        cardVoiceprintStatus?.apply {
-            alpha = 0f
-            scaleX = 0.95f
-            scaleY = 0.95f
-            animate()
-                .alpha(1f)
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(300)
-                .start()
+        if (currentDialog == null) {
+            queryTimeout = Runnable {
+                if (dialog.isShowing && currentDialog == null && phase == Phase.READY) {
+                    feedback.setText(R.string.voiceprint_unknown)
+                }
+            }.also { handler.postDelayed(it, 10_000L) }
         }
     }
 
     fun updateDialog(voiceDialog: VoiceprintDialog) {
-        currentDialog = voiceDialog
-        if (dialog.isShowing) {
-            activity.runOnUiThread {
-                renderState(voiceDialog)
+        if (!::content.isInitialized) return
+        currentDialog = voiceDialog.takeIf { it.available != null }
+        queryTimeout?.let { handler.removeCallbacks(it) }
+        if (voiceDialog.action != "query") handler.removeCallbacks(operationTimeout)
+        renderProfile()
+        when (voiceDialog.action) {
+            "recording" -> {
+                if (phase == Phase.STARTING) {
+                    phase = Phase.RECORDING
+                    startedAt = SystemClock.elapsedRealtime()
+                    hint.setText(R.string.voiceprint_recording_phrase)
+                    handler.post(tick)
+                }
             }
+            "enrolled", "unenroll" -> {
+                captureEnded = phase != Phase.DELETING
+                retainResult = true
+                phase = Phase.READY
+                handler.removeCallbacks(tick)
+                feedback.text = if (voiceDialog.success == true) {
+                    voiceDialog.message ?: activity.getString(R.string.voiceprint_saved)
+                } else voiceDialog.message ?: activity.getString(R.string.voiceprint_failed)
+            }
+            "cancelled", "error" -> {
+                captureEnded = phase != Phase.READY && phase != Phase.DELETING
+                retainResult = true
+                phase = Phase.READY
+                handler.removeCallbacks(tick)
+                feedback.text = voiceDialog.message ?: activity.getString(
+                    if (voiceDialog.action == "cancelled") R.string.voiceprint_cancelled else R.string.voiceprint_failed
+                )
+            }
+            "query" -> if (phase == Phase.READY && !retainResult) {
+                feedback.text = if (voiceDialog.available == true) activity.getString(R.string.voiceprint_ready)
+                    else voiceDialog.message ?: activity.getString(R.string.voiceprint_unavailable)
+            }
+        }
+        renderControls()
+    }
+
+    fun updateInputLevel(amplitude: Float) {
+        if (::inputLevel.isInitialized) inputLevel.progress =
+            if (phase == Phase.RECORDING) (amplitude * 100).toInt().coerceIn(0, 100) else 0
+    }
+
+    private fun renderProfile() {
+        val known = currentDialog != null
+        val enrolled = currentDialog?.isEnrolled == true
+        content.findViewById<TextView>(R.id.tvVoiceprintCount).setText(when {
+            !known -> R.string.voiceprint_loading
+            enrolled -> R.string.voiceprint_count_enrolled
+            else -> R.string.voiceprint_count_open
+        })
+        content.findViewById<TextView>(R.id.tvVoiceprintDetails).setText(when {
+            !known -> R.string.voiceprint_unknown
+            enrolled -> R.string.voiceprint_info_enrolled
+            else -> R.string.voiceprint_info_open
+        })
+        content.findViewById<ImageView>(R.id.ivSheetStatusLed).setColorFilter(
+            if (!known) 0xFFB0B7C2.toInt() else if (enrolled) 0xFF00E676.toInt() else 0xFFFFB300.toInt()
+        )
+        val meta = currentDialog?.metadata
+        content.findViewById<View>(R.id.layoutVoiceprintMeta).visibility =
+            if (enrolled && meta != null) View.VISIBLE else View.GONE
+        if (meta != null) content.findViewById<TextView>(R.id.tvVoiceprintMetaText).text = activity.getString(
+            R.string.voiceprint_meta, meta.speaker.orEmpty(), meta.durationSeconds?.toString().orEmpty(), meta.enrolledAt.orEmpty()
+        )
+    }
+
+    private fun renderControls() {
+        val idle = phase == Phase.READY
+        enroll.isEnabled = idle && !captureEnded && currentDialog?.available == true
+        close.setText(if (idle && captureEnded) R.string.voiceprint_resume else R.string.voiceprint_btn_close)
+        enroll.setText(if (currentDialog?.isEnrolled == true) R.string.voiceprint_btn_re_enroll else R.string.voiceprint_start)
+        remove.visibility = if (currentDialog?.isEnrolled == true) View.VISIBLE else View.GONE
+        remove.isEnabled = idle
+        cancel.visibility = if (!idle && phase != Phase.DELETING) View.VISIBLE else View.GONE
+        cancel.isEnabled = phase != Phase.CANCELLING
+        progress.visibility = if (phase == Phase.RECORDING || phase == Phase.SAVING) View.VISIBLE else View.GONE
+        if (phase != Phase.RECORDING) {
+            inputLevel.progress = 0
+            hint.setText(R.string.voiceprint_before_recording)
         }
     }
 
-    private fun renderState(voiceDialog: VoiceprintDialog?) {
-        val container = rootView as? ViewGroup ?: return
-        val transition = TransitionSet().apply {
-            ordering = TransitionSet.ORDERING_TOGETHER
-            addTransition(ChangeBounds().setDuration(220))
-            addTransition(Fade().setDuration(180))
-        }
-        TransitionManager.beginDelayedTransition(container, transition)
-
-        val isEnrolled = voiceDialog?.isEnrolled == true
-        val ledColor = if (isEnrolled) 0xFF00E676.toInt() else 0xFFFFB300.toInt()
-        ivSheetStatusLed?.setColorFilter(ledColor)
-
-        if (isEnrolled) {
-            tvVoiceprintCount?.text = activity.getString(R.string.voiceprint_count_enrolled)
-            tvVoiceprintDetails?.text = activity.getString(R.string.voiceprint_info_enrolled)
-            btnVoiceprintEnroll?.setText(R.string.voiceprint_btn_re_enroll)
-            btnVoiceprintUnenroll?.visibility = View.VISIBLE
-
-            val meta = voiceDialog?.metadata
-            if (meta != null) {
-                layoutVoiceprintMeta?.visibility = View.VISIBLE
-                val dur = meta.durationSeconds ?: 0f
-                val at = meta.enrolledAt ?: "-"
-                val speaker = meta.speaker ?: "owner"
-                val metaInfo = "Profil: $speaker • Sampel: ${dur}s\nTerdaftar pada: $at"
-                tvVoiceprintMetaText?.text = metaInfo
-            } else {
-                layoutVoiceprintMeta?.visibility = View.GONE
-            }
-        } else {
-            tvVoiceprintCount?.text = activity.getString(R.string.voiceprint_count_open)
-            tvVoiceprintDetails?.text = activity.getString(R.string.voiceprint_info_open)
-            btnVoiceprintEnroll?.setText(R.string.voiceprint_btn_enroll)
-            layoutVoiceprintMeta?.visibility = View.GONE
-            btnVoiceprintUnenroll?.visibility = View.GONE
-        }
+    private fun cancelCapture() {
+        handler.removeCallbacks(tick)
+        phase = Phase.CANCELLING
+        feedback.setText(R.string.voiceprint_cancel_wait)
+        renderControls()
+        onCancel()
     }
 
-    private fun showUnenrollConfirmation() {
-        MaterialAlertDialogBuilder(dialog.context)
+    private fun cancelWithError() {
+        cancelCapture()
+        feedback.setText(R.string.voiceprint_failed)
+    }
+
+    private fun showDeleteConfirmation() {
+        if (confirmation?.isShowing == true) return
+        confirmation = MaterialAlertDialogBuilder(dialog.context)
             .setTitle(R.string.voiceprint_unenroll_confirm_title)
             .setMessage(R.string.voiceprint_unenroll_confirm_body)
             .setNegativeButton(R.string.voiceprint_unenroll_cancel, null)
             .setPositiveButton(R.string.voiceprint_unenroll_confirm_action) { _, _ ->
-                // Animate card pulse during deletion
-                cardVoiceprintStatus?.animate()
-                    ?.scaleX(0.92f)
-                    ?.scaleY(0.92f)
-                    ?.alpha(0.6f)
-                    ?.setDuration(180)
-                    ?.withEndAction {
-                        onUnenroll()
-                        cardVoiceprintStatus?.animate()
-                            ?.scaleX(1f)
-                            ?.scaleY(1f)
-                            ?.alpha(1f)
-                            ?.setDuration(200)
-                            ?.start()
-                    }
-                    ?.start()
-                Toast.makeText(activity, R.string.voiceprint_unenroll_success, Toast.LENGTH_SHORT).show()
-            }
-            .create()
-            .show()
+                phase = Phase.DELETING
+                retainResult = false
+                handler.postDelayed(operationTimeout, 10_000L)
+                feedback.setText(R.string.voiceprint_deleting)
+                renderControls()
+                onUnenroll()
+            }.show()
     }
 
     fun dismiss() {
-        if (dialog.isShowing) {
-            dialog.dismiss()
-        }
+        dialog.dismiss()
     }
 }

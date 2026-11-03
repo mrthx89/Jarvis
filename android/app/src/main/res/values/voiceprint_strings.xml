@@ -9,13 +9,13 @@
     <string name="voiceprint_hud_registered">Suara: Pemilik (1 Didaftarkan)</string>
     <string name="voiceprint_sheet_eyebrow">NEXO // BIOMETRIK SUARA</string>
     <string name="voiceprint_sheet_title">Manajemen Sidik Suara</string>
-    <string name="voiceprint_sheet_desc">Verifikasi identitas vokal agar Nexo hanya merespons dan mengeksekusi instruksi dari suara pemilik terdaftar.</string>
+    <string name="voiceprint_sheet_desc">Rekam sampel untuk membantu Nexo mengenali pembicara. Sampel pendaftaran tidak dikirim sebagai percakapan.</string>
     
     <string name="voiceprint_status_title">Status Pengenalan Suara</string>
     <string name="voiceprint_count_open">0 Suara Didaftarkan • Mode Terbuka</string>
     <string name="voiceprint_count_enrolled">1 Suara Didaftarkan • Mode Terverifikasi</string>
-    <string name="voiceprint_info_open">Belum ada sidik suara yang didaftarkan. Siapa pun dapat berinteraksi dengan Nexo. Daftarkan suara Anda agar Nexo mengunci interaksi khusus Anda.</string>
-    <string name="voiceprint_info_enrolled">Sidik suara pemilik aktif. Nexo memvalidasi setiap ucapan dengan model biometrik vokal (CAM++ ONNX) sebelum diproses ke agen.</string>
+    <string name="voiceprint_info_open">Belum ada sidik suara terdaftar. Nexo menerima suara siapa saja. Rekam sampel untuk mengaktifkan pemeriksaan kemiripan suara.</string>
+    <string name="voiceprint_info_enrolled">Profil pemilik tersimpan. Pengenalan suara membantu menyaring pembicara, tetapi bukan pengganti autentikasi perangkat.</string>
     
     <string name="voiceprint_btn_enroll">Daftarkan Suara Sekarang</string>
     <string name="voiceprint_btn_re_enroll">Rekam Ulang Sidik Suara</string>
@@ -32,4 +32,24 @@
     <string name="voiceprint_unenroll_confirm_action">Ya, Hapus Suara</string>
     <string name="voiceprint_unenroll_cancel">Batal</string>
     <string name="voiceprint_unenroll_success">Sidik suara berhasil dihapus. Nexo beralih ke Mode Terbuka.</string>
+    <string name="voiceprint_resume">Selesai, lanjutkan mikrofon</string>
+    <string name="voiceprint_loading">Memeriksa status suara…</string>
+    <string name="voiceprint_unknown">Status belum tersedia. Aktifkan mikrofon dan periksa koneksi, lalu buka menu ini lagi.</string>
+    <string name="voiceprint_unavailable">Pendaftaran belum tersedia. Model pengenalan suara di server perlu disiapkan pengelola.</string>
+    <string name="voiceprint_ready">Siap merekam</string>
+    <string name="voiceprint_before_recording">Tekan Mulai rekam. Baca kalimat hanya setelah status Merekam muncul.</string>
+    <string name="voiceprint_start">Mulai rekam (4 detik)</string>
+    <string name="voiceprint_wait">Menunggu server siap… Jangan bicara dulu.</string>
+    <string name="voiceprint_recording">Merekam %1$d dari 4 detik. Silakan bicara.</string>
+    <string name="voiceprint_saving">Menyimpan sampel… Mikrofon percakapan dijeda.</string>
+    <string name="voiceprint_saved">Sidik suara tersimpan.</string>
+    <string name="voiceprint_cancelled">Pendaftaran dibatalkan. Profil lama tidak diubah.</string>
+    <string name="voiceprint_cancel_wait">Membatalkan pendaftaran…</string>
+    <string name="voiceprint_cancel_recording">Batalkan rekaman</string>
+    <string name="voiceprint_recording_progress">Progres rekaman sampel suara</string>
+    <string name="voiceprint_input_label">Level mikrofon saat rekaman</string>
+    <string name="voiceprint_cannot_start">Belum dapat merekam. Tunggu jawaban Nexo selesai, pastikan mikrofon aktif, lalu coba lagi.</string>
+    <string name="voiceprint_deleting">Menghapus sidik suara…</string>
+    <string name="voiceprint_failed">Operasi gagal. Periksa koneksi dan coba lagi. Status profil belum diubah di layar.</string>
+    <string name="voiceprint_meta">Profil: %1$s\nDurasi sampel: %2$s detik\nTerdaftar: %3$s</string>
 </resources>

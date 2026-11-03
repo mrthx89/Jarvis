@@ -93,6 +93,9 @@ class PongMessage(BaseModel):
 class VoiceprintDialog(BaseModel):
     type: Literal["voiceprint_dialog"] = "voiceprint_dialog"
     action: str = "manage"
+    request_id: Optional[str] = None
+    success: Optional[bool] = None
+    available: bool = False
     is_enrolled: bool = False
     message: Optional[str] = None
     metadata: Optional[dict] = None

@@ -83,8 +83,13 @@ class AudioPlayerManager internal constructor(
     private val generation = AtomicInteger(0)
     private val released = AtomicBoolean(false)
     private val queuedBytes = AtomicInteger(0)
+    private val bufferLock = Object()
     @Volatile private var isPlaying = false
-    private var failed = false // worker-confined; only explicit stop/reconnect resets failure
+    @Volatile private var failed = false // only explicit stop/reconnect resets failure
+
+    init {
+        require(maxBufferedBytes >= 2 && maxBufferedBytes % 2 == 0)
+    }
     private var framesWritten = 0L
 
     private fun startTrack() {
@@ -94,15 +99,20 @@ class AudioPlayerManager internal constructor(
         isPlaying = true
     }
 
-    private fun current(token: Int): Boolean = token == generation.get() && !failed
+    private fun current(token: Int): Boolean = token == generation.get() && !failed && !released.get()
 
     private fun fail(token: Int, error: Exception) {
         stopTrack()
         // Invalidate every queued write/drain from this failed turn, not just this operation.
-        if (generation.compareAndSet(token, token + 1)) {
-            failed = true
-            onError("Pemutaran audio gagal: ${error.message}")
+        val notify = synchronized(bufferLock) {
+            if (generation.compareAndSet(token, token + 1)) {
+                failed = true
+                queuedBytes.set(0)
+                bufferLock.notifyAll()
+                true
+            } else false
         }
+        if (notify) onError("Pemutaran audio gagal: ${error.message}")
     }
 
     fun start() {
@@ -113,28 +123,48 @@ class AudioPlayerManager internal constructor(
         }
     }
 
+    /** Called on the socket reader, never the UI or playback worker.
+     * Backpressure preserves speech while bounding retained PCM; stop/release wake waiters.
+     */
     fun writeChunk(data: ByteArray): Boolean {
+        require(data.size % 2 == 0) { "PCM16 chunk must contain whole samples" }
         val token = generation.get()
-        if (queuedBytes.get() + data.size > maxBufferedBytes) {
-            Log.w("AudioPlayerManager", "Audio buffer queue full (${queuedBytes.get()} bytes); dropping chunk to bound latency")
-            return false
-        }
-        queuedBytes.addAndGet(data.size)
-        worker.execute {
-            try {
-                if (!current(token)) return@execute
-                try {
-                    startTrack()
-                    writePcmChunk(data, { current(token) }, output!!::write, nowNanos, sleep,
-                        onWritten = { framesWritten += it / 2 })
-                } catch (e: Exception) {
-                    fail(token, e)
+        var offset = 0
+        while (offset < data.size) {
+            synchronized(bufferLock) {
+                while (current(token) && queuedBytes.get() >= maxBufferedBytes) {
+                    try { bufferLock.wait(50) }
+                    catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return false
+                    }
                 }
-            } finally {
-                queuedBytes.addAndGet(-data.size)
+                if (!current(token)) return false
+                val count = minOf(data.size - offset, maxBufferedBytes - queuedBytes.get(), 9600)
+                val chunk = data.copyOfRange(offset, offset + count)
+                queuedBytes.addAndGet(count)
+                worker.execute {
+                    try {
+                        if (!current(token)) return@execute
+                        try {
+                            startTrack()
+                            writePcmChunk(chunk, { current(token) }, output!!::write, nowNanos, sleep,
+                                onWritten = { framesWritten += it / 2 })
+                        } catch (e: Exception) {
+                            fail(token, e)
+                        }
+                    } finally {
+                        synchronized(bufferLock) {
+                            // A cancelled turn's finally must not debit the next turn.
+                            if (token == generation.get()) queuedBytes.addAndGet(-count)
+                            bufferLock.notifyAll()
+                        }
+                    }
+                }
+                offset += count
             }
         }
-        return true
+        return current(token)
     }
 
     /** tts_end means no more network data, not that queued hardware audio has finished. */
@@ -166,24 +196,29 @@ class AudioPlayerManager internal constructor(
         output = null
         isPlaying = false
         framesWritten = 0
-        queuedBytes.set(0)
         try { track?.close() }
         catch (e: Exception) { Log.w("AudioPlayerManager", "Error stopping AudioTrack: ${e.message}") }
     }
 
     fun stop() {
-        if (released.get()) return
-        generation.incrementAndGet()
-        queuedBytes.set(0)
-        worker.execute { stopTrack(); failed = false }
+        synchronized(bufferLock) {
+            if (released.get()) return
+            generation.incrementAndGet()
+            queuedBytes.set(0)
+            bufferLock.notifyAll()
+            worker.execute { stopTrack(); failed = false }
+        }
     }
 
     fun release() {
-        if (!released.compareAndSet(false, true)) return
-        generation.incrementAndGet()
-        queuedBytes.set(0)
-        worker.execute { stopTrack() }
-        worker.shutdown()
+        synchronized(bufferLock) {
+            if (!released.compareAndSet(false, true)) return
+            generation.incrementAndGet()
+            queuedBytes.set(0)
+            bufferLock.notifyAll()
+            worker.execute { stopTrack() }
+            worker.shutdown()
+        }
     }
 
     fun isPlaying(): Boolean = isPlaying

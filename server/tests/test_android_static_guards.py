@@ -384,7 +384,8 @@ def test_kiosk_service_earcon_and_bounded_audio():
     assert "earconManager.playThinking()" in source
 
     # Bounded audio track queue usage
-    assert "audioPlayer.writeChunk(audioData)" in source
+    assert "val player = audioPlayer" in source
+    assert "player.writeChunk(audioData)" in source
 
 
 def test_visualizer_burn_in_protection_and_ambient_sleeping():

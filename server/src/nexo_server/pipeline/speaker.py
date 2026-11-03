@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import time
+import tempfile
 from typing import Optional, Tuple
 
 import numpy as np
@@ -16,7 +17,7 @@ DEFAULT_AUTH_DIR = Path.home() / ".config" / "nexo-auth"
 DEFAULT_MODEL_PATH = str(DEFAULT_AUTH_DIR / "models" / "speaker_campplus.onnx")
 DEFAULT_VOICEPRINTS_DIR = str(DEFAULT_AUTH_DIR / "voiceprints")
 DEFAULT_THRESHOLD = 0.65
-MIN_AUDIO_BYTES_FOR_ENROLL = 38400  # 1.2s of 16kHz, 16-bit PCM mono
+MIN_AUDIO_BYTES_FOR_ENROLL = 64000  # 2s of 16kHz, 16-bit PCM mono
 MIN_AUDIO_BYTES_FOR_VERIFY = 16000  # 0.5s of 16kHz, 16-bit PCM mono
 
 SPEAKER_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}\Z")
@@ -108,13 +109,6 @@ class SpeakerVerifier:
         self._session = None
         self._model_tested = False
 
-    def _ensure_dir(self):
-        try:
-            self.voiceprints_dir.mkdir(parents=True, exist_ok=True)
-            os.chmod(self.voiceprints_dir, 0o700)
-        except Exception as e:
-            logger.warning("Could not set permissions on %s: %s", self.voiceprints_dir, e)
-
     def _get_paths(self, speaker_name: str = "owner") -> Tuple[Path, Path]:
         valid_name = validate_speaker_name(speaker_name)
         npy_path = self.voiceprints_dir / f"{valid_name}.npy"
@@ -147,12 +141,18 @@ class SpeakerVerifier:
                 logger.debug("Speaker model file not found at %s", self.model_path)
         return self._session
 
+    def is_available(self) -> bool:
+        return self._get_session() is not None
+
     def is_enrolled(self, speaker_name: str = "owner") -> bool:
         """Check if speaker has an enrolled voiceprint."""
         try:
             npy_path, _ = self._get_paths(speaker_name)
-            return npy_path.exists()
-        except (ValueError, PermissionError, OSError):
+            npy_path.stat()
+            return True
+        except FileNotFoundError:
+            return False
+        except ValueError:
             return False
 
     def get_metadata(self, speaker_name: str = "owner") -> Optional[dict]:
@@ -167,7 +167,7 @@ class SpeakerVerifier:
 
     def extract_embedding(self, pcm_audio: bytes) -> Optional[np.ndarray]:
         """Extract a 192-dimensional normalized speaker embedding from PCM16 mono 16kHz audio."""
-        if len(pcm_audio) < MIN_AUDIO_BYTES_FOR_VERIFY:
+        if len(pcm_audio) < MIN_AUDIO_BYTES_FOR_VERIFY or len(pcm_audio) % 2:
             return None
 
         waveform = np.frombuffer(pcm_audio, dtype=np.int16).astype(np.float32)
@@ -178,12 +178,7 @@ class SpeakerVerifier:
 
         session = self._get_session()
         if session is None:
-            # Synthetic mock embedding for testing environments without ONNX model
-            dummy = np.frombuffer(pcm_audio[:192 * 2], dtype=np.int16).astype(np.float32)
-            if len(dummy) < 192:
-                dummy = np.pad(dummy, (0, 192 - len(dummy)))
-            norm = np.linalg.norm(dummy)
-            return (dummy / norm) if norm > 0 else np.ones(192, dtype=np.float32)
+            return None
 
         try:
             fbank_feats = compute_fbank(waveform)
@@ -195,7 +190,7 @@ class SpeakerVerifier:
             outputs = session.run([output_name], {input_name: input_tensor})
             raw_emb = np.asarray(outputs[0])[0]
             norm = np.linalg.norm(raw_emb)
-            if norm == 0:
+            if norm == 0 or not np.isfinite(norm):
                 return None
             return raw_emb / norm
         except Exception as e:
@@ -209,19 +204,37 @@ class SpeakerVerifier:
         except ValueError as e:
             return False, f"Nama pembicara tidak valid: {e}"
 
-        if len(pcm_audio) < MIN_AUDIO_BYTES_FOR_ENROLL:
-            return False, "Durasi rekaman suara terlalu pendek. Mohon berbicara minimal 1,5 detik."
+        if not self.is_available():
+            return False, "Model sidik suara tidak tersedia."
+        if len(pcm_audio) < MIN_AUDIO_BYTES_FOR_ENROLL or len(pcm_audio) > 192000:
+            return False, "Durasi rekaman suara terlalu pendek. Mohon berbicara minimal 2 detik."
 
         embedding = self.extract_embedding(pcm_audio)
         if embedding is None:
             return False, "Suara tidak terdengar jelas atau terlalu pelan."
 
-        self._ensure_dir()
+        return self.save_embedding(embedding, len(pcm_audio), speaker_name)
 
+    def save_embedding(self, embedding: np.ndarray, audio_bytes: int, speaker_name: str = "owner") -> Tuple[bool, str]:
+        npy_path, json_path = self._get_paths(speaker_name)
+        staged = []
+        metadata_promoted = False
+        backup = None
         try:
-            np.save(str(npy_path), embedding)
-            os.chmod(npy_path, 0o600)
-            duration_s = round(len(pcm_audio) / 32000.0, 2)
+            if (audio_bytes < MIN_AUDIO_BYTES_FOR_ENROLL or audio_bytes > 192000
+                    or not self.is_available() or embedding.ndim != 1
+                    or not np.isfinite(embedding).all() or np.linalg.norm(embedding) == 0):
+                return False, "Sampel sidik suara tidak valid."
+            self.voiceprints_dir.mkdir(parents=True, exist_ok=True)
+            os.chmod(self.voiceprints_dir, 0o700)
+            for _ in range(2):
+                fd, name = tempfile.mkstemp(prefix=".voiceprint-", dir=self.voiceprints_dir)
+                os.close(fd)
+                staged.append(Path(name))
+            with staged[0].open("wb") as stream:
+                np.save(stream, embedding, allow_pickle=False)
+            os.chmod(staged[0], 0o600)
+            duration_s = round(audio_bytes / 32000.0, 2)
             meta = {
                 "speaker": speaker_name,
                 "enrolled_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -229,13 +242,34 @@ class SpeakerVerifier:
                 "status": "active",
                 "embedding_dim": int(embedding.shape[0]),
             }
-            json_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-            os.chmod(json_path, 0o600)
+            staged[1].write_text(json.dumps(meta, indent=2), encoding="utf-8")
+            os.chmod(staged[1], 0o600)
+            if json_path.exists():
+                backup = staged[1].with_suffix(".backup")
+                os.link(json_path, backup)
+            os.replace(staged[1], json_path)
+            metadata_promoted = True
+            # The biometric file is the commit point; never truncate the live profile.
+            os.replace(staged[0], npy_path)
             logger.info("Successfully enrolled speaker '%s' (%s seconds)", speaker_name, duration_s)
             return True, f"Sidik suara {speaker_name} berhasil didaftarkan."
         except Exception as e:
+            if metadata_promoted:
+                try:
+                    if backup:
+                        os.replace(backup, json_path)
+                    else:
+                        json_path.unlink(missing_ok=True)
+                except OSError:
+                    logger.exception("Unable to restore voiceprint metadata")
             logger.error("Failed to save speaker voiceprint: %s", e)
-            return False, f"Gagal menyimpan sidik suara: {e}"
+            return False, "Gagal menyimpan sidik suara."
+        finally:
+            for path in staged + ([backup] if backup else []):
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning("Unable to remove staged voiceprint")
 
     def unenroll(self, speaker_name: str = "owner") -> Tuple[bool, str]:
         """Unregister a speaker voiceprint, restoring open response mode."""
@@ -246,11 +280,11 @@ class SpeakerVerifier:
 
         removed = False
         try:
-            if npy_path.exists():
-                npy_path.unlink()
-                removed = True
             if json_path.exists():
                 json_path.unlink()
+                removed = True
+            if npy_path.exists():
+                npy_path.unlink()
                 removed = True
         except Exception as e:
             logger.error("Failed to remove voiceprint files: %s", e)
@@ -277,10 +311,11 @@ class SpeakerVerifier:
             return False, 0.0
 
         try:
-            if not npy_path.exists():
-                return True, 1.0
-        except (PermissionError, OSError):
+            npy_path.stat()
+        except FileNotFoundError:
             return True, 1.0
+        except OSError:
+            return False, 0.0
 
         current_emb = self.extract_embedding(pcm_audio)
         if current_emb is None:

@@ -4,6 +4,8 @@ import asyncio
 import json
 import logging
 import time
+from collections import deque
+from contextlib import aclosing
 from typing import Any, Optional
 from fastapi import WebSocket
 
@@ -20,7 +22,7 @@ from ..models.messages import (
 )
 from ..pipeline.vad import EnergyVAD
 from ..pipeline.stt import BaseSTT
-from ..pipeline.tts import BaseTTS
+from ..pipeline.tts import BaseTTS, prefetch_tts
 from ..hermes.agent_bridge import HermesBridge
 from ..mascot import (
     contextual_expression,
@@ -58,6 +60,10 @@ class ApplianceSession:
     MAX_FRAME_BYTES = 32000 * 2
     PREROLL_BYTES = 8000  # 250 ms at 16 kHz, bounded even in hours of silence
     ECHO_GUARD_SECONDS = 0.6  # Preserve echo protection, only after speaker output.
+    MAX_PLAYBACK_AHEAD = 1.0
+    ENROLL_TIMEOUT = 15.0
+    ENROLL_MIN_BYTES = 64000
+    ENROLL_MAX_BYTES = 192000
 
     def __init__(
         self,
@@ -97,6 +103,11 @@ class ApplianceSession:
         self._playback_until = 0.0
         self._tts_started = False
         self._external_speech = False
+        self._enrollment = None
+        self._enroll_request_ids = set()
+        self._enroll_task = None
+        self._enroll_worker = None
+        self._enroll_deadline_task = None
         self._gap_handle = None
         self._preroll = CircularAudioBuffer(capacity=self.PREROLL_BYTES)
         self.is_sleeping = False
@@ -116,8 +127,130 @@ class ApplianceSession:
             self.is_recording = False
             self._processing_task = asyncio.create_task(self.process_recorded_audio())
 
+    def _clear_enrollment(self):
+        if self._enrollment is not None:
+            self._enrollment["pcm"].clear()
+        self._enrollment = None
+        current = asyncio.current_task()
+        for task in (self._enroll_task, self._enroll_deadline_task):
+            if task and task is not current:
+                task.cancel()
+        self._enroll_task = None
+        self._enroll_deadline_task = None
+        self.audio_buffer.clear()
+        self._preroll.clear()
+        self.is_recording = False
+
+    async def _voiceprint_reply(self, action, request_id=None, success=None, message=None):
+        verifier = self.speaker_verifier
+        await self.send_json_message(VoiceprintDialog(
+            action=action, request_id=request_id, success=success, message=message,
+            available=bool(verifier and verifier.is_available()),
+            is_enrolled=bool(verifier and verifier.is_enrolled("owner")),
+            metadata=verifier.get_metadata("owner") if verifier else None,
+        ))
+
+    async def _enrollment_deadline(self, enrollment):
+        await asyncio.sleep(self.ENROLL_TIMEOUT)
+        if self._enrollment is enrollment:
+            self._clear_enrollment()
+            await self._voiceprint_reply("error", enrollment["request_id"], False,
+                                         "Waktu pendaftaran habis. Silakan coba lagi.")
+
+    @staticmethod
+    def _consume_enrollment_worker(task):
+        if not task.cancelled():
+            task.exception()
+
+    async def _complete_enrollment(self, enrollment):
+        request_id = enrollment["request_id"]
+        captured = bytes(enrollment["pcm"])
+        enrollment["pcm"].clear()
+        verifier = self.speaker_verifier
+        assert verifier is not None
+        try:
+            if len(captured) < self.ENROLL_MIN_BYTES:
+                ok, message = False, "Durasi rekaman terlalu pendek. Bicara minimal 2 detik."
+            else:
+                # Only extraction runs off-thread; a cancelled worker cannot write a profile.
+                self._enroll_worker = asyncio.create_task(asyncio.to_thread(verifier.extract_embedding, captured))
+                self._enroll_worker.add_done_callback(self._consume_enrollment_worker)
+                embedding = await asyncio.shield(self._enroll_worker)
+                if self._enrollment is not enrollment or self._closed:
+                    return
+                if time.monotonic() >= enrollment["deadline"]:
+                    ok, message = False, "Waktu pendaftaran habis. Silakan coba lagi."
+                elif embedding is None:
+                    ok, message = False, "Suara tidak terdengar jelas atau model tidak tersedia."
+                else:
+                    ok, message = verifier.save_embedding(embedding, len(captured), "owner")
+            if self._enrollment is enrollment:
+                self._clear_enrollment()
+                await self._voiceprint_reply("enrolled" if ok else "error", request_id, ok, message)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Voiceprint enrollment failed")
+            if self._enrollment is enrollment:
+                self._clear_enrollment()
+                await self._voiceprint_reply("error", request_id, False, "Pendaftaran sidik suara gagal.")
+
+    async def _handle_voiceprint_control(self, payload):
+        kind = payload["type"]
+        request_id = payload.get("request_id")
+        if (kind != "voiceprint_query" or request_id is not None) and (
+            not isinstance(request_id, str) or not 1 <= len(request_id) <= 128
+            or not request_id.strip()
+        ):
+            raise ProtocolViolation("Invalid voiceprint request ID")
+        if kind == "voiceprint_query":
+            await self._voiceprint_reply("query", request_id)
+        elif kind == "voiceprint_enroll_start":
+            if request_id in self._enroll_request_ids or len(self._enroll_request_ids) >= 1024:
+                await self._voiceprint_reply("error", request_id, False, "Gunakan ID pendaftaran baru atau sambungkan ulang.")
+                return
+            if (self._busy() or self.is_recording
+                    or (self._enroll_worker is not None and not self._enroll_worker.done())):
+                await self._voiceprint_reply("error", request_id, False, "Sesi sedang sibuk.")
+                return
+            if not self.speaker_verifier or not self.speaker_verifier.is_available():
+                await self._voiceprint_reply("error", request_id, False, "Model sidik suara tidak tersedia.")
+                return
+            if self._gap_handle:
+                self._gap_handle.cancel()
+                self._gap_handle = None
+            self.audio_buffer.clear()
+            self._preroll.clear()
+            enrollment = {"request_id": request_id, "pcm": bytearray(), "finishing": False,
+                          "deadline": time.monotonic() + self.ENROLL_TIMEOUT}
+            self._enrollment = enrollment
+            self._enroll_request_ids.add(request_id)
+            self._enroll_deadline_task = asyncio.create_task(self._enrollment_deadline(enrollment))
+            await self._voiceprint_reply("recording", request_id, message="Bicara selama 2 hingga 6 detik.")
+        elif kind in ("voiceprint_enroll_finish", "voiceprint_enroll_cancel"):
+            enrollment = self._enrollment
+            if enrollment is None or enrollment["request_id"] != request_id:
+                await self._voiceprint_reply("error", request_id, False, "Pendaftaran tidak aktif.")
+                return
+            if kind == "voiceprint_enroll_cancel":
+                self._clear_enrollment()
+                await self._voiceprint_reply("cancelled", request_id, False, "Pendaftaran dibatalkan.")
+            elif not enrollment["finishing"]:
+                enrollment["finishing"] = True
+                self._enroll_task = asyncio.create_task(self._complete_enrollment(enrollment))
+        elif kind == "voiceprint_unenroll":
+            if self._busy() or self.is_recording:
+                await self._voiceprint_reply("unenroll", request_id, False, "Sesi sedang sibuk.")
+                return
+            if self.speaker_verifier:
+                ok, message = self.speaker_verifier.unenroll("owner")
+            else:
+                ok, message = False, "Modul sidik suara tidak aktif."
+            await self._voiceprint_reply("unenroll", request_id, ok, message)
+
     async def close(self):
         self._closed = True
+        self._clear_enrollment()
         if self.hub:
             self.hub.unregister_session(self)
         if self._gap_handle:
@@ -131,7 +264,7 @@ class ApplianceSession:
         self.is_recording = False
 
     def _busy(self):
-        return self._closed or self._external_speech or time.monotonic() < self._cooldown_until or (
+        return self._closed or self._enrollment is not None or self._external_speech or time.monotonic() < self._cooldown_until or (
             self._processing_task is not None and not self._processing_task.done()
         )
 
@@ -291,30 +424,9 @@ class ApplianceSession:
                 raise ProtocolViolation("Invalid ping")
             await self.send_json_message(PongMessage(timestamp=ts))
 
-        elif msg_type == "voiceprint_query":
-            is_enrolled = bool(self.speaker_verifier and self.speaker_verifier.is_enrolled("owner"))
-            meta = self.speaker_verifier.get_metadata("owner") if self.speaker_verifier else None
-            await self.send_json_message(
-                VoiceprintDialog(
-                    action="query",
-                    is_enrolled=is_enrolled,
-                    metadata=meta,
-                )
-            )
-
-        elif msg_type == "voiceprint_unenroll":
-            if self.speaker_verifier:
-                ok, msg = self.speaker_verifier.unenroll("owner")
-            else:
-                ok, msg = False, "Modul verifikasi suara tidak aktif."
-            await self.send_json_message(
-                VoiceprintDialog(
-                    action="unenroll",
-                    is_enrolled=False,
-                    message=msg,
-                )
-            )
-            await self._speak_canned_reply(msg, MascotExpression.SENANG.value if ok else MascotExpression.BINGUNG.value)
+        elif msg_type in ("voiceprint_query", "voiceprint_unenroll", "voiceprint_enroll_start",
+                          "voiceprint_enroll_finish", "voiceprint_enroll_cancel"):
+            await self._handle_voiceprint_control(payload)
         else:
             raise ProtocolViolation("Unknown control type")
 
@@ -323,6 +435,15 @@ class ApplianceSession:
         if not self.ready or not self.authenticated_device_id:
             # No PCM may reach VAD, buffering or providers before auth + hello.
             raise ProtocolViolation("Hello required before audio")
+        if self._enrollment is not None:
+            enrollment = self._enrollment
+            if self._closed:
+                return
+            if (not enrollment["finishing"] and data_bytes and not len(data_bytes) % 2
+                    and len(data_bytes) <= self.MAX_FRAME_BYTES):
+                remaining = self.ENROLL_MAX_BYTES - len(enrollment["pcm"])
+                enrollment["pcm"].extend(data_bytes[:remaining])
+            return
         if self._busy():
             self._preroll.clear()
             return  # Half duplex: never queue speaker echo for the next turn.
@@ -442,42 +563,14 @@ class ApplianceSession:
                 "source": "appliance_voice",
             })
 
-        # Step 2: Voiceprint Enrollment & Unenrollment Handling
-        if self.speaker_verifier is not None:
-            if is_voice_unenroll_command(transcription):
-                ok, msg = self.speaker_verifier.unenroll(speaker_name="owner")
-                # Trigger dialog popup on Android screen
-                await self.send_json_message(
-                    VoiceprintDialog(
-                        action="unenroll",
-                        is_enrolled=False,
-                        message=msg,
-                    )
-                )
-                expr = MascotExpression.SENANG.value if ok else MascotExpression.BINGUNG.value
-                await self._speak_canned_reply(f"{msg} Menu sidik suara dibuka di layar.", expr)
-                return
-
-            if is_voice_enroll_command(transcription):
-                is_enrolled = self.speaker_verifier.is_enrolled("owner")
-                # Trigger dialog popup on Android screen
-                await self.send_json_message(
-                    VoiceprintDialog(
-                        action="enroll",
-                        is_enrolled=is_enrolled,
-                    )
-                )
-                # If audio is already long enough (>= 1.2s), enroll it immediately as well
-                if len(captured_pcm) >= 38400:
-                    ok, msg = self.speaker_verifier.enroll(captured_pcm, speaker_name="owner")
-                    expr = MascotExpression.SENANG.value if ok else MascotExpression.BINGUNG.value
-                    await self._speak_canned_reply(f"{msg} Menu sidik suara dibuka di layar.", expr)
-                else:
-                    await self._speak_canned_reply(
-                        "Menu pendaftaran sidik suara dibuka di layar. Silakan bicara minimal 2 detik.",
-                        MascotExpression.SENANG.value
-                    )
-                return
+        if is_voice_enroll_command(transcription) or is_voice_unenroll_command(transcription):
+            action = "enroll" if is_voice_enroll_command(transcription) else "manage"
+            await self._voiceprint_reply(action, message="Konfirmasi melalui sentuhan di layar.")
+            await self._speak_canned_reply(
+                "Menu sidik suara dibuka. Konfirmasi melalui sentuhan di layar.",
+                MascotExpression.SENANG.value,
+            )
+            return
 
         # Step 3: Speaker Verification (if enrolled)
         if self.speaker_verifier is not None and self.speaker_verifier.is_enrolled("owner"):
@@ -532,39 +625,49 @@ class ApplianceSession:
         if hasattr(self.hermes, "query_stream"):
             collected_sentences = []
             speech_expr = None
-            async for sentence in self.hermes.query_stream(transcription):
-                clean_sentence = sentence.strip()
-                if not clean_sentence:
-                    continue
-                tag_expr, clean_sentence = parse_and_strip_emotional_tags(clean_sentence)
-                if not clean_sentence:
-                    continue
-                collected_sentences.append(clean_sentence)
+            sentence_expressions = deque()
 
-                if tag_expr:
-                    speech_expr = tag_expr.value
-                    await self.send_state(NexoState.SPEAKING, expression=speech_expr)
-                elif speech_expr is None:
-                    speech_expr = contextual_expression(transcription, clean_sentence).value
-                    await self.send_state(NexoState.SPEAKING, expression=speech_expr)
+            async def clean_sentences():
+                async with aclosing(self.hermes.query_stream(transcription)) as source:
+                    async for sentence in source:
+                        tag_expr, clean_sentence = parse_and_strip_emotional_tags(sentence.strip())
+                        if clean_sentence:
+                            sentence_expressions.append(tag_expr)
+                            yield clean_sentence
 
-                if not self._tts_started:
-                    await self.send_json_message(TTSStart())
-                    self._tts_started = True
+            async with aclosing(prefetch_tts(self.tts, clean_sentences())) as audio:
+                async for clean_sentence, chunk in audio:
+                    if chunk is None:
+                        tag_expr = sentence_expressions.popleft()
+                        collected_sentences.append(clean_sentence)
+                        if tag_expr:
+                            speech_expr = tag_expr.value
+                            await self.send_state(NexoState.SPEAKING, expression=speech_expr)
+                        elif speech_expr is None:
+                            speech_expr = contextual_expression(transcription, clean_sentence).value
+                            await self.send_state(NexoState.SPEAKING, expression=speech_expr)
 
-                if self.hub:
-                    self.hub.publish_event({
-                        "type": "cognitive",
-                        "stage": "streaming",
-                        "sentence": clean_sentence,
-                        "content": clean_sentence,
-                        "index": len(collected_sentences) - 1,
-                        "expression": speech_expr,
-                    })
+                        if not self._tts_started:
+                            await self.send_json_message(TTSStart())
+                            self._tts_started = True
 
-                async for chunk in self.tts.synthesize_stream(clean_sentence):
+                        if self.hub:
+                            self.hub.publish_event({
+                                "type": "cognitive",
+                                "stage": "streaming",
+                                "sentence": clean_sentence,
+                                "content": clean_sentence,
+                                "index": len(collected_sentences) - 1,
+                                "expression": speech_expr,
+                            })
+                        continue
+
+                    duration = parse_audio_duration(chunk)
+                    delay = self._playback_until + duration - self.MAX_PLAYBACK_AHEAD - time.monotonic()
+                    if delay > 0:
+                        await asyncio.sleep(delay)
                     await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
-                    self._playback_until = max(time.monotonic(), self._playback_until) + parse_audio_duration(chunk)
+                    self._playback_until = max(time.monotonic(), self._playback_until) + duration
                     amp = self.vad.get_normalized_amplitude(chunk)
                     await self.send_json_message(
                         VisualTelemetry(

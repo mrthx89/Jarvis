@@ -27,7 +27,7 @@ def source():
 
 def body(marker):
     text = source()
-    start = text.index('{', text.index(marker))
+    start = text.index('{', text.rindex(marker))
     depth = 1
     end = start + 1
     while depth:
@@ -129,7 +129,7 @@ def test_socket_events_and_playback_completion_are_fenced_while_stopped():
         implementation = body(matches[-1].group())
         assert 'if (!isVoiceEnabled) return' in implementation, method
     ended = body('override fun onTTSEnded() {')
-    assert 'if (isVoiceEnabled && token == generation && audioToken == audioGeneration)' in ended
+    assert 'isVoiceEnabled && token == generation && audioToken == audioGeneration && turn == playbackTurn.get()' in ended
     assert 'if (isVoiceEnabled && duplex.canSendAudio)' in body('private fun publishListening()')
     disconnected = body('override fun onDisconnected() {')
     assert '++audioGeneration' in disconnected
