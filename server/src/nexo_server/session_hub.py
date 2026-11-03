@@ -157,6 +157,53 @@ class SessionHub:
         if target_session != "nexo" and (bound_id is None or target_session != bound_id):
             raise ValueError("Session routing is locked to nexo")
 
+        appliance = self.get_active_appliance()
+        outdoor = getattr(appliance, "outdoor", None)
+        if appliance is None or outdoor is None:
+            return await self._inject_message_owned(message, speak, target_session, appliance)
+        if appliance._busy():
+            return {"status": "busy", "spoken": False, "device_spoken": False}
+
+        generation = outdoor.generation
+
+        async def deliver():
+            token = outdoor._output_generation.set(generation)
+            try:
+                return await self._inject_message_owned(message, speak, target_session, appliance)
+            finally:
+                outdoor._output_generation.reset(token)
+
+        task = asyncio.create_task(deliver())
+        appliance._output_tasks.add(task)
+
+        def delivery_done(delivery):
+            appliance._output_tasks.discard(delivery)
+            if not delivery.cancelled():
+                delivery.exception()
+
+        task.add_done_callback(delivery_done)
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            caller = asyncio.current_task()
+            if caller is not None and caller.cancelling():
+                task.cancel()
+                raise
+            return {"status": "busy", "spoken": False, "device_spoken": False}
+
+    async def _inject_message_owned(
+        self, message: str, speak: bool, target_session: str, appliance: Any,
+    ) -> Dict[str, Any]:
+        outdoor = getattr(appliance, "outdoor", None)
+
+        def require_current_output():
+            task = asyncio.current_task()
+            if outdoor is not None and (
+                not outdoor.is_current_output() or (task is not None and task.cancelling())
+            ):
+                raise asyncio.CancelledError
+
+        require_current_output()
         # 1. Publish user transcription event
         self.publish_event({
             "type": "transcription",
@@ -165,9 +212,9 @@ class SessionHub:
             "source": "terminal",
         })
 
-        appliance = self.get_active_appliance()
         if appliance:
             await appliance.send_state(NexoState.THINKING, expression="bingung")
+            require_current_output()
 
         # 2. Check for local mascot expression command
         cmd_expression = parse_expression_command(message)
@@ -197,6 +244,7 @@ class SessionHub:
                         collected = []
                         speech_expr = None
                         async for sentence in gen:
+                            require_current_output()
                             clean_sentence = sentence.strip()
                             if not clean_sentence:
                                 continue
@@ -218,6 +266,7 @@ class SessionHub:
                                 "expression": speech_expr,
                             })
 
+                        require_current_output()
                         raw_reply = " ".join(collected).strip()
                         tag_expr, reply = parse_and_strip_emotional_tags(raw_reply)
                         if tag_expr:
@@ -225,21 +274,27 @@ class SessionHub:
                         expr = speech_expr or contextual_expression(message, reply).value
                         used_stream = True
                     except Exception as e:
+                        require_current_output()
                         logger.warning("query_stream failed in inject_message, falling back to query: %s", e)
                         used_stream = False
 
                 if not used_stream:
+                    require_current_output()
                     sig = inspect.signature(self._hermes_bridge.query)
-                    if "session_name" in sig.parameters:
-                        raw_reply = await self._hermes_bridge.query(message, session_name=target_session)
-                    else:
-                        raw_reply = await self._hermes_bridge.query(message)
+                    try:
+                        if "session_name" in sig.parameters:
+                            raw_reply = await self._hermes_bridge.query(message, session_name=target_session)
+                        else:
+                            raw_reply = await self._hermes_bridge.query(message)
+                    finally:
+                        require_current_output()
                     tag_expr, reply = parse_and_strip_emotional_tags(raw_reply)
                     expr = tag_expr.value if tag_expr else contextual_expression(message, reply).value
             else:
                 reply = "Hermes bridge belum diinisialisasi."
                 expr = "netral"
 
+        require_current_output()
         # 3. Publish assistant transcription event
         self.publish_event({
             "type": "transcription",
@@ -254,12 +309,14 @@ class SessionHub:
         if speak:
             if appliance:
                 device_spoken = await appliance.speak_text(reply, expression=expr)
+                require_current_output()
             elif self._tts_engine:
                 # Local synthesis without connected appliance
                 device_spoken = False
         else:
             if appliance:
                 await appliance.send_state(NexoState.IDLE, expression=expr or "netral")
+                require_current_output()
 
         return {
             "status": "ok",

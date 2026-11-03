@@ -7,6 +7,7 @@ import time
 from collections import deque
 from contextlib import aclosing
 from typing import Any, Optional
+from types import SimpleNamespace
 from fastapi import WebSocket
 
 from ..models.messages import (
@@ -35,18 +36,31 @@ from ..mascot import (
 )
 from .audio_buffer import CircularAudioBuffer, CircularRingBuffer
 from .mp3_frame import parse_audio_duration, parse_mp3_duration
+from .outdoor import OutdoorSession, OutdoorStore, OutdoorViolation
 from ..hermes.sentence_chunker import split_into_sentences
 from ..pipeline.speaker import (
     SpeakerVerifier,
+    MIN_AUDIO_BYTES_FOR_VERIFY,
     is_voice_enroll_command,
     is_voice_unenroll_command,
 )
 
 logger = logging.getLogger(__name__)
+_OUTDOOR_STORE = OutdoorStore()
 
 
 class ProtocolViolation(ValueError):
     """Safe fixed diagnostic; never includes user input."""
+
+
+class _StalePipeline(Exception):
+    """A provider completed after this turn lost output ownership."""
+
+
+class _ProviderFailure(Exception):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
 
 
 class ApplianceSession:
@@ -83,6 +97,10 @@ class ApplianceSession:
         self.authenticated_device_id = authenticated_device_id
         self.agent_name = agent_name
         self.ready = False
+        self.outdoor = None
+        self.outdoor_store = _OUTDOOR_STORE
+        self._output_tasks = set()
+        self._send_lock = asyncio.Lock()
         self.max_json_bytes = max_json_bytes
         self.websocket = websocket
         self.session_id = session_id
@@ -250,21 +268,28 @@ class ApplianceSession:
 
     async def close(self):
         self._closed = True
-        self._clear_enrollment()
-        if self.hub:
-            self.hub.unregister_session(self)
-        if self._gap_handle:
-            self._gap_handle.cancel()
-            self._gap_handle = None
-        if self._processing_task:
-            self._processing_task.cancel()
-            await asyncio.gather(self._processing_task, return_exceptions=True)
-        self.audio_buffer.clear()
-        self._preroll.clear()
-        self.is_recording = False
+        try:
+            if self.outdoor:
+                await self.outdoor.close()
+        finally:
+            if self.outdoor_store.connections.get(self.authenticated_device_id) is self:
+                del self.outdoor_store.connections[self.authenticated_device_id]
+            self._clear_enrollment()
+            if self.hub:
+                self.hub.unregister_session(self)
+            if self._gap_handle:
+                self._gap_handle.cancel()
+                self._gap_handle = None
+            if self._processing_task:
+                self._processing_task.cancel()
+                await asyncio.gather(self._processing_task, return_exceptions=True)
+            self.audio_buffer.clear()
+            self._preroll.clear()
+            self.is_recording = False
 
     def _busy(self):
-        return self._closed or self._enrollment is not None or self._external_speech or time.monotonic() < self._cooldown_until or (
+        return (self.outdoor is not None and (self.outdoor.assembly is not None or not self.outdoor.output_allowed() or
+                (self.outdoor.active_task is not None and not self.outdoor.active_task.done()))) or self._closed or self._enrollment is not None or self._external_speech or time.monotonic() < self._cooldown_until or (
             self._processing_task is not None and not self._processing_task.done()
         )
 
@@ -277,12 +302,32 @@ class ApplianceSession:
             self._gap_handle = None
         self._processing_task = asyncio.create_task(self.process_recorded_audio())
 
+    def _output_allowed(self):
+        return not self._closed and (not self.outdoor or self.outdoor.is_current_output())
+
+    async def send_audio_bytes(self, chunk):
+        async with self._send_lock:
+            if not self._output_allowed():
+                return
+            await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
+
     async def send_json_message(self, model):
-        """Send a Pydantic model or dict serialized as JSON text frame."""
-        text = model.model_dump_json() if hasattr(model, "model_dump_json") else json.dumps(model)
-        await asyncio.wait_for(
-            self.websocket.send_text(text), self.SEND_TIMEOUT
-        )
+        """Serialize output behind the current ownership/generation barrier."""
+        payload = model.model_dump(mode="json") if hasattr(model, "model_dump") else dict(model)
+        async with self._send_lock:
+            if self.outdoor:
+                kind = payload.get("type")
+                if kind in {"state_change", "cognitive", "transcription", "tts_start", "tts_end", "visual_telemetry", "telemetry"}:
+                    if not self._output_allowed():
+                        return
+                if kind not in {"ping", "pong", "server_hello"}:
+                    import uuid
+                    payload.update(connection_id=self.outdoor.connection_id, output_epoch=self.outdoor.epoch)
+                    if payload.get("request_id") is None:
+                        payload["request_id"] = str(uuid.uuid4())
+                if kind == "tts_start":
+                    payload["bit_depth"] = 16
+            await asyncio.wait_for(self.websocket.send_text(json.dumps(payload)), self.SEND_TIMEOUT)
 
     async def send_state(
         self,
@@ -291,6 +336,8 @@ class ApplianceSession:
         expression: Optional[str] = None,
     ):
         """Transition and broadcast state change with mascot expression to client."""
+        if not self._output_allowed():
+            return
         self.state = state
         if self.hub:
             state_val = getattr(state, "value", str(state))
@@ -326,14 +373,29 @@ class ApplianceSession:
         if self._busy() or not self.ready or self.is_recording:
             return False
         self._external_speech = True
+        async def deliver():
+            token = self.outdoor._output_generation.set(self.outdoor.generation) if self.outdoor else None
+            try:
+                tag_expr, clean_text = parse_and_strip_emotional_tags(text)
+                resolved_expr = tag_expr.value if tag_expr else (expression or "senang")
+                await self.send_json_message(
+                    TranscriptionMessage(role="assistant", text=clean_text, is_final=True)
+                )
+                return await self._speak_text_owned(clean_text, resolved_expr)
+            finally:
+                if self.outdoor and token is not None:
+                    self.outdoor._output_generation.reset(token)
+        task = asyncio.create_task(deliver())
+        self._output_tasks.add(task)
         try:
-            tag_expr, clean_text = parse_and_strip_emotional_tags(text)
-            resolved_expr = tag_expr.value if tag_expr else (expression or "senang")
-            await self.send_json_message(
-                TranscriptionMessage(role="assistant", text=clean_text, is_final=True)
-            )
-            return await self._speak_text_owned(clean_text, resolved_expr)
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if asyncio.current_task().cancelling():
+                task.cancel()
+                raise
+            return False  # Ownership cancels this delivery, not its long-lived caller.
         finally:
+            self._output_tasks.discard(task)
             self._external_speech = False
 
     async def _speak_text_owned(self, text: str, expression: Optional[str]) -> bool:
@@ -345,7 +407,7 @@ class ApplianceSession:
 
         try:
             async for chunk in self.tts.synthesize_stream(clean_text):
-                await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
+                await self.send_audio_bytes(chunk)
                 self._playback_until = max(time.monotonic(), self._playback_until) + parse_audio_duration(chunk)
                 amp = self.vad.get_normalized_amplitude(chunk)
                 await self.send_json_message(
@@ -385,6 +447,13 @@ class ApplianceSession:
         if not self.ready and msg_type != "client_hello":
             raise ProtocolViolation("Hello required")
 
+        if self.outdoor and msg_type not in ("client_hello", "ping"):
+            try:
+                await self.outdoor.control(payload)
+            except OutdoorViolation:
+                raise ProtocolViolation("Invalid outdoor control") from None
+            return
+
         if msg_type == "client_hello":
             if self.ready:
                 raise ProtocolViolation("Duplicate hello")
@@ -395,6 +464,21 @@ class ApplianceSession:
                     or not isinstance(payload.get("audio_spec"), dict)
                     or any(type(payload["audio_spec"].get(k)) is not type(v) for k, v in expected_audio.items())):
                 raise ProtocolViolation("Unsupported hello identity or audio protocol")
+            capabilities = payload.get("capabilities", [])
+            if not isinstance(capabilities, list) or any(type(c) is not str for c in capabilities):
+                raise ProtocolViolation("Invalid capabilities")
+            if {"utterance_upload_v2", "exclusive_audio_v1"}.issubset(capabilities):
+                self.outdoor = OutdoorSession(self)
+                try:
+                    hello = await self.outdoor.hello()
+                except OutdoorViolation:
+                    raise ProtocolViolation("Protocol admission denied") from None
+                self.ready = True
+                await self.send_json_message(hello)
+                return
+            if self.authenticated_device_id in self.outdoor_store.connections:
+                raise ProtocolViolation("Protocol admission denied")
+            self.outdoor_store.connections[self.authenticated_device_id] = self
             self.ready = True
             logger.info("Protocol ready for session %s", self.session_id)
             await self.send_json_message(
@@ -435,6 +519,12 @@ class ApplianceSession:
         if not self.ready or not self.authenticated_device_id:
             # No PCM may reach VAD, buffering or providers before auth + hello.
             raise ProtocolViolation("Hello required before audio")
+        if self.outdoor:
+            try:
+                await self.outdoor.binary(data_bytes)
+            except OutdoorViolation:
+                raise ProtocolViolation("Invalid outdoor audio") from None
+            return
         if self._enrollment is not None:
             enrollment = self._enrollment
             if self._closed:
@@ -513,6 +603,7 @@ class ApplianceSession:
         await self.send_json_message(
             TranscriptionMessage(role="assistant", text=reply, is_final=True)
         )
+        self._check_pipeline_current()
         if self.hub:
             self.hub.publish_event({
                 "type": "transcription",
@@ -525,8 +616,8 @@ class ApplianceSession:
         await self.send_json_message(TTSStart())
         self._tts_started = True
 
-        async for chunk in self.tts.synthesize_stream(reply):
-            await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
+        async for chunk in self._pipeline_audio(reply):
+            await self.send_audio_bytes(chunk)
             self._playback_until = max(time.monotonic(), self._playback_until) + parse_audio_duration(chunk)
             amp = self.vad.get_normalized_amplitude(chunk)
             await self.send_json_message(
@@ -536,25 +627,106 @@ class ApplianceSession:
                 )
             )
 
+    async def _run_outdoor_pipeline(self, captured_pcm):
+        """Finish the v2 TTS envelope before the runtime drains playback."""
+        try:
+            return await self._run_pipeline(captured_pcm)
+        finally:
+            if self.outdoor and self.outdoor.is_current_output() and self._tts_started:
+                try:
+                    await self.send_json_message(TTSEnd())
+                finally:
+                    self._tts_started = False
+
+    def _check_pipeline_current(self):
+        if self.outdoor and not self.outdoor.is_current_output():
+            raise _StalePipeline()
+
+    async def _provider_result(self, pending, code):
+        try:
+            result = await pending
+        except Exception:
+            self._check_pipeline_current()
+            if not self.outdoor:
+                raise
+            raise _ProviderFailure(code) from None
+        self._check_pipeline_current()
+        return result
+
+    async def _provider_stream(self, source, code):
+        try:
+            async with aclosing(source) as stream:
+                async for item in stream:
+                    self._check_pipeline_current()
+                    yield item
+        except (_StalePipeline, _ProviderFailure):
+            raise
+        except Exception:
+            self._check_pipeline_current()
+            if not self.outdoor:
+                raise
+            raise _ProviderFailure(code) from None
+        self._check_pipeline_current()
+
+    async def _pipeline_audio(self, text):
+        self._check_pipeline_current()
+        async with aclosing(self._provider_stream(self.tts.synthesize_stream(text), "tts_failed")) as audio:
+            async for chunk in audio:
+                yield chunk
+
     async def _run_pipeline(self, captured_pcm):
+        try:
+            return await self._run_pipeline_owned(captured_pcm)
+        except _StalePipeline:
+            return "cancelled"
+        except _ProviderFailure as failure:
+            logger.warning("Voice provider failed")
+            return failure.code
+
+    async def _run_pipeline_owned(self, captured_pcm):
         """Process STT -> local mascot command or Hermes -> TTS."""
+        self._check_pipeline_current()
+        if self.outdoor and not any(captured_pcm):
+            return "no_speech"
         # Step 1: Thinking / Transcribing
         if self.is_sleeping:
             await self.send_state(NexoState.THINKING, expression="sleeping")
         else:
             await self.send_state(NexoState.THINKING, expression="bingung")
-        transcription = (await self.stt.transcribe(captured_pcm)).strip()
+        self._check_pipeline_current()
+        transcription = (await self._provider_result(self.stt.transcribe(captured_pcm), "stt_failed")).strip()
         if not transcription:
             logger.info("No speech transcribed for %s", self.session_id)
             if self.is_sleeping:
                 await self.send_state(NexoState.IDLE, expression="sleeping")
-            return
+            return "stt_empty"
         logger.info("STT complete for %s (%d characters)", self.session_id, len(transcription))
+
+        if self.outdoor and self.speaker_verifier is not None and self.speaker_verifier.is_enrolled("owner"):
+            outdoor = self.outdoor
+            worker = outdoor._spawn(asyncio.to_thread(
+                self.speaker_verifier.verify, captured_pcm, speaker_name="owner"))
+            outdoor._extractions.add(worker)
+            outdoor.store.extracting.add(outdoor.device)
+
+            def verified(task):
+                outdoor._extractions.discard(task)
+                outdoor.store.extracting.discard(outdoor.device)
+                outdoor._cleanup_registration()
+
+            worker.add_done_callback(verified)
+            is_match, similarity = await asyncio.shield(worker)
+            self._check_pipeline_current()
+            if not is_match:
+                if similarity == 0.0 and len(captured_pcm) < MIN_AUDIO_BYTES_FOR_VERIFY:
+                    return "quality_insufficient"
+                return "speaker_rejected"
 
         # Send transcription subtitle
         await self.send_json_message(
             TranscriptionMessage(role="user", text=transcription, is_final=True)
         )
+        self._check_pipeline_current()
         if self.hub:
             self.hub.publish_event({
                 "type": "transcription",
@@ -572,8 +744,8 @@ class ApplianceSession:
             )
             return
 
-        # Step 3: Speaker Verification (if enrolled)
-        if self.speaker_verifier is not None and self.speaker_verifier.is_enrolled("owner"):
+        # v1 retains its legacy enrollment-dialog ordering.
+        if not self.outdoor and self.speaker_verifier is not None and self.speaker_verifier.is_enrolled("owner"):
             is_match, similarity = self.speaker_verifier.verify(captured_pcm, speaker_name="owner")
             if not is_match:
                 logger.warning(
@@ -600,7 +772,7 @@ class ApplianceSession:
 
         if self.is_sleeping:
             # Standby Hening: Ignore other chatter while asleep
-            logger.info("Session %s is sleeping; ignoring non-wake input: %s", self.session_id, transcription)
+            logger.info("Sleeping session ignored non-wake input")
             await self.send_state(NexoState.IDLE, expression="sleeping")
             return
 
@@ -628,15 +800,19 @@ class ApplianceSession:
             sentence_expressions = deque()
 
             async def clean_sentences():
-                async with aclosing(self.hermes.query_stream(transcription)) as source:
+                self._check_pipeline_current()
+                async with aclosing(self._provider_stream(self.hermes.query_stream(transcription), "hermes_failed")) as source:
                     async for sentence in source:
+                        self._check_pipeline_current()
                         tag_expr, clean_sentence = parse_and_strip_emotional_tags(sentence.strip())
                         if clean_sentence:
                             sentence_expressions.append(tag_expr)
                             yield clean_sentence
 
-            async with aclosing(prefetch_tts(self.tts, clean_sentences())) as audio:
+            pipeline_tts: Any = SimpleNamespace(synthesize_stream=self._pipeline_audio) if self.outdoor else self.tts
+            async with aclosing(prefetch_tts(pipeline_tts, clean_sentences())) as audio:
                 async for clean_sentence, chunk in audio:
+                    self._check_pipeline_current()
                     if chunk is None:
                         tag_expr = sentence_expressions.popleft()
                         collected_sentences.append(clean_sentence)
@@ -651,6 +827,7 @@ class ApplianceSession:
                             await self.send_json_message(TTSStart())
                             self._tts_started = True
 
+                        self._check_pipeline_current()
                         if self.hub:
                             self.hub.publish_event({
                                 "type": "cognitive",
@@ -666,7 +843,7 @@ class ApplianceSession:
                     delay = self._playback_until + duration - self.MAX_PLAYBACK_AHEAD - time.monotonic()
                     if delay > 0:
                         await asyncio.sleep(delay)
-                    await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
+                    await self.send_audio_bytes(chunk)
                     self._playback_until = max(time.monotonic(), self._playback_until) + duration
                     amp = self.vad.get_normalized_amplitude(chunk)
                     await self.send_json_message(
@@ -676,12 +853,14 @@ class ApplianceSession:
                         )
                     )
 
+            self._check_pipeline_current()
             full_reply = " ".join(collected_sentences).strip()
             if full_reply:
                 logger.info("Agent complete for %s (%d characters)", self.session_id, len(full_reply))
                 await self.send_json_message(
                     TranscriptionMessage(role="assistant", text=full_reply, is_final=True)
                 )
+                self._check_pipeline_current()
                 if self.hub:
                     self.hub.publish_event({
                         "type": "transcription",
@@ -691,7 +870,9 @@ class ApplianceSession:
                         "source": "nexo_hermes",
                     })
         else:
-            agent_reply = await self.hermes.query(transcription)
+            self._check_pipeline_current()
+            agent_reply = await self._provider_result(self.hermes.query(transcription), "hermes_failed")
+            self._check_pipeline_current()
             tag_expr, clean_reply = parse_and_strip_emotional_tags(agent_reply)
             speech_expr = tag_expr.value if tag_expr else contextual_expression(transcription, clean_reply).value
             logger.info("Agent complete for %s (%d characters)", self.session_id, len(clean_reply))
@@ -699,6 +880,7 @@ class ApplianceSession:
             await self.send_json_message(
                 TranscriptionMessage(role="assistant", text=clean_reply, is_final=True)
             )
+            self._check_pipeline_current()
             if self.hub:
                 self.hub.publish_event({
                     "type": "transcription",
@@ -717,8 +899,9 @@ class ApplianceSession:
                 sentences = [clean_reply]
 
             for sentence in sentences:
-                async for chunk in self.tts.synthesize_stream(sentence):
-                    await asyncio.wait_for(self.websocket.send_bytes(chunk), self.SEND_TIMEOUT)
+                async for chunk in self._pipeline_audio(sentence):
+                    self._check_pipeline_current()
+                    await self.send_audio_bytes(chunk)
                     self._playback_until = max(time.monotonic(), self._playback_until) + parse_audio_duration(chunk)
                     amp = self.vad.get_normalized_amplitude(chunk)
                     await self.send_json_message(

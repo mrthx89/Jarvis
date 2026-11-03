@@ -167,6 +167,7 @@ async def test_gateway_streaming_with_emotional_tags():
     transcripts = [m for m in ws.messages if m.get("type") == "transcription" and m.get("role") == "assistant"]
     assert len(transcripts) == 1
     assert transcripts[0]["text"] == "Halo! Senang bertemu kembali. Apakah ada tugas yang perlu diselesaikan?"
+    await session.close()
 
 
 @pytest.mark.asyncio
@@ -199,6 +200,7 @@ async def test_gateway_speak_text_with_emotional_tag():
 
     subtitles = [m for m in ws.messages if m.get("type") == "transcription" and m.get("role") == "assistant"]
     assert subtitles[0]["text"] == "Peringatan darurat terdeteksi!"
+    await session.close()
 
 
 # ============================================================================

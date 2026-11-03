@@ -1,0 +1,76 @@
+{
+  "kind": "text_fixture",
+  "description": "Hand-written deterministic text fixtures only; not a real ASR benchmark. No audio, models, recordings or latency measurements.",
+  "cases": [
+    {
+      "id": "indonesian-speech",
+      "category": "speech",
+      "reference": "satu dua tiga",
+      "outputs": [
+        {"configuration": "text-control", "hypothesis": "SATU dua tiga!"},
+        {"configuration": "text-errors", "hypothesis": "satu tiga"}
+      ]
+    },
+    {
+      "id": "indonesian-command",
+      "category": "command",
+      "reference": "Buka pintu",
+      "outputs": [
+        {"configuration": "text-control", "hypothesis": "buka pintu"},
+        {"configuration": "text-errors", "hypothesis": "buka"}
+      ]
+    },
+    {
+      "id": "empty-output",
+      "category": "empty",
+      "reference": "",
+      "outputs": [
+        {"configuration": "text-control", "hypothesis": ""},
+        {"configuration": "text-errors", "hypothesis": "halo"}
+      ]
+    },
+    {
+      "id": "noise-output",
+      "category": "noise",
+      "reference": "",
+      "outputs": [
+        {"configuration": "text-control", "hypothesis": ""},
+        {"configuration": "text-errors", "hypothesis": "terima kasih"}
+      ]
+    }
+  ],
+  "expected_summary": {
+    "text-control": {
+      "word_errors": 0,
+      "reference_words": 5,
+      "character_errors": 0,
+      "reference_characters": 23,
+      "command_cases": 1,
+      "command_exact_successes": 1,
+      "wer": 0.0,
+      "cer": 0.0,
+      "categories": {
+        "speech": {"cases": 1},
+        "command": {"cases": 1},
+        "empty": {"cases": 1, "hallucinations": 0},
+        "noise": {"cases": 1, "hallucinations": 0}
+      }
+    },
+    "text-errors": {
+      "word_errors": 2,
+      "reference_words": 5,
+      "character_errors": 10,
+      "reference_characters": 23,
+      "command_cases": 1,
+      "command_exact_successes": 0,
+      "wer": 0.4,
+      "cer": 0.43478260869565216,
+      "categories": {
+        "speech": {"cases": 1},
+        "command": {"cases": 1},
+        "empty": {"cases": 1, "hallucinations": 1},
+        "noise": {"cases": 1, "hallucinations": 1}
+      }
+    }
+  }
+}
