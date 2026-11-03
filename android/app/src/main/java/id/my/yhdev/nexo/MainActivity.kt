@@ -555,7 +555,11 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         runOnUiThread {
             if (isDestroyed) return@runOnUiThread
             lastVoiceprintDialog = dialog
-            voiceprintSheet?.updateDialog(dialog)
+            if (dialog.action == "enroll" && voiceprintSheet == null) {
+                showVoiceprintManagement()
+            } else {
+                voiceprintSheet?.updateDialog(dialog)
+            }
             if (::tvVoiceprintStatus.isInitialized && ::ivVoiceprintLed.isInitialized) {
                 val isEnrolled = dialog.isEnrolled
                 tvVoiceprintStatus.setText(

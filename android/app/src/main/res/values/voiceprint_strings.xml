@@ -18,8 +18,13 @@
     <string name="voiceprint_info_enrolled">Sidik suara pemilik aktif. Nexo memvalidasi setiap ucapan dengan model biometrik vokal (CAM++ ONNX) sebelum diproses ke agen.</string>
     
     <string name="voiceprint_btn_enroll">Daftarkan Suara Sekarang</string>
+    <string name="voiceprint_btn_re_enroll">Rekam Ulang Sidik Suara</string>
     <string name="voiceprint_btn_unenroll">Hapus Sidik Suara</string>
     <string name="voiceprint_btn_close">Tutup</string>
+    
+    <string name="voiceprint_recording_title">Merekam Sidik Suara...</string>
+    <string name="voiceprint_recording_phrase">\"Halo Nexo, ini suara pemilik saya.\"</string>
+    <string name="voiceprint_recording_tip">Ucapkan kalimat di atas dengan jelas di dekat mikrofon tablet.</string>
     
     <string name="voiceprint_enroll_hint">Untuk mendaftar: Dekati layar dan ucapkan \"Nexo, daftarkan sidik suaraku\" lalu berbicara selama minimal 2 detik.</string>
     <string name="voiceprint_unenroll_confirm_title">Hapus Sidik Suara Pemilik?</string>

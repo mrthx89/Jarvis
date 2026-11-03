@@ -31,20 +31,41 @@ class VoiceprintManagementSheet(
     private var tvVoiceprintDetails: TextView? = null
     private var layoutVoiceprintMeta: LinearLayout? = null
     private var tvVoiceprintMetaText: TextView? = null
+    private var btnVoiceprintEnroll: MaterialButton? = null
     private var btnVoiceprintUnenroll: MaterialButton? = null
     private var cardVoiceprintStatus: LinearLayout? = null
+    private var cardEnrollHint: View? = null
 
     fun show() {
         val content = LayoutInflater.from(dialog.context).inflate(R.layout.sheet_voiceprint_management, null)
         rootView = content
 
         cardVoiceprintStatus = content.findViewById(R.id.cardVoiceprintStatus)
+        cardEnrollHint = content.findViewById(R.id.cardEnrollHint)
         ivSheetStatusLed = content.findViewById(R.id.ivSheetStatusLed)
         tvVoiceprintCount = content.findViewById(R.id.tvVoiceprintCount)
         tvVoiceprintDetails = content.findViewById(R.id.tvVoiceprintDetails)
         layoutVoiceprintMeta = content.findViewById(R.id.layoutVoiceprintMeta)
         tvVoiceprintMetaText = content.findViewById(R.id.tvVoiceprintMetaText)
+        btnVoiceprintEnroll = content.findViewById(R.id.btnVoiceprintEnroll)
         btnVoiceprintUnenroll = content.findViewById(R.id.btnVoiceprintUnenroll)
+
+        btnVoiceprintEnroll?.setOnClickListener {
+            // Pulse the hint card to direct focus
+            cardEnrollHint?.animate()
+                ?.scaleX(1.03f)
+                ?.scaleY(1.03f)
+                ?.setDuration(160)
+                ?.withEndAction {
+                    cardEnrollHint?.animate()?.scaleX(1.0f)?.scaleY(1.0f)?.setDuration(160)?.start()
+                }
+                ?.start()
+            Toast.makeText(
+                activity,
+                "Ucapkan kalimat panduan ke mikrofon selama minimal 2 detik...",
+                Toast.LENGTH_LONG
+            ).show()
+        }
 
         btnVoiceprintUnenroll?.setOnClickListener {
             showUnenrollConfirmation()
@@ -101,6 +122,7 @@ class VoiceprintManagementSheet(
         if (isEnrolled) {
             tvVoiceprintCount?.text = activity.getString(R.string.voiceprint_count_enrolled)
             tvVoiceprintDetails?.text = activity.getString(R.string.voiceprint_info_enrolled)
+            btnVoiceprintEnroll?.setText(R.string.voiceprint_btn_re_enroll)
             btnVoiceprintUnenroll?.visibility = View.VISIBLE
 
             val meta = voiceDialog?.metadata
@@ -117,6 +139,7 @@ class VoiceprintManagementSheet(
         } else {
             tvVoiceprintCount?.text = activity.getString(R.string.voiceprint_count_open)
             tvVoiceprintDetails?.text = activity.getString(R.string.voiceprint_info_open)
+            btnVoiceprintEnroll?.setText(R.string.voiceprint_btn_enroll)
             layoutVoiceprintMeta?.visibility = View.GONE
             btnVoiceprintUnenroll?.visibility = View.GONE
         }
