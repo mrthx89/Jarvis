@@ -64,11 +64,17 @@ class FasterWhisperSTT(BaseSTT):
                 no_repeat_ngram_size=3,
                 initial_prompt="Halo Nexo. Daftarkan suara, hapus sidik suara, rekam suara.",
             )
-            raw = " ".join([seg.text.strip() for seg in segments if seg.text.strip()])
-            # Suppress direct prompt echo artifacts
+            kept = [
+                seg.text.strip()
+                for seg in segments
+                if seg.text.strip() and getattr(seg, "no_speech_prob", 0.0) < 0.75
+            ]
+            raw = " ".join(kept)
+            # Suppress full prompt echo artifacts without blocking "Halo Nexo" greetings
             prompt_echoes = {
-                "nexo", "nexo.", "halo nexo", "halo nexo.",
                 "halo nexo, daftarkan suara, hapus sidik suara, rekam suara.",
+                "halo nexo. daftarkan suara, hapus sidik suara, rekam suara.",
+                "daftarkan suara, hapus sidik suara, rekam suara.",
                 "ini adalah percakapan santai bahasa indonesia dengan asisten pintar",
             }
             if raw.lower().strip() in prompt_echoes:

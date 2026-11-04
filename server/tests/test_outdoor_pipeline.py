@@ -382,3 +382,28 @@ async def test_pipeline_distinguishes_no_speech_from_stt_empty(pcm, text, expect
         s.hermes.query.assert_not_called()
     finally:
         await s.close()
+
+
+@pytest.mark.asyncio
+async def test_faster_whisper_stt_preserves_halo_nexo_and_filters_prompt_echo():
+    from types import SimpleNamespace
+    from nexo_server.pipeline.stt import FasterWhisperSTT
+
+    stt = FasterWhisperSTT()
+    pcm = b"\x10\x00" * 2000
+
+    class FakeModel:
+        def __init__(self, segments):
+            self._segments = segments
+
+        def transcribe(self, *args, **kwargs):
+            return self._segments, None
+
+    stt._model = FakeModel([SimpleNamespace(text=" Halo Nexo. ", no_speech_prob=0.08)])
+    assert await stt.transcribe(pcm) == "Halo Nexo."
+
+    stt._model = FakeModel([SimpleNamespace(text="Halo Nexo. Daftarkan suara, hapus sidik suara, rekam suara.", no_speech_prob=0.10)])
+    assert await stt.transcribe(pcm) == ""
+
+    stt._model = FakeModel([SimpleNamespace(text="Halo Nexo.", no_speech_prob=0.88)])
+    assert await stt.transcribe(pcm) == ""

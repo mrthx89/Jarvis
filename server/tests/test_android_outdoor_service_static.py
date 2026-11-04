@@ -162,6 +162,7 @@ def test_accepted_upload_has_bounded_terminal_result_and_fail_closed_cleanup():
     result = service.split('"utterance_result" -> {', 1)[1].split('"utterance_error" ->', 1)[0]
     assert result.index('processing.complete(utterance, now())') < result.index('samples.add(utterance)')
     assert 'fail("Hasil ucapan terlambat atau belum dikonfirmasi")' in result
+    assert 'code in setOf("stt_empty", "no_speech", "speaker_rejected", "quality_insufficient")' in result
     tick = service.split('private val tick =', 1)[1]
     assert 'if (processing.expired(time)) fail(' in tick
     invalidate = service.split('private fun invalidateCapture(', 1)[1].split('private fun finishCapture(', 1)[0]

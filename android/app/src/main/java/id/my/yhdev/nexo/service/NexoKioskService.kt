@@ -799,9 +799,19 @@ open class NexoKioskService : Service() {
                 if (utterance != pendingUtterance) return
                 if (!processing.complete(utterance, now())) { fail("Hasil ucapan terlambat atau belum dikonfirmasi"); return }
                 val completed = OutdoorProtocol.string(json, "status") == "completed"
+                val code = OutdoorProtocol.string(json, "code") ?: "processing_failed"
                 pendingUtterance = null
                 sealedPending?.let { sealed -> local.release(sealed) }; sealedPending = null
-                if (!completed) { fail("Ucapan gagal: ${OutdoorProtocol.string(json, "code") ?: "processing_failed"}"); return }
+                if (!completed) {
+                    if (sheetOwner == null && !recovery.active() && code in setOf("stt_empty", "no_speech", "speaker_rejected", "quality_insufficient")) {
+                        turnComplete = true; maybeNextTurn(); return
+                    }
+                    if (sheetOwner != null && code in setOf("no_speech", "quality_insufficient", "invalid_embedding")) {
+                        sheet(if (samples.isEmpty()) "READY" else "SAMPLES_READY", "Suara kurang jelas ($code). Ulangi sampel dengan satu kalimat jelas.")
+                        return
+                    }
+                    fail("Ucapan gagal: $code"); return
+                }
                 if (sheetOwner != null) {
                     samples.add(utterance)
                     sheet("SAMPLES_READY", if (samples.size > sampleCount) "Sampel dan holdout diterima. Tekan Simpan untuk validasi dan publikasi profil." else
@@ -922,7 +932,7 @@ open class NexoKioskService : Service() {
                             serviceCallback?.onTelemetryReceived(rms, null)
                             if (local.state() == "CAPTURING") publish(NexoState.LISTENING, if (recovery.active())
                                 "Merekam lokal • tekan Selesai, maksimal 20 detik; percakapan dan jawaban audio tetap dijeda"
-                                else "Merekam • tekan Selesai", sleepExpression)
+                                else if (automatic) "Mendengarkan ucapan…" else "Merekam • tekan Selesai", sleepExpression)
                         }
                     }
                 }
