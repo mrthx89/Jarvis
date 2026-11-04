@@ -5,8 +5,8 @@
     <color name="voiceprint_unregistered">#FFB300</color>
     <color name="voiceprint_danger">#FF5252</color>
 
-    <string name="voiceprint_hud_unregistered">Suara: Terbuka (0 Didaftarkan)</string>
-    <string name="voiceprint_hud_registered">Suara: Pemilik (1 Didaftarkan)</string>
+    <string name="voiceprint_hud_unregistered">Sidik Suara • Umum</string>
+    <string name="voiceprint_hud_registered">Sidik Suara • Pemilik</string>
     <string name="voiceprint_sheet_eyebrow">NEXO // BIOMETRIK SUARA</string>
     <string name="voiceprint_sheet_title">Manajemen Sidik Suara</string>
     <string name="voiceprint_sheet_desc">Rekam sampel untuk membantu Nexo mengenali pembicara. Sampel pendaftaran tidak dikirim sebagai percakapan.</string>
@@ -52,7 +52,7 @@
     <string name="voiceprint_deleting">Menghapus sidik suara…</string>
     <string name="voiceprint_failed">Operasi gagal. Periksa koneksi dan coba lagi. Status profil belum diubah di layar.</string>
     <string name="voiceprint_meta">Profil: %1$s\nDurasi sampel: %2$s detik\nTerdaftar: %3$s</string>
-    <string name="recording_finish">Selesai merekam</string>
+    <string name="recording_finish">Selesai bicara</string>
     <string name="recording_save">Simpan profil dari sampel dan holdout</string>
     <string name="recording_resume">Lanjut mendengarkan (tutup panel)</string>
     <string name="recording_finish_failed">Belum ada rekaman aktif yang bisa diselesaikan.</string>
@@ -66,10 +66,10 @@
     <string name="diagnostic_delete">Hapus klip lokal</string>
     <string name="diagnostic_hint">Klip hanya untuk Anda dengarkan. Tidak dikirim sebagai percakapan atau sampel profil. Tutup panel untuk menghapus klip.</string>
     <string name="diagnostic_unavailable">Klip tidak tersedia atau sudah kedaluwarsa. Rekam ulang.</string>
-    <string name="capture_automatic">Batas ucapan otomatis (VAD lokal)</string>
+    <string name="capture_automatic">Deteksi bicara otomatis</string>
     <string name="capture_auto_unavailable">Otomatis belum tersedia. Gunakan rekam manual.</string>
     <string name="capture_mode_busy">Ganti mode hanya saat tidak merekam atau mengirim. Hentikan sesi dahulu.</string>
-    <string name="capture_start">Mulai bicara (manual)</string>
+    <string name="capture_start">Mulai bicara</string>
     <string name="capture_start_unavailable">Belum siap merekam. Lanjutkan percakapan dan tunggu status Siap.</string>
     <string name="status_setup_action">Penyiapan perangkat (tekan lama)</string>
 </resources>

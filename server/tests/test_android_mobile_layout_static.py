@@ -145,3 +145,33 @@ def test_sheet_app_version_and_support_button():
     assert 'setupAppVersion' in sheet_code
     assert 'setupSupportButton' in sheet_code
     assert 'isTablet' in sheet_code or 'maxSheetWidth' in sheet_code
+
+
+def test_three_zone_simple_mobile_layout_and_contextual_controls():
+    """Verify top status bar, central mascot focal point, bottom thumb-zone dock, and hidden inactive manual controls."""
+    APP = '{http://schemas.android.com/apk/res-auto}'
+    root = ET.parse(MAIN / 'res/layout/activity_main.xml').getroot()
+    pill_status = by_id(root, 'pillStatus')
+    pill_voiceprint = by_id(root, 'pillVoiceprint')
+    visualizer = by_id(root, 'visualizerView')
+    capture_controls = by_id(root, 'captureControls')
+    start_utterance = by_id(root, 'startUtterance')
+    finish_utterance = by_id(root, 'finishUtterance')
+    toggle_voice = by_id(root, 'toggleVoice')
+
+    assert pill_status.get(APP + 'layout_constraintTop_toTopOf') == 'parent'
+    assert pill_voiceprint.get(APP + 'layout_constraintTop_toTopOf') == 'parent'
+    assert visualizer.get(APP + 'layout_constraintTop_toBottomOf') == '@id/pillStatus'
+    assert visualizer.get(APP + 'layout_constraintBottom_toTopOf') == '@id/voiceMood'
+    assert capture_controls.get(A + 'visibility') == 'gone'
+    assert start_utterance.get(A + 'visibility') == 'gone'
+    assert finish_utterance.get(A + 'visibility') == 'gone'
+    assert toggle_voice.get(APP + 'layout_constraintBottom_toBottomOf') == 'parent'
+
+    activity = (MAIN / 'java/id/my/yhdev/nexo/MainActivity.kt').read_text()
+    assert 'captureControls.visibility = if (voiceEnabled && !isSleeping) View.VISIBLE else View.GONE' in activity
+    assert 'startUtterance.visibility = if (showManualStart) View.VISIBLE else View.GONE' in activity
+    assert 'finishUtterance.visibility = if (canFinish) View.VISIBLE else View.GONE' in activity
+
+    service = (MAIN / 'java/id/my/yhdev/nexo/service/NexoKioskService.kt').read_text()
+    assert 'if (vadAvailable && !modeConfiguredByUser) automatic = true' in service

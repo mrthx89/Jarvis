@@ -44,6 +44,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
     private lateinit var tvStatus: TextView
     private lateinit var tvSubtitle: TextView
     private lateinit var toggleVoice: Button
+    private lateinit var captureControls: View
     private lateinit var captureMode: com.google.android.material.switchmaterial.SwitchMaterial
     private lateinit var startUtterance: Button
     private lateinit var finishUtterance: Button
@@ -309,6 +310,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             val service = kioskService ?: return@setOnClickListener
             if (service.isVoiceEnabled || service.hasRecoveryCapture) service.stopVoice() else service.startVoice()
         }
+        captureControls = findViewById(R.id.captureControls)
         captureMode = findViewById(R.id.captureMode)
         startUtterance = findViewById(R.id.startUtterance)
         finishUtterance = findViewById(R.id.finishUtterance)
@@ -604,8 +606,15 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             }
         }
         ivStatusLed.setColorFilter(ledColor)
+        val canFinish = kioskService?.canFinishCapture == true
+        val showManualStart = voiceEnabled && !captureMode.isChecked && !canFinish
+        if (::captureControls.isInitialized) {
+            captureControls.visibility = if (voiceEnabled && !isSleeping) View.VISIBLE else View.GONE
+        }
+        startUtterance.visibility = if (showManualStart) View.VISIBLE else View.GONE
         startUtterance.isEnabled = voiceEnabled && status == "Siap" && !captureMode.isChecked
-        finishUtterance.isEnabled = kioskService?.canFinishCapture == true
+        finishUtterance.visibility = if (canFinish) View.VISIBLE else View.GONE
+        finishUtterance.isEnabled = canFinish
         val recoveryCapture = kioskService?.hasRecoveryCapture == true
         toggleVoice.setText(if (voiceEnabled || recoveryCapture) R.string.voice_stop else R.string.voice_start)
         toggleVoice.isEnabled = voiceEnabled || recoveryCapture || kioskService?.canResumeVoice == true

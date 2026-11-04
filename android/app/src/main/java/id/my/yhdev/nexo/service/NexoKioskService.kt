@@ -110,6 +110,7 @@ open class NexoKioskService : Service() {
     private var diagnosticReady = false
     private val diagnosticOperation = id.my.yhdev.nexo.audio.core.SheetOperation()
     private var automatic = false // Manual remains independent of model availability.
+    private var modeConfiguredByUser = false
     @Volatile private var vadAvailable = false
     private var vad: SileroVad? = null // Lifecycle owns reset/close after consumer join.
     private var lastVoiceprintDialog: VoiceprintDialog? = null
@@ -191,7 +192,12 @@ open class NexoKioskService : Service() {
                 SileroVad(file.absolutePath)
             }.getOrNull()
             vadAvailable = vad != null
-            main.post { if (!destroyed) serviceCallback?.onCaptureModeChanged(automatic, vadAvailable) }
+            main.post {
+                if (!destroyed) {
+                    if (vadAvailable && !modeConfiguredByUser) automatic = true
+                    serviceCallback?.onCaptureModeChanged(automatic, vadAvailable)
+                }
+            }
         }
     }
     private fun newPlayer(): AudioPlayerManager {
@@ -219,6 +225,7 @@ open class NexoKioskService : Service() {
         val busy = startingCapture || audioRecorder?.isRecording() == true || pendingUtterance != null ||
             sealedPending != null || finishPending || playbackPending || now() - playbackDrainedAt < 600
         if (value && !vadAvailable || sheetOwner != null || !ownership.pauseForModeChange(busy)) return false
+        modeConfiguredByUser = true
         automatic = value
         pauseLocal("mode_changed")
         publish(NexoState.IDLE, "Paused • mode diubah, tekan Mulai untuk melanjutkan", sleepExpression)
