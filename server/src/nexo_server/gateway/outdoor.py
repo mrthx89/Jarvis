@@ -54,10 +54,10 @@ class OutdoorStore:
 class OutdoorSession:
     MAX_SAMPLES = 320000
     MAX_CHUNK_BYTES = 16384
-    UPLOAD_TIMEOUT = 45.0
-    INACTIVITY_TIMEOUT = 15.0
+    UPLOAD_TIMEOUT = 30.0
+    INACTIVITY_TIMEOUT = 5.0
     PROCESSING_TIMEOUT = 120.0
-    DRAIN_TIMEOUT = 3.0
+    DRAIN_TIMEOUT = 1.5
     OWNER_LEASE = 15.0
 
     def __init__(self, session: Any, store=None):
