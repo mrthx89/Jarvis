@@ -7,19 +7,23 @@ public final class ProcessingDeadline {
     private long acceptedAt;
     private boolean armed;
 
-    public void begin(String utterance) { clear(); pending = utterance; }
-    public boolean accepted(String utterance, long now) {
+    public synchronized void begin(String utterance) { clear(); pending = utterance; }
+    public synchronized boolean accepted(String utterance, long now) {
         if (pending == null || !pending.equals(utterance)) return false;
         if (!armed) { acceptedAt = now; armed = true; }
         return true;
     }
-    public boolean complete(String utterance, long now) {
+    /** Refreshes the inactivity window while fenced server output/audio is actively arriving. */
+    public synchronized void activity(long now) {
+        if (armed && now >= acceptedAt) acceptedAt = now;
+    }
+    public synchronized boolean complete(String utterance, long now) {
         if (!armed || pending == null || !pending.equals(utterance) || expired(now)) return false;
         clear();
         return true;
     }
-    public boolean expired(long now) {
+    public synchronized boolean expired(long now) {
         return armed && (now < acceptedAt || now - acceptedAt >= TIMEOUT_MS);
     }
-    public void clear() { pending = null; armed = false; acceptedAt = 0; }
+    public synchronized void clear() { pending = null; armed = false; acceptedAt = 0; }
 }

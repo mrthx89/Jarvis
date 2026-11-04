@@ -21,6 +21,11 @@ public final class ProcessingDeadlineHarness {
         assert policy.complete("enrollment", 30999);
         assert !policy.expired(Long.MAX_VALUE) : "Success disarms the timer";
         assert !policy.complete("enrollment", 31000) : "Duplicate result cannot append twice";
+        policy.begin("streaming");
+        assert policy.accepted("streaming", 1000);
+        policy.activity(25000);
+        assert !policy.expired(54999) : "Active streaming output refreshes inactivity window";
+        assert policy.complete("streaming", 54999);
         policy.begin("closed");
         assert policy.accepted("closed", 2000);
         policy.clear();

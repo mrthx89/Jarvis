@@ -23,10 +23,11 @@ class NexoWebSocketClient(
     private val TAG = "NexoWebSocketClient"
     private val gson = Gson()
     private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
         .followRedirects(false)
         .followSslRedirects(false)
         .readTimeout(0, TimeUnit.MILLISECONDS)
-        .pingInterval(15, TimeUnit.SECONDS)
+        .pingInterval(30, TimeUnit.SECONDS)
         .build()
 
     @Volatile private var webSocket: WebSocket? = null
@@ -128,7 +129,7 @@ class NexoWebSocketClient(
                 webSocket.send(gson.toJson(ClientHello(deviceId = deviceId)))
                 Thread({
                     try {
-                        Thread.sleep(10_000)
+                        Thread.sleep(15_000)
                         if (shouldRun.get() && !ended.get() && !protocolReady.get()) webSocket.cancel()
                     } catch (_: InterruptedException) {}
                 }, "Nexo-Handshake-Timeout").apply { isDaemon = true; start() }

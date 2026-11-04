@@ -89,6 +89,7 @@ open class NexoKioskService : Service() {
         publish(NexoState.DISCONNECTED, if (preserve && audioRecorder?.isRecording() == true)
             "Merekam lokal • koneksi terputus, tekan Selesai (maksimal 20 detik). Tidak ada jawaban offline."
             else "Paused • memeriksa status ucapan saat koneksi pulih, mikrofon tetap OFF", sleepExpression)
+        scheduleAutoRestart()
     }
     private var enrollmentId: String? = null
     private var enrollmentRequest: String? = null
@@ -115,6 +116,23 @@ open class NexoKioskService : Service() {
     private var vad: SileroVad? = null // Lifecycle owns reset/close after consumer join.
     private var lastVoiceprintDialog: VoiceprintDialog? = null
     @Volatile private var destroyed = false
+    private var keepVoiceAlive = false
+    private var autoRestartAt = 0L
+    private fun scheduleAutoRestart(message: String? = null) {
+        val fatal = !permitted() || sheetOwner != null || (message != null && (
+            message.contains("Penyiapan perangkat") || message.contains("Endpoint") ||
+            message.contains("Izin") || message.contains("pembaruan audio v2") ||
+            message.contains("Buka aplikasi")))
+        if (fatal) {
+            keepVoiceAlive = false
+            autoRestartAt = 0L
+            persistOff()
+        } else if (keepVoiceAlive) {
+            autoRestartAt = now() + 1200L
+            voiceEnabled = true
+            serviceCallback?.onVoiceEnabledChanged(true)
+        }
+    }
     val isVoiceEnabled: Boolean get() = voiceEnabled
     val canFinishCapture: Boolean get() = !startingCapture && !finishPending &&
         audioRecorder?.isRecording() == true && local.state() in setOf("CAPTURING", "SEALED")
@@ -152,9 +170,12 @@ open class NexoKioskService : Service() {
     private fun permitted() = uiForeground && foregroundAllowed &&
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     private fun persistOff() {
-        voiceEnabled = false
-        voicePreferences.edit().putBoolean("enabled", false).commit()
-        serviceCallback?.onVoiceEnabledChanged(false)
+        voiceEnabled = keepVoiceAlive && permitted() && sheetOwner == null
+        if (!voiceEnabled) {
+            voiceEnabled = false
+            voicePreferences.edit().putBoolean("enabled", false).commit()
+            serviceCallback?.onVoiceEnabledChanged(false)
+        }
     }
     private var captureNotice = ""
     private fun withCaptureNotice(message: String): String =
@@ -216,6 +237,7 @@ open class NexoKioskService : Service() {
     fun setUiForeground(value: Boolean) {
         uiForeground = value
         if (!value) {
+            keepVoiceAlive = false; autoRestartAt = 0L
             closeRecordingSheet("background")
             pauseLocal("background")
         }
@@ -227,6 +249,7 @@ open class NexoKioskService : Service() {
         if (value && !vadAvailable || sheetOwner != null || !ownership.pauseForModeChange(busy)) return false
         modeConfiguredByUser = true
         automatic = value
+        keepVoiceAlive = false; autoRestartAt = 0L
         pauseLocal("mode_changed")
         publish(NexoState.IDLE, "Paused • mode diubah, tekan Mulai untuk melanjutkan", sleepExpression)
         serviceCallback?.onCaptureModeChanged(automatic, vadAvailable)
@@ -234,6 +257,7 @@ open class NexoKioskService : Service() {
     }
     fun startVoice() {
         if (!permitted() || ownership.owner() != null || sheetOwner != null) return
+        keepVoiceAlive = true; autoRestartAt = 0L
         if (ownership.normalAllowed()) return
         if (recovery.active()) {
             if (webSocketClient?.uploader?.state() != "RETRY_READY") return
@@ -252,6 +276,7 @@ open class NexoKioskService : Service() {
         if (!ownership.resume(request, now())) return
         if (retryResume) persistOff()
         else {
+            keepVoiceAlive = true; autoRestartAt = 0L
             voicePreferences.edit().putBoolean("enabled", true).commit()
             voiceEnabled = true
             serviceCallback?.onVoiceEnabledChanged(true)
@@ -260,6 +285,7 @@ open class NexoKioskService : Service() {
         if (webSocketClient?.sendOutdoorControl("conversation_resume", request) != true) fail("Permintaan lanjut gagal")
     }
     fun stopVoice() {
+        keepVoiceAlive = false; autoRestartAt = 0L
         resumeOnHello = false; resumeOnRelease = false
         closeRecordingSheet("STOP")
         pauseLocal("STOP")
@@ -288,15 +314,16 @@ open class NexoKioskService : Service() {
         pauseLocal("error")
         sheet("ERROR", "$message. Tutup dan buka lagi untuk mencoba ulang.")
         publish(NexoState.ERROR, message, sleepExpression)
+        scheduleAutoRestart(message)
     }
     fun initializeConnection(serverUrl: String, deviceId: String, forceReconnect: Boolean = false) {
         if (!ServerEndpointPolicy.isValid(serverUrl) || deviceId.isBlank()) { fail("Endpoint suara tidak valid"); return }
         val changed = connectionKey != null && connectionKey != Pair(serverUrl, deviceId)
-        if (changed || forceReconnect) { closeRecordingSheet("endpoint_changed"); pauseLocal("endpoint_changed") }
+        if (changed || forceReconnect) { keepVoiceAlive = false; autoRestartAt = 0L; closeRecordingSheet("endpoint_changed"); pauseLocal("endpoint_changed") }
         connectionKey = Pair(serverUrl, deviceId)
         voicePreferences.edit().putString("server_url", serverUrl).putString("device_id", deviceId).apply()
     }
-    fun refreshCredentials() { closeRecordingSheet("credentials_changed"); pauseLocal("credentials_changed") }
+    fun refreshCredentials() { keepVoiceAlive = false; autoRestartAt = 0L; closeRecordingSheet("credentials_changed"); pauseLocal("credentials_changed") }
     private fun ensureConnection() {
         if (webSocketClient != null) return
         val key = connectionKey ?: run { fail("Endpoint belum tersedia"); return }
@@ -363,6 +390,7 @@ open class NexoKioskService : Service() {
             }
             override fun onOutdoorAudio(connectionId: String, epoch: Long, audioData: ByteArray) {
                 if (destroyed || token != generation || !ownership.outputAllowed(connectionId, epoch)) return
+                processing.activity(now())
                 val barrier = outputBarrier
                 val ready = runCatching { barrier.get(1600, TimeUnit.MILLISECONDS) }.getOrDefault(false)
                 if (!ready) {
@@ -403,6 +431,7 @@ open class NexoKioskService : Service() {
         queryRequest = null; pendingDelete = null; lastVoiceprintDialog = null
         enrollmentId = null; enrollmentRequest = null; enrollmentOperation = null
         samples.clear(); sampleCount = 0; resumeOnHello = false; resumeOnRelease = false
+        keepVoiceAlive = false; autoRestartAt = 0L
         webSocketClient?.fenceCapture()
         persistOff()
         ownership.openSheet(sheetOwner!!, sheetOpened)
@@ -779,6 +808,7 @@ open class NexoKioskService : Service() {
                 val uploadState = webSocketClient?.uploader?.state()
                 if (recovery.active() && stage == "unknown" && uploadState == "RETRY_READY") {
                     publish(NexoState.IDLE, "Paused • ucapan belum diterima. Tekan Mulai untuk kirim ulang dalam 30 detik sejak rekaman selesai", sleepExpression)
+                    if (keepVoiceAlive) scheduleAutoRestart()
                     return
                 }
                 if (webSocketClient?.uploader?.state() in setOf("ACCEPTED", "COMPLETED")) {
@@ -789,6 +819,7 @@ open class NexoKioskService : Service() {
                             pendingUtterance = null; processing.clear()
                             pauseLocal("recovered_completed")
                             publish(NexoState.IDLE, "Paused • server sudah menyelesaikan ucapan; tidak dikirim ulang. Tekan Mulai untuk ucapan baru", sleepExpression)
+                            if (keepVoiceAlive) scheduleAutoRestart()
                         } else publish(NexoState.THINKING, "Paused • ucapan diterima, menunggu hasil server tanpa membuka mikrofon atau jawaban audio", sleepExpression)
                     } else if (sheetOwner == null) publish(NexoState.THINKING, "Memahami • audio diterima utuh oleh server", sleepExpression)
                     else sheet("PROCESSING", "Memeriksa sampel di server • level sinyal bukan bukti kualitas")
@@ -812,6 +843,11 @@ open class NexoKioskService : Service() {
                         serviceCallback?.onTranscriptionReceived("system", hint, true)
                         turnComplete = true; maybeNextTurn(); return
                     }
+                    if (sheetOwner == null && !recovery.active() && code in setOf("stt_failed", "hermes_failed", "tts_failed", "processing_failed")) {
+                        playbackPending = false; audioPlayer.stop()
+                        serviceCallback?.onTranscriptionReceived("system", "Kendala layanan sementara ($code) • silakan bicara lagi", true)
+                        turnComplete = true; maybeNextTurn(); return
+                    }
                     if (sheetOwner != null && code in setOf("no_speech", "quality_insufficient", "invalid_embedding")) {
                         sheet(if (samples.isEmpty()) "READY" else "SAMPLES_READY", "Suara kurang jelas ($code). Ulangi sampel dengan satu kalimat jelas.")
                         return
@@ -825,6 +861,7 @@ open class NexoKioskService : Service() {
                 } else if (recovery.active()) {
                     pauseLocal("recovered_result")
                     publish(NexoState.IDLE, "Paused • hasil ucapan selesai; tekan Mulai untuk ucapan baru", sleepExpression)
+                    if (keepVoiceAlive) scheduleAutoRestart()
                 } else { turnComplete = true; maybeNextTurn() }
             }
             "utterance_error" -> if (OutdoorProtocol.uuid(json, "utterance_id") == pendingUtterance) fail("Unggahan ditolak")
@@ -860,6 +897,7 @@ open class NexoKioskService : Service() {
                 startingCapture = false
                 if (!ownership.recorderReady(gate, started && recorder.isRecording()) || !permitted()) { fail("Mikrofon gagal dimulai"); return@post }
                 webSocketClient?.allowOutput(id, epoch)
+                autoRestartAt = 0L
                 activeToken = token; activePurpose = "conversation"; activeCaptureGeneration = capture
                 publish(NexoState.LISTENING, if (automatic) "Siap • menunggu ucapan" else "Merekam • tekan Selesai", sleepExpression)
             }
@@ -869,6 +907,7 @@ open class NexoKioskService : Service() {
         val id = OutdoorProtocol.uuid(json, "connection_id") ?: return
         val epoch = OutdoorProtocol.integer(json, "output_epoch", 0, Long.MAX_VALUE) ?: return
         if (!ownership.outputAllowed(id, epoch)) return
+        processing.activity(now())
         when (OutdoorProtocol.string(json, "type")) {
             "tts_start" -> {
                 startingCapture = false
@@ -902,6 +941,7 @@ open class NexoKioskService : Service() {
     }
     private fun maybeNextTurn() {
         if (!turnComplete || playbackPending || !ownership.normalAllowed() || now() - playbackDrainedAt < 600) return
+        if (automatic && vadAvailable && (startingCapture || audioRecorder?.isRecording() == true || pendingUtterance != null || sealedPending != null || finishPending)) return
         turnComplete = false
         if (automatic && vadAvailable) startCapture("conversation", true)
         else publish(NexoState.IDLE, "Siap • tekan Mulai bicara untuk ucapan berikutnya", sleepExpression)
@@ -951,6 +991,27 @@ open class NexoKioskService : Service() {
             else if (pendingUtterance != null && uploadState == "DISCONNECTED" && !recovery.active()) transientDisconnect()
             if (diagnosticReady && time >= diagnosticUntil) { diagnosticReady = false; sheet("READY", "Klip kedaluwarsa dan dihapus. Rekam ulang bila diperlukan.") }
             maybeNextTurn()
+            if (keepVoiceAlive && permitted() && sheetOwner == null) {
+                if (autoRestartAt in 1..time) {
+                    if (startingCapture || finishPending || audioRecorder?.isRecording() == true || ownership.normalAllowed()) {
+                        autoRestartAt = 0L
+                    } else if (recovery.active()) {
+                        autoRestartAt = time + 2000L
+                        if (webSocketClient == null) ensureConnection()
+                        else if (webSocketClient?.uploader?.state() == "RETRY_READY") startVoice()
+                    } else if (webSocketClient != null && webSocketClient?.outdoorSession == null) {
+                        resumeOnHello = true
+                        autoRestartAt = time + 2000L
+                    } else {
+                        startVoice()
+                        autoRestartAt = time + 2500L
+                    }
+                } else if (ownership.normalAllowed() && automatic && vadAvailable && !turnComplete &&
+                    !playbackPending && !startingCapture && !finishPending && pendingUtterance == null &&
+                    sealedPending == null && audioRecorder?.isRecording() != true && time - playbackDrainedAt >= 600) {
+                    startCapture("conversation", true)
+                }
+            }
             main.postDelayed(this, 100)
         }
     }
@@ -968,6 +1029,7 @@ open class NexoKioskService : Service() {
         catch (_: IllegalStateException) { foregroundAllowed = false; persistOff(); publish(NexoState.ERROR, "Buka aplikasi untuk memakai mikrofon") }
     }
     override fun onDestroy() {
+        keepVoiceAlive = false; autoRestartAt = 0L
         closeRecordingSheet("service_destroy")
         destroyed = true; ++generation; persistOff()
         ownership.disconnected(); webSocketClient?.fenceOutput()

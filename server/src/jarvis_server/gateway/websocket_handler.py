@@ -51,7 +51,7 @@ class ApplianceSession:
     """Half-duplex voice session: controls stay live while audio is processed."""
 
     PROCESSING_TIMEOUT = 120.0
-    SEND_TIMEOUT = 5.0
+    SEND_TIMEOUT = 15.0
     AUDIO_GAP_TIMEOUT = 2.0
     SILENCE_BYTES = 48000  # 1500 ms PCM16 mono at 16 kHz
     MAX_AUDIO_BYTES = 30 * 32000
