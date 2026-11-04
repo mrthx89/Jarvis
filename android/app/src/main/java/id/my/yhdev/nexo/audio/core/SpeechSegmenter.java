@@ -10,7 +10,7 @@ public final class SpeechSegmenter {
         if (!Float.isFinite(probability) || probability < 0 || probability > 1)
             throw new IllegalArgumentException("vad_probability");
         if (!active) {
-            onset = probability >= .60f ? onset + 1 : 0;
+            onset = probability >= .50f ? onset + 1 : 0;
             if (onset == 3) { active = true; silence = 0; return START; }
         } else {
             silence = probability < .35f ? silence + 1 : 0;

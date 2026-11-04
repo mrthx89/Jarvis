@@ -607,7 +607,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         }
         ivStatusLed.setColorFilter(ledColor)
         val manualFallback = !captureMode.isChecked
-        val canFinish = kioskService?.canFinishCapture == true && manualFallback
+        val canFinish = kioskService?.canFinishCapture == true
         val showManualStart = voiceEnabled && manualFallback && !canFinish
         captureMode.visibility = View.GONE
         if (::captureControls.isInitialized) {

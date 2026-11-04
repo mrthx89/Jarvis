@@ -78,6 +78,10 @@ public final class UtteranceBuffer {
     public synchronized void accept(byte[] data, int count, long now) {
         if (count < 1 || count > data.length) { invalidate("invalid_read"); return; }
         if (failure != null || sealed != null) return;
+        if (!capturing && samples >= 8000) {
+            squares *= 0.5;
+            samples /= 2;
+        }
         for (int i = 0; i < count; i++) {
             if (carry < 0) { carry = data[i] & 255; continue; }
             byte low = (byte) carry, high = data[i]; carry = -1;
@@ -99,8 +103,14 @@ public final class UtteranceBuffer {
         if (!requestedPurpose.equals("conversation") && !requestedPurpose.equals("enrollment") && !requestedPurpose.equals("diagnostic"))
             throw new IllegalArgumentException("purpose");
         purpose = requestedPurpose; size = 0;
+        samples = 0; clipped = 0; squares = 0; peak = 0;
         int oldest = pre.length == 0 ? 0 : (preWrite - preSize + pre.length) % pre.length;
         for (int i = 0; i < preSize; i++) pcm[size++] = pre[(oldest + i) % pre.length];
+        for (int i = 0; i + 1 < size; i += 2) {
+            int value = (short) ((pcm[i] & 255) | (pcm[i + 1] << 8));
+            samples++; squares += (double) value * value; peak = Math.max(peak, Math.abs(value));
+            if (value == Short.MIN_VALUE || value == Short.MAX_VALUE) clipped++;
+        }
         Arrays.fill(pre, (byte) 0); preSize = 0; preWrite = 0;
         capturing = true; return true;
     }
@@ -124,6 +134,7 @@ public final class UtteranceBuffer {
     public synchronized void cancel() {
         if (sealed != null) sealed.erase();
         sealed = null; capturing = false; size = 0; carry = -1; preSize = 0; preWrite = 0;
+        samples = 0; clipped = 0; squares = 0; peak = 0; overwrittenSamples = 0;
         Arrays.fill(pcm, (byte) 0); Arrays.fill(pre, (byte) 0); failure = null;
     }
     public synchronized long overwrittenSamples() { return overwrittenSamples; }

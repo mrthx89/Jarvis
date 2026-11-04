@@ -804,6 +804,12 @@ open class NexoKioskService : Service() {
                 sealedPending?.let { sealed -> local.release(sealed) }; sealedPending = null
                 if (!completed) {
                     if (sheetOwner == null && !recovery.active() && code in setOf("stt_empty", "no_speech", "speaker_rejected", "quality_insufficient")) {
+                        val hint = when (code) {
+                            "speaker_rejected" -> "Suara tidak cocok dengan pemilik terdaftar"
+                            "quality_insufficient" -> "Suara terlalu singkat atau kurang jelas"
+                            else -> "Suara belum terdengar jelas • silakan bicara lagi"
+                        }
+                        serviceCallback?.onTranscriptionReceived("system", hint, true)
                         turnComplete = true; maybeNextTurn(); return
                     }
                     if (sheetOwner != null && code in setOf("no_speech", "quality_insufficient", "invalid_embedding")) {
@@ -837,8 +843,9 @@ open class NexoKioskService : Service() {
             }; return@execute }
             if (gate != ownership.generation() || capture != captureGeneration || !permitted()) return@execute
             vad?.reset(); local.cancel("resume")
-            val token = local.arm("conversation", automatic, if (automatic) vad else null)
-            if (!automatic) local.start(token, now())
+            val useAuto = automatic && vad != null
+            val token = local.arm("conversation", useAuto, if (useAuto) vad else null)
+            if (!useAuto) local.start(token, now())
             val recorder = AudioRecorderManager(options = CaptureOptions(automaticVad = automatic),
                 audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager,
                 onError = { captureFailed(capture, it) }, onRecoverableError = { captureFailed(capture, it) },

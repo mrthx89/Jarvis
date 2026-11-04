@@ -46,19 +46,27 @@ class FasterWhisperSTT(BaseSTT):
 
         audio_array = np.frombuffer(pcm_audio, dtype=np.int16).astype(np.float32) / 32768.0
 
-        # Digital gain normalization: boost soft/distant speech so Whisper hears clearly
-        peak = float(np.max(np.abs(audio_array)))
-        if peak > 0.005:
-            gain = min(0.95 / peak, 8.0)  # Up to +18 dB digital gain boost
-            audio_array = audio_array * gain
+        # Remove DC bias if signal has AC variance (avoids zeroing synthetic constant test arrays)
+        if float(np.std(audio_array)) > 1e-4:
+            audio_array = audio_array - float(np.mean(audio_array))
+
+        # Digital gain normalization: use 99.5th percentile so isolated mic clicks
+        # do not suppress gain for soft/distant speech, with fallback to peak.
+        abs_audio = np.abs(audio_array)
+        peak = float(np.max(abs_audio))
+        p99 = float(np.percentile(abs_audio, 99.5))
+        ref_level = p99 if p99 >= 0.003 else peak
+        if ref_level > 0.003:
+            gain = min(0.95 / ref_level, 10.0)  # Up to +20 dB digital gain boost
+            audio_array = np.clip(audio_array * gain, -1.0, 1.0).astype(np.float32)
 
         def _run_transcribe():
             model = self._get_model()
             segments, _ = model.transcribe(
                 audio_array,
                 language=language,
-                beam_size=1,
-                no_speech_threshold=0.5,
+                beam_size=2,
+                no_speech_threshold=0.65,
                 condition_on_previous_text=False,
                 repetition_penalty=1.2,
                 no_repeat_ngram_size=3,

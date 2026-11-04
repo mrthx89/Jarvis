@@ -401,3 +401,40 @@ async def test_sleep_and_wake_lifecycle():
         assert s.tts.texts == ["Saya siap membantu."]
     finally:
         await s.close()
+
+
+@pytest.mark.asyncio
+async def test_faster_whisper_stt_percentile_gain_ignores_mic_clicks():
+    """Verify quiet speech with a transient mic click is still boosted properly in FasterWhisperSTT."""
+    from types import SimpleNamespace
+    import numpy as np
+    from nexo_server.pipeline.stt import FasterWhisperSTT as NexoSTT
+    from jarvis_server.pipeline.stt import FasterWhisperSTT as JarvisSTT
+
+    # 1 second of quiet 400 Hz speech (amplitude ~0.03 = ~983 int16) + 2 samples of loud mic click (0.85)
+    t = np.linspace(0, 1.0, 16000, dtype=np.float32)
+    wave = 0.03 * np.sin(2 * np.pi * 400 * t)
+    wave[0] = 0.85
+    wave[1] = -0.85
+    pcm_bytes = (wave * 32767).astype(np.int16).tobytes()
+
+    for cls in (NexoSTT, JarvisSTT):
+        stt = cls(model_size="base")
+        captured_arrays = []
+        captured_kwargs = []
+
+        class FakeModel:
+            def transcribe(self, audio_array, **kwargs):
+                captured_arrays.append(audio_array)
+                captured_kwargs.append(kwargs)
+                return [SimpleNamespace(text=" Halo Nexo ", no_speech_prob=0.60)], None
+
+        stt._model = FakeModel()
+        text = await stt.transcribe(pcm_bytes)
+        assert text == "Halo Nexo"
+        assert len(captured_arrays) == 1
+        # Verify the quiet speech body (excluding the 2 click samples) was boosted significantly (> 0.20)
+        speech_body_peak = float(np.percentile(np.abs(captured_arrays[0][10:]), 99.0))
+        assert speech_body_peak > 0.20
+        assert captured_kwargs[0]["no_speech_threshold"] == 0.65
+

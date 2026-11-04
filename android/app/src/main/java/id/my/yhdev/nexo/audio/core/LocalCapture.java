@@ -10,6 +10,7 @@ public final class LocalCapture {
     private final UtteranceBuffer buffer = new UtteranceBuffer();
     private final SpeechSegmenter segmenter = new SpeechSegmenter();
     private final float[] window = new float[512];
+    private final float[] vadWindow = new float[512];
     private final byte[] pair = new byte[2];
     private int windowSize;
     private int low = -1;
@@ -24,7 +25,7 @@ public final class LocalCapture {
         if (!state.equals("PAUSED") && !state.equals("ERROR")) throw new IllegalStateException("capture_busy");
         if (auto && model == null) throw new IllegalStateException("auto_unavailable");
         buffer.cancel(); segmenter.reset(); windowSize = 0; low = -1;
-        Arrays.fill(window, 0); automatic = auto; vad = model; purpose = requestedPurpose;
+        Arrays.fill(window, 0); Arrays.fill(vadWindow, 0); automatic = auto; vad = model; purpose = requestedPurpose;
         error = null; state = "ARMED"; return generation.incrementAndGet();
     }
     public synchronized boolean start(long token, long now) {
@@ -53,10 +54,16 @@ public final class LocalCapture {
                 if (state.equals("SEALED") || state.equals("ERROR")) return;
                 window[windowSize++] = sample / 32768f;
                 infer = windowSize == 512;
+                if (infer) {
+                    float peak = 0f;
+                    for (int j = 0; j < 512; j++) peak = Math.max(peak, Math.abs(window[j]));
+                    float gain = (peak >= 0.008f && peak < 0.35f) ? Math.min(6.0f, 0.35f / peak) : 1.0f;
+                    for (int j = 0; j < 512; j++) vadWindow[j] = Math.max(-1f, Math.min(1f, window[j] * gain));
+                }
             }
             if (infer) {
                 float probability;
-                try { probability = vad.probability(window); }
+                try { probability = vad.probability(vadWindow); }
                 catch (RuntimeException e) { if (token == generation.get()) cancel("auto_unavailable"); return; }
                 synchronized (this) {
                     if (token != generation.get()) return;
