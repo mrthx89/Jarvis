@@ -169,9 +169,11 @@ def test_three_zone_simple_mobile_layout_and_contextual_controls():
     assert toggle_voice.get(APP + 'layout_constraintBottom_toBottomOf') == 'parent'
 
     activity = (MAIN / 'java/id/my/yhdev/nexo/MainActivity.kt').read_text()
-    assert 'captureControls.visibility = if (voiceEnabled && !isSleeping) View.VISIBLE else View.GONE' in activity
+    assert 'captureMode.visibility = View.GONE' in activity
+    assert 'captureControls.visibility = if (voiceEnabled && !isSleeping && (showManualStart || canFinish)) View.VISIBLE else View.GONE' in activity
     assert 'startUtterance.visibility = if (showManualStart) View.VISIBLE else View.GONE' in activity
     assert 'finishUtterance.visibility = if (canFinish) View.VISIBLE else View.GONE' in activity
 
     service = (MAIN / 'java/id/my/yhdev/nexo/service/NexoKioskService.kt').read_text()
-    assert 'if (vadAvailable && !modeConfiguredByUser) automatic = true' in service
+    assert 'private var automatic = true' in service
+    assert 'if (!modeConfiguredByUser) automatic = vadAvailable' in service

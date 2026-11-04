@@ -606,15 +606,17 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             }
         }
         ivStatusLed.setColorFilter(ledColor)
-        val canFinish = kioskService?.canFinishCapture == true
-        val showManualStart = voiceEnabled && !captureMode.isChecked && !canFinish
+        val manualFallback = !captureMode.isChecked
+        val canFinish = kioskService?.canFinishCapture == true && manualFallback
+        val showManualStart = voiceEnabled && manualFallback && !canFinish
+        captureMode.visibility = View.GONE
         if (::captureControls.isInitialized) {
-            captureControls.visibility = if (voiceEnabled && !isSleeping) View.VISIBLE else View.GONE
+            captureControls.visibility = if (voiceEnabled && !isSleeping && (showManualStart || canFinish)) View.VISIBLE else View.GONE
         }
         startUtterance.visibility = if (showManualStart) View.VISIBLE else View.GONE
         startUtterance.isEnabled = voiceEnabled && status == "Siap" && !captureMode.isChecked
         finishUtterance.visibility = if (canFinish) View.VISIBLE else View.GONE
-        finishUtterance.isEnabled = canFinish
+        finishUtterance.isEnabled = kioskService?.canFinishCapture == true
         val recoveryCapture = kioskService?.hasRecoveryCapture == true
         toggleVoice.setText(if (voiceEnabled || recoveryCapture) R.string.voice_stop else R.string.voice_start)
         toggleVoice.isEnabled = voiceEnabled || recoveryCapture || kioskService?.canResumeVoice == true

@@ -53,11 +53,11 @@
     <string name="voiceprint_failed">Operasi gagal. Periksa koneksi dan coba lagi. Status profil belum diubah di layar.</string>
     <string name="voiceprint_meta">Profil: %1$s\nDurasi sampel: %2$s detik\nTerdaftar: %3$s</string>
     <string name="recording_finish">Selesai bicara</string>
-    <string name="recording_save">Simpan profil dari sampel dan holdout</string>
-    <string name="recording_resume">Lanjut mendengarkan (tutup panel)</string>
+    <string name="recording_save">Simpan Sidik Suara</string>
+    <string name="recording_resume">Selesai &amp; Aktifkan Mikrofon</string>
     <string name="recording_finish_failed">Belum ada rekaman aktif yang bisa diselesaikan.</string>
-    <string name="recording_samples_missing">Sampel atau holdout belum lengkap. Tunggu pemeriksaan server.</string>
-    <string name="recording_samples_hint">Ucapkan kalimat berbeda untuk setiap sampel. Tekan Selesai pada akhir ucapan. Sampel dikirim ke server untuk pemeriksaan kualitas, lalu satu holdout terpisah. Level sinyal bukan bukti identitas atau kualitas. Batas satu rekaman 20 detik.</string>
+    <string name="recording_samples_missing">Sampel suara belum lengkap. Tunggu pemeriksaan server.</string>
+    <string name="recording_samples_hint">Ucapkan satu kalimat jelas untuk setiap tahap, lalu tekan Selesai bicara.</string>
     <string name="diagnostic_title">Uji rekaman privat di perangkat</string>
     <string name="diagnostic_consent">Dengan persetujuan Anda, rekam satu klip hingga 20 detik dan putar lokal. Tidak diunggah. Klip privat dikecualikan dari backup dan dihapus saat panel ditutup, aplikasi masuk latar belakang, atau setelah 5 menit. Penghapusan memori bersifat upaya terbaik.</string>
     <string name="diagnostic_agree">Saya setuju, buka uji lokal</string>

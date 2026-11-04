@@ -111,24 +111,32 @@ class VoiceprintManagementSheet(
     private fun renderControls() {
         val state = session.state
         val ready = session.ready
+        val allSamplesReady = !session.diagnostic && session.requiredSamples > 0 && session.sampleCount > session.requiredSamples
+        val recording = state == "RECORDING"
+        val inEnrollmentFlow = session.requiredSamples > 0 && state !in setOf("SAVED", "CLOSED", "ERROR")
         enroll.isEnabled = ready && (session.diagnostic || currentDialog?.available == true) &&
             (session.requiredSamples == 0 || session.sampleCount <= session.requiredSamples)
-        enroll.setText(if (session.diagnostic) R.string.diagnostic_record else R.string.voiceprint_start)
-        enroll.visibility = if (state == "SAVED" || (session.diagnostic && state == "LOCAL_READY")) View.GONE else View.VISIBLE
-        finish.visibility = if (state == "RECORDING") View.VISIBLE else View.GONE
+        enroll.setText(when {
+            session.diagnostic -> R.string.diagnostic_record
+            session.requiredSamples > 0 -> R.string.voiceprint_start
+            currentDialog?.isEnrolled == true -> R.string.voiceprint_btn_re_enroll
+            else -> R.string.voiceprint_btn_enroll
+        })
+        enroll.visibility = if (recording || allSamplesReady || state in setOf("SAVED", "SAVING") || (session.diagnostic && state == "LOCAL_READY")) View.GONE else View.VISIBLE
+        finish.visibility = if (recording) View.VISIBLE else View.GONE
         finish.isEnabled = state == "RECORDING"
-        save.visibility = if (!session.diagnostic && session.requiredSamples > 0 && session.sampleCount > session.requiredSamples) View.VISIBLE else View.GONE
+        save.visibility = if (allSamplesReady || state == "SAVING") View.VISIBLE else View.GONE
         save.isEnabled = ready && state == "SAMPLES_READY"
-        resume.visibility = if (state in setOf("READY", "SAMPLES_READY", "SAVED", "LOCAL_READY")) View.VISIBLE else View.GONE
+        resume.visibility = if (state == "SAVED") View.VISIBLE else View.GONE
         resume.isEnabled = ready || state == "SAVED"
-        remove.visibility = if (!session.diagnostic && currentDialog?.isEnrolled == true) View.VISIBLE else View.GONE
+        remove.visibility = if (!session.diagnostic && currentDialog?.isEnrolled == true && !recording && !inEnrollmentFlow && state != "SAVED") View.VISIBLE else View.GONE
         remove.isEnabled = ready && state == "READY"
-        diagnostic.visibility = if (!session.diagnostic && state == "READY") View.VISIBLE else View.GONE
+        diagnostic.visibility = View.GONE
         diagnostic.isEnabled = ready
         play.visibility = if (session.diagnostic && state == "LOCAL_READY") View.VISIBLE else View.GONE
         deleteClip.visibility = play.visibility
         play.isEnabled = ready; deleteClip.isEnabled = ready
-        cancel.visibility = if (state !in setOf("CLOSED", "ERROR")) View.VISIBLE else View.GONE
+        cancel.visibility = if (recording || inEnrollmentFlow) View.VISIBLE else View.GONE
         cancel.isEnabled = state != "RELEASING"
         content.findViewById<View>(R.id.voiceprintProgress).visibility = View.GONE
         content.findViewById<TextView>(R.id.tvEnrollHint).setText(if (session.diagnostic) R.string.diagnostic_hint else R.string.recording_samples_hint)

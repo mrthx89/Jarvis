@@ -218,7 +218,9 @@
             android:background="@drawable/bg_hud_control"
             android:backgroundTint="@null"
             app:backgroundTint="@null"
+            android:checked="true"
             android:enabled="false"
+            android:visibility="gone"
             android:text="@string/capture_auto_unavailable"
             android:textSize="13sp"
             android:textColor="@color/text_primary" />

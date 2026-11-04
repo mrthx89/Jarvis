@@ -109,7 +109,7 @@ open class NexoKioskService : Service() {
     private var diagnosticUntil = 0L
     private var diagnosticReady = false
     private val diagnosticOperation = id.my.yhdev.nexo.audio.core.SheetOperation()
-    private var automatic = false // Manual remains independent of model availability.
+    private var automatic = true // Default to local Silero VAD; falls back to manual only if VAD unavailable.
     private var modeConfiguredByUser = false
     @Volatile private var vadAvailable = false
     private var vad: SileroVad? = null // Lifecycle owns reset/close after consumer join.
@@ -194,7 +194,7 @@ open class NexoKioskService : Service() {
             vadAvailable = vad != null
             main.post {
                 if (!destroyed) {
-                    if (vadAvailable && !modeConfiguredByUser) automatic = true
+                    if (!modeConfiguredByUser) automatic = vadAvailable
                     serviceCallback?.onCaptureModeChanged(automatic, vadAvailable)
                 }
             }
