@@ -155,8 +155,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
                 pillStatus.animate().alpha(1f).setDuration(350).start()
             }
             if (::pillVoiceprint.isInitialized) {
-                pillVoiceprint.visibility = View.VISIBLE
-                pillVoiceprint.animate().alpha(1f).setDuration(350).start()
+                pillVoiceprint.visibility = View.GONE
             }
             if (::consoleCard.isInitialized && voiceEnabled) {
                 consoleCard.visibility = View.VISIBLE

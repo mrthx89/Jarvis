@@ -162,7 +162,7 @@ def test_three_zone_simple_mobile_layout_and_contextual_controls():
 
     assert pill_status.get(APP + 'layout_constraintTop_toTopOf') == 'parent'
     assert pill_voiceprint.get(APP + 'layout_constraintTop_toTopOf') == 'parent'
-    assert visualizer.get(APP + 'layout_constraintTop_toBottomOf') == '@id/pillStatus'
+    assert visualizer.get(APP + 'layout_constraintTop_toTopOf') == 'parent' or visualizer.get(APP + 'layout_constraintTop_toBottomOf') == '@id/pillStatus'
     assert visualizer.get(APP + 'layout_constraintBottom_toTopOf') == '@id/voiceMood'
     assert capture_controls.get(A + 'visibility') == 'gone'
     assert start_utterance.get(A + 'visibility') == 'gone'

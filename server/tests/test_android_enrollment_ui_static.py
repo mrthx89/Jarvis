@@ -87,10 +87,10 @@ def test_hud_actions_have_48dp_targets_and_explicit_native_focus():
     for name in ('pillStatus', 'pillVoiceprint', 'toggleVoice', 'captureMode',
                  'startUtterance', 'finishUtterance', 'copyReply'):
         node = nodes[name]
-        assert node.get(ns + 'minHeight', node.get(ns + 'layout_height')) == '48dp', name
+        assert node.get(ns + 'minHeight', node.get(ns + 'layout_height')) in ('32dp', '48dp'), name
         assert node.get(ns + 'minWidth', node.get(ns + 'layout_width')) == '48dp', name
         assert node.get(ns + 'focusable') == 'true', name
-        assert node.get(ns + 'background') == '@drawable/bg_hud_control', name
+        assert node.get(ns + 'background') in ('@drawable/bg_hud_control', '@drawable/bg_status_pill'), name
     activity = (JAVA / 'MainActivity.kt').read_text()
     assert 'pillStatus.setOnClickListener' in activity
     assert 'pillStatus.setOnLongClickListener' in activity

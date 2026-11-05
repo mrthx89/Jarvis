@@ -7,7 +7,7 @@
     android:background="@color/bg_black"
     android:keepScreenOn="true">
 
-    <!-- Top Compact Status Row: Status Indicator (Left) + Voiceprint Badge (Right) -->
+    <!-- Top Compact Status Pill (Dynamic Island / Capsule Style - Center-Aligned) -->
     <LinearLayout
         android:id="@+id/pillStatus"
         android:clickable="true"
@@ -18,25 +18,22 @@
         android:layout_gravity="center_horizontal"
         app:layout_constrainedWidth="true"
         android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="8dp"
-        android:layout_marginTop="12dp"
-        android:background="@drawable/bg_hud_control"
+        android:layout_marginTop="14dp"
+        android:background="@drawable/bg_status_pill"
         android:minWidth="48dp"
-        android:minHeight="48dp"
-        android:gravity="center_vertical"
+        android:minHeight="32dp"
+        android:gravity="center"
         android:orientation="horizontal"
         android:elevation="2dp"
-        app:layout_constraintHorizontal_chainStyle="spread_inside"
-        app:layout_constraintEnd_toStartOf="@id/pillVoiceprint"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
         <ImageView
             android:id="@+id/ivStatusLed"
-            android:layout_width="8dp"
-            android:layout_height="8dp"
-            android:layout_marginEnd="8dp"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginEnd="7dp"
             android:src="@drawable/led_dot"
             android:importantForAccessibility="no" />
 
@@ -56,26 +53,22 @@
             android:textAllCaps="false" />
     </LinearLayout>
 
-    <!-- Voiceprint Biometric Status Pill -->
+    <!-- Voiceprint Biometric Status Pill (Hidden / Compact Minimalist Mode) -->
     <LinearLayout
         android:id="@+id/pillVoiceprint"
         android:contentDescription="@string/voiceprint_hud_unregistered"
         android:layout_width="wrap_content"
-        android:layout_gravity="center_horizontal"
         app:layout_constrainedWidth="true"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="16dp"
-        android:layout_marginTop="12dp"
         android:background="@drawable/bg_hud_control"
         android:minWidth="48dp"
         android:minHeight="48dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:elevation="2dp"
         android:clickable="true"
         android:focusable="true"
+        android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@id/pillStatus"
         app:layout_constraintTop_toTopOf="parent">
 
         <ImageView
