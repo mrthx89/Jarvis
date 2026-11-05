@@ -5,7 +5,12 @@ import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.graphics.drawable.Icon
 import android.media.AudioManager
+import android.media.MediaMetadata
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.os.*
 import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
@@ -1044,10 +1049,33 @@ open class NexoKioskService : Service() {
         catch (_: IllegalStateException) { foregroundAllowed = false; persistOff(); publish(NexoState.ERROR, "Buka aplikasi untuk memakai mikrofon") }
     }
 
+    private var mediaSession: MediaSession? = null
+    private fun ensureMediaSession(): MediaSession {
+        var session = mediaSession
+        if (session == null) {
+            session = MediaSession(this, "NexoVoiceSession").apply {
+                setCallback(object : MediaSession.Callback() {
+                    override fun onStop() { main.post { stopVoice() } }
+                    override fun onPause() { main.post { stopVoice() } }
+                })
+            }
+            mediaSession = session
+        }
+        return session
+    }
+
     private fun updateOngoingNotification(state: NexoState, message: String?, expression: String?) {
         if (!foregroundAllowed || destroyed) return
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         if (!voiceEnabled) {
+            mediaSession?.let {
+                it.isActive = false
+                it.setPlaybackState(
+                    PlaybackState.Builder()
+                        .setState(PlaybackState.STATE_STOPPED, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 0f)
+                        .build()
+                )
+            }
             val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("Nexo Appliance")
                 .setContentText("Kontrol audio Nexo • lihat layar untuk status mikrofon")
@@ -1061,6 +1089,9 @@ open class NexoKioskService : Service() {
             return
         }
 
+        val session = ensureMediaSession()
+        session.isActive = true
+
         val mascotRes = when {
             expression == "sleeping" || expression == "tidur" -> R.drawable.mascot_sleeping
             state == NexoState.SPEAKING -> R.drawable.mascot_keren
@@ -1069,28 +1100,30 @@ open class NexoKioskService : Service() {
             else -> R.drawable.mascot_senang
         }
 
-        val stateLabel = when (state) {
-            NexoState.SPEAKING -> "Menjawab"
-            NexoState.THINKING -> "Memahami"
-            NexoState.LISTENING -> "Menyimak"
-            NexoState.ERROR -> "Kendala"
-            else -> "Standby"
-        }
-
-        val stateColor = when (state) {
-            NexoState.SPEAKING -> 0xFF10B981.toInt()
-            NexoState.THINKING -> 0xFFF59E0B.toInt()
-            NexoState.LISTENING -> 0xFF00E5FF.toInt()
-            NexoState.ERROR -> 0xFFEF4444.toInt()
-            else -> 0xFF00E5FF.toInt()
-        }
+        val mascotBitmap = runCatching {
+            BitmapFactory.decodeResource(resources, mascotRes)
+        }.getOrNull()
 
         val statusText = when {
-            state == NexoState.SPEAKING -> "Nexo sedang menjawab..."
+            state == NexoState.SPEAKING -> "Menjawab ucapan Anda..."
             state == NexoState.THINKING -> "Memahami ucapan..."
-            state == NexoState.LISTENING -> if (!uiForeground) "Standby mendengarkan di latar belakang..." else "Standby mendengarkan suara Anda..."
+            state == NexoState.LISTENING -> if (!uiForeground) "Standby menyimak di latar belakang..." else "Standby mendengarkan suara Anda..."
             else -> message?.takeIf { it.isNotBlank() } ?: "Standby mendengarkan suara Anda..."
         }
+
+        val playbackState = PlaybackState.Builder()
+            .setActions(PlaybackState.ACTION_STOP or PlaybackState.ACTION_PAUSE)
+            .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+            .build()
+        session.setPlaybackState(playbackState)
+
+        val metadataBuilder = MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, "Nexo Appliance")
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, statusText)
+        if (mascotBitmap != null) {
+            metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, mascotBitmap)
+        }
+        session.setMetadata(metadataBuilder.build())
 
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -1106,32 +1139,31 @@ open class NexoKioskService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val views = RemoteViews(packageName, R.layout.notification_nexo_ongoing).apply {
-            setImageViewResource(R.id.ivNotificationAvatar, mascotRes)
-            setTextViewText(R.id.tvNotificationTitle, "Nexo Appliance")
-            setTextViewText(R.id.tvNotificationState, stateLabel)
-            setTextColor(R.id.tvNotificationState, stateColor)
-            setTextViewText(R.id.tvNotificationStatus, statusText)
-            setOnClickPendingIntent(R.id.btnNotificationStop, stopPending)
-            setOnClickPendingIntent(R.id.notificationRoot, openAppPending)
-        }
+        val stopAction = Notification.Action.Builder(
+            Icon.createWithResource(this, R.drawable.ic_mic_off_24),
+            "Matikan",
+            stopPending
+        ).build()
 
-        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+        val notification = Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("Nexo Appliance")
             .setContentText(statusText)
-            .setCustomContentView(views)
+            .setLargeIcon(mascotBitmap)
+            .setStyle(Notification.MediaStyle().setMediaSession(session.sessionToken).setShowActionsInCompactView(0))
+            .addAction(stopAction)
             .setContentIntent(openAppPending)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .build()
 
         try { manager.notify(NOTIFICATION_ID, notification) } catch (_: Exception) {}
     }
 
     override fun onDestroy() {
+        mediaSession?.release()
+        mediaSession = null
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         try { manager?.cancel(NOTIFICATION_ID) } catch (_: Exception) {}
         keepVoiceAlive = false; autoRestartAt = 0L
