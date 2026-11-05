@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
 
     private lateinit var visualizerView: VisualizerView
     private lateinit var liveWaveformView: id.my.yhdev.nexo.ui.LiveWaveformView
+    private lateinit var ivToggleVoiceMic: android.widget.ImageView
     private lateinit var tvStatus: TextView
     private lateinit var tvSubtitle: TextView
     private lateinit var toggleVoice: Button
@@ -89,6 +90,9 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             }
             if (::liveWaveformView.isInitialized) {
                 liveWaveformView.animate().translationX(dx).translationY(dy).setDuration(2200).start()
+            }
+            if (::ivToggleVoiceMic.isInitialized) {
+                ivToggleVoiceMic.animate().translationX(dx).translationY(dy).setDuration(2200).start()
             }
             if (::voiceMood.isInitialized) {
                 voiceMood.animate().translationX(dx).translationY(dy).setDuration(2200).start()
@@ -310,6 +314,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         visualizerView.setVoiceEnabled(false, animateReaction = false)
         toggleVoice = findViewById(R.id.toggleVoice)
         liveWaveformView = findViewById(R.id.liveWaveformView)
+        ivToggleVoiceMic = findViewById(R.id.ivToggleVoiceMic)
         toggleVoice.setOnClickListener {
             resetActivity()
             val service = kioskService ?: return@setOnClickListener
@@ -551,7 +556,10 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             // OFF hides the whole readout, not the stored last final answer.
             consoleCard.visibility = if (enabled) View.VISIBLE else View.GONE
             toggleVoice.isEnabled = true
-            toggleVoice.setText(if (enabled) R.string.voice_stop else R.string.voice_start)
+            toggleVoice.contentDescription = getString(if (enabled) R.string.voice_stop else R.string.voice_start)
+            if (::ivToggleVoiceMic.isInitialized) {
+                ivToggleVoiceMic.visibility = if (enabled) View.GONE else View.VISIBLE
+            }
             if (::liveWaveformView.isInitialized) {
                 liveWaveformView.setActive(enabled)
                 liveWaveformView.visibility = if (enabled) View.VISIBLE else View.GONE
@@ -627,8 +635,12 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         finishUtterance.visibility = if (canFinish) View.VISIBLE else View.GONE
         finishUtterance.isEnabled = kioskService?.canFinishCapture == true
         val recoveryCapture = kioskService?.hasRecoveryCapture == true
-        toggleVoice.setText(if (voiceEnabled || recoveryCapture) R.string.voice_stop else R.string.voice_start)
+        toggleVoice.contentDescription = getString(if (voiceEnabled || recoveryCapture) R.string.voice_stop else R.string.voice_start)
         toggleVoice.isEnabled = voiceEnabled || recoveryCapture || kioskService?.canResumeVoice == true
+        if (::ivToggleVoiceMic.isInitialized) {
+            ivToggleVoiceMic.visibility = if (voiceEnabled || isSleeping) View.GONE else View.VISIBLE
+            ivToggleVoiceMic.setColorFilter(if (toggleVoice.isEnabled) 0xFF00E5FF.toInt() else 0xFF87909C.toInt())
+        }
         if (::liveWaveformView.isInitialized) {
             liveWaveformView.setActive(voiceEnabled)
             liveWaveformView.visibility = if (voiceEnabled && !isSleeping) View.VISIBLE else View.GONE

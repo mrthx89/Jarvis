@@ -264,44 +264,53 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- Primary Thumb-Zone Voice Action (Gemini Live Style) -->
+    <!-- Primary Thumb-Zone Voice Action (Gemini Live Circular Compact Button) -->
     <Button
         android:id="@+id/toggleVoice"
         style="@style/Widget.AppCompat.Button.Borderless"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
         android:minHeight="48dp"
         android:minWidth="48dp"
         android:focusable="true"
         android:background="@drawable/bg_hud_control"
         android:backgroundTint="@null"
         app:backgroundTint="@null"
-        android:layout_marginStart="20dp"
-        android:layout_marginEnd="20dp"
-        android:layout_marginBottom="20dp"
+        android:layout_marginBottom="24dp"
         android:enabled="false"
         android:singleLine="false"
         android:ellipsize="none"
         android:letterSpacing="0.01"
-        android:text="@string/voice_start"
-        android:textAllCaps="false"
+        android:text=""
+        android:contentDescription="@string/voice_start"
         android:textColor="@color/nexo_cyan"
-        app:layout_constrainedWidth="true"
-        app:layout_constraintWidth_max="360dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <!-- Inactive Mic Icon for Gemini Live Button -->
+    <ImageView
+        android:id="@+id/ivToggleVoiceMic"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:src="@drawable/ic_mic_24"
+        android:importantForAccessibility="no"
+        app:tint="@color/nexo_cyan"
+        app:layout_constraintBottom_toBottomOf="@id/toggleVoice"
+        app:layout_constraintTop_toTopOf="@id/toggleVoice"
+        app:layout_constraintStart_toStartOf="@id/toggleVoice"
+        app:layout_constraintEnd_toEndOf="@id/toggleVoice" />
+
     <!-- Living Status Waveform (Gemini Live Wave Animated Bars) -->
     <id.my.yhdev.nexo.ui.LiveWaveformView
         android:id="@+id/liveWaveformView"
-        android:layout_width="32dp"
-        android:layout_height="24dp"
-        android:layout_marginEnd="16dp"
+        android:layout_width="28dp"
+        android:layout_height="20dp"
         android:visibility="gone"
         android:importantForAccessibility="no"
         app:layout_constraintBottom_toBottomOf="@id/toggleVoice"
         app:layout_constraintTop_toTopOf="@id/toggleVoice"
+        app:layout_constraintStart_toStartOf="@id/toggleVoice"
         app:layout_constraintEnd_toEndOf="@id/toggleVoice" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
