@@ -10,9 +10,11 @@ from .models.messages import NexoState
 from .mascot import (
     contextual_expression,
     parse_expression_command,
+    parse_smart_briefing_command,
     parse_and_strip_emotional_tags,
     strip_emotional_tags,
 )
+from .iot import parse_iot_command, trigger_external_iot_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -220,11 +222,17 @@ class SessionHub:
             await appliance.send_state(NexoState.THINKING, expression="bingung")
             require_current_output()
 
-        # 2. Check for local mascot expression command
+        # 2. Check for local mascot expression command or IoT command
         cmd_expression = parse_expression_command(message)
+        iot_result = parse_iot_command(message)
         if cmd_expression is not None:
             reply = "Baik, ekspresi wajah sudah diubah."
             expr = cmd_expression.value
+        elif iot_result is not None:
+            reply, iot_expr, iot_event = iot_result
+            expr = iot_expr.value
+            self.publish_event(iot_event)
+            asyncio.create_task(trigger_external_iot_webhook(iot_event))
         else:
             self.publish_event({
                 "type": "cognitive",

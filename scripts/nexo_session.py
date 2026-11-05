@@ -249,6 +249,48 @@ async def cmd_status(args: argparse.Namespace):
     return 0
 
 
+async def cmd_iot(args: argparse.Namespace):
+    client = create_client(args)
+    action = getattr(args, "action", "status") or "status"
+    if action == "status":
+        try:
+            res = await client.get_iot_status()
+        except Exception as e:
+            print(f"Error fetching IoT status: {e}")
+            return 1
+        telem = res.get("telemetry", {})
+        iot = res.get("iot_state", {})
+        app = res.get("appliance", {})
+        print("\n═════════════════════════════════════════════════════")
+        print("          NEXO IOT & SMART STUDIO TELEMETRY")
+        print("═════════════════════════════════════════════════════")
+        print(f"  Appliance:          {'TERHUBUNG 🟢' if app.get('connected') else 'STANDBY ⚪'} ({app.get('state')})")
+        print(f"  Active Scene:       {iot.get('active_scene', 'normal').upper()}")
+        print(f"  Studio Light:       {iot.get('devices', {}).get('studio_light', 'off').upper()}")
+        print(f"  Ambient Light:      {iot.get('devices', {}).get('ambient_backlight', 'off').upper()}")
+        print("─────────────────────────────────────────────────────")
+        print(f"  CPU Load (1m, 5m):  {telem.get('cpu_load_1m')}, {telem.get('cpu_load_5m')}")
+        print(f"  RAM Terpakai:       {telem.get('ram_used_percent')}% ({telem.get('ram_available_mb')} MB free / {telem.get('ram_total_mb')} MB)")
+        print(f"  Storage Free:       {telem.get('disk_free_gb')} GB / {telem.get('disk_total_gb')} GB")
+        print(f"  Uptime Sistem:      {telem.get('uptime_days')} hari")
+        if telem.get("temperature_c") is not None:
+            print(f"  Suhu Prosesor:      {telem.get('temperature_c')}°C")
+        print("═════════════════════════════════════════════════════\n")
+        return 0
+    else:
+        try:
+            res = await client.control_iot(action=action, speak=getattr(args, "speak", False))
+            print(f"\n[IoT Control Executed: {action}]")
+            print(f"Active Scene: {res.get('iot_state', {}).get('active_scene')}")
+            print(f"Devices: {json.dumps(res.get('iot_state', {}).get('devices', {}))}")
+            if res.get("spoken"):
+                print("🔊 Disuarakan di layar Nexo.")
+            return 0
+        except Exception as e:
+            print(f"Error executing IoT control: {e}")
+            return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parent = argparse.ArgumentParser(add_help=False)
     parent.add_argument("--url", default=None, help=f"URL server Nexo (default: {DEFAULT_SERVER_URL})")
@@ -301,6 +343,12 @@ def build_parser() -> argparse.ArgumentParser:
     # status
     p_status = subparsers.add_parser("status", parents=[parent], help="Lihat status koneksi appliance dan session bridge")
     p_status.set_defaults(func=cmd_status)
+
+    # iot
+    p_iot = subparsers.add_parser("iot", parents=[parent], help="Kontrol IoT smart studio dan telemetri server")
+    p_iot.add_argument("action", nargs="?", default="status", help="Aksi IoT (status, focus_mode, relax_mode, light_on, light_off)")
+    p_iot.add_argument("-s", "--speak", action="store_true", help="Picu output audio di appliance")
+    p_iot.set_defaults(func=cmd_iot)
 
     return parser
 

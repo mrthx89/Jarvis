@@ -35,6 +35,7 @@ from ..mascot import (
     is_wake_command,
     MascotExpression,
 )
+from ..iot import parse_iot_command, trigger_external_iot_webhook
 from .audio_buffer import CircularAudioBuffer, CircularRingBuffer
 from .mp3_frame import parse_audio_duration, parse_mp3_duration
 from .outdoor import OutdoorSession, OutdoorStore, OutdoorViolation
@@ -856,6 +857,16 @@ class ApplianceSession:
         smart_reply = parse_smart_briefing_command(transcription, self.is_sleeping)
         if smart_reply is not None:
             reply_text, reply_expr = smart_reply
+            await self._speak_canned_reply(reply_text, reply_expr.value)
+            return
+
+        # Step 6: Smart Home, Studio Scenes, & Server Telemetry
+        iot_result = parse_iot_command(transcription, self.is_sleeping)
+        if iot_result is not None:
+            reply_text, reply_expr, iot_event = iot_result
+            if self.hub:
+                self.hub.publish_event(iot_event)
+            asyncio.create_task(trigger_external_iot_webhook(iot_event))
             await self._speak_canned_reply(reply_text, reply_expr.value)
             return
 

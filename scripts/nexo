@@ -32,7 +32,7 @@ if [ "$1" = "session" ]; then
     exec "$PYTHON_BIN" "$SCRIPT_DIR/nexo_session.py" "$@"
 else
     case "$1" in
-        send|watch|stream|listen|transcript|history|link|speak|bridge|status)
+        send|watch|stream|listen|transcript|history|link|speak|bridge|status|iot)
             exec "$PYTHON_BIN" "$SCRIPT_DIR/nexo_session.py" "$@"
             ;;
         *)

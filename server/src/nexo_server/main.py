@@ -23,6 +23,12 @@ from .pipeline.speaker import SpeakerVerifier
 from .hermes.agent_bridge import create_hermes_bridge
 from .session_hub import hub
 from .portal import render_portal_html, load_mascot_svg
+from .iot import (
+    get_system_telemetry,
+    get_iot_state,
+    update_iot_state,
+    trigger_external_iot_webhook,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -108,6 +114,16 @@ class SessionSpeakPayload(BaseModel):
 
 class SessionLinkPayload(BaseModel):
     session_name: str
+
+
+class IoTControlPayload(BaseModel):
+    action: str
+    scene: Optional[str] = None
+    device: Optional[str] = None
+    state: Optional[str] = None
+    speak: bool = False
+    speech_text: Optional[str] = None
+    expression: Optional[str] = None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -197,6 +213,85 @@ async def session_status_endpoint(request: Request):
     """Return status of appliance connectivity and session hub."""
     verify_local_request(request)
     return JSONResponse(hub.get_status())
+
+
+@app.get("/iot/status")
+async def iot_status_endpoint(request: Request):
+    """Retrieve real-time Linux telemetry and smart IoT studio device states."""
+    verify_local_request(request)
+    telemetry = get_system_telemetry()
+    iot_state = get_iot_state()
+    appliance = hub.get_active_appliance()
+    return JSONResponse({
+        "status": "healthy",
+        "telemetry": telemetry,
+        "iot_state": iot_state,
+        "appliance": {
+            "connected": appliance is not None,
+            "device_id": getattr(appliance, "authenticated_device_id", None) if appliance else None,
+            "state": str(getattr(appliance, "state", "IDLE")),
+        },
+    })
+
+
+@app.post("/iot/control")
+async def iot_control_endpoint(payload: IoTControlPayload, request: Request):
+    """Execute smart home / studio scene automation or update device states."""
+    verify_local_request(request)
+    action = payload.action.lower().strip()
+    speech_reply = None
+    expr = payload.expression or "senang"
+
+    if action in ("focus_mode", "mode_fokus"):
+        state_snap = update_iot_state(scene="focus", device="ambient_backlight", state="focus_cyan")
+        speech_reply = (
+            "Mode fokus diaktifkan. Suasana studio disiapkan untuk konsentrasi penuh. "
+            "Selamat berkarya dengan hati, Pak Yanto!"
+        )
+        expr = "keren"
+    elif action in ("relax_mode", "mode_santai", "mode_istirahat"):
+        state_snap = update_iot_state(scene="relax", device="ambient_backlight", state="warm_amber")
+        speech_reply = (
+            "Mode santai diaktifkan. Suasana ruangan dibuat lebih tenang dan hangat. "
+            "Selamat beristirahat sejenak, Pak Yanto."
+        )
+        expr = "senang"
+    elif action in ("light_on", "nyalakan_lampu"):
+        state_snap = update_iot_state(device="studio_light", state="on")
+        speech_reply = "Lampu studio telah dinyalakan."
+        expr = "senang"
+    elif action in ("light_off", "matikan_lampu"):
+        state_snap = update_iot_state(device="studio_light", state="off")
+        speech_reply = "Lampu studio telah dimatikan."
+        expr = "netral"
+    elif action == "set_device" and payload.device and payload.state:
+        state_snap = update_iot_state(device=payload.device, state=payload.state)
+        speech_reply = f"Perangkat {payload.device} diatur ke {payload.state}."
+    elif action == "set_scene" and payload.scene:
+        state_snap = update_iot_state(scene=payload.scene)
+        speech_reply = f"Suasana studio diatur ke {payload.scene}."
+    else:
+        state_snap = get_iot_state()
+
+    event = {
+        "type": "iot_control",
+        "action": action,
+        "iot_state": state_snap,
+    }
+    hub.publish_event(event)
+    asyncio.create_task(trigger_external_iot_webhook(event))
+
+    if payload.speak or payload.speech_text:
+        text_to_speak = payload.speech_text or speech_reply
+        if text_to_speak:
+            await hub.trigger_speech(text_to_speak, expression=expr)
+
+    return JSONResponse({
+        "status": "ok",
+        "action": action,
+        "iot_state": state_snap,
+        "spoken": bool(payload.speak and speech_reply),
+    })
 
 
 @app.get("/session/transcript")

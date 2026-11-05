@@ -441,6 +441,35 @@ class NexoSessionClient:
             self.profile,
         )
 
+    async def get_iot_status(self) -> Dict[str, Any]:
+        """Fetch IoT studio state and Linux server telemetry."""
+        return await self._async_http_request("/iot/status")
+
+    async def control_iot(
+        self,
+        action: str,
+        scene: Optional[str] = None,
+        device: Optional[str] = None,
+        state: Optional[str] = None,
+        speak: bool = False,
+        speech_text: Optional[str] = None,
+        expression: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Trigger smart studio scene or IoT device control."""
+        return await self._async_http_request(
+            "/iot/control",
+            method="POST",
+            data={
+                "action": action,
+                "scene": scene,
+                "device": device,
+                "state": state,
+                "speak": speak,
+                "speech_text": speech_text,
+                "expression": expression,
+            },
+        )
+
     async def stream_events(
         self,
         on_event: Callable[[Dict[str, Any]], None],
