@@ -152,13 +152,13 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:fontFamily="monospace"
-                android:letterSpacing="0.08"
-                android:text="NEXO // COGNITIVE STREAM"
+                android:fontFamily="sans-serif-medium"
+                android:letterSpacing="0.04"
+                android:text="Percakapan"
                 android:textColor="@color/nexo_cyan"
                 android:textSize="11sp"
-                android:textAllCaps="true"
-                android:alpha="0.8" />
+                android:textAllCaps="false"
+                android:alpha="0.85" />
 
             <androidx.appcompat.widget.AppCompatImageButton
                 android:id="@+id/copyReply"

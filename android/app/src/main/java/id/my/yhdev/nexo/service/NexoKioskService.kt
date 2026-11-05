@@ -7,9 +7,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.*
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import com.google.gson.JsonObject
 import id.my.yhdev.nexo.MainActivity
+import id.my.yhdev.nexo.R
 import id.my.yhdev.nexo.audio.*
 import id.my.yhdev.nexo.audio.core.AudioOwnership
 import id.my.yhdev.nexo.audio.core.LocalCapture
@@ -167,7 +169,7 @@ open class NexoKioskService : Service() {
     override fun onBind(intent: Intent?): IBinder = binder
     private fun now() = SystemClock.elapsedRealtime()
     private fun uuid() = UUID.randomUUID().toString()
-    private fun permitted() = uiForeground && foregroundAllowed &&
+    private fun permitted() = (uiForeground || keepVoiceAlive) && foregroundAllowed &&
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     private fun persistOff() {
         voiceEnabled = keepVoiceAlive && permitted() && sheetOwner == null
@@ -176,6 +178,7 @@ open class NexoKioskService : Service() {
             voicePreferences.edit().putBoolean("enabled", false).commit()
             serviceCallback?.onVoiceEnabledChanged(false)
         }
+        updateOngoingNotification(currentState, currentMessage, currentExpression)
     }
     private var captureNotice = ""
     private fun withCaptureNotice(message: String): String =
@@ -183,6 +186,7 @@ open class NexoKioskService : Service() {
     private fun publish(state: NexoState, message: String?, expression: String? = null) {
         currentState = state; currentMessage = message?.let(::withCaptureNotice); currentExpression = expression
         serviceCallback?.onStateChanged(state, currentMessage, expression)
+        updateOngoingNotification(state, currentMessage, expression)
     }
     private fun sheet(state: String, message: String) {
         sheetState = state; sheetMessage = withCaptureNotice(message)
@@ -229,7 +233,14 @@ open class NexoKioskService : Service() {
         } }, outputGuard = { action -> playbackReady && connection != null && outputGuard(connection, epoch, action) })
 
     }
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
+    companion object {
+        const val NOTIFICATION_ID = 1001
+        const val NOTIFICATION_CHANNEL_ID = "nexo_kiosk_service"
+        const val ACTION_STOP_VOICE = "id.my.yhdev.nexo.action.STOP_VOICE"
+    }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY.also {
+        if (intent?.action == ACTION_STOP_VOICE) stopVoice()
+    }
     override fun onTaskRemoved(rootIntent: Intent?) {
         setUiForeground(false)
         super.onTaskRemoved(rootIntent)
@@ -237,11 +248,13 @@ open class NexoKioskService : Service() {
     fun setUiForeground(value: Boolean) {
         uiForeground = value
         if (!value) {
-            keepVoiceAlive = false; autoRestartAt = 0L
             closeRecordingSheet("background")
-            pauseLocal("background")
+            if (!keepVoiceAlive) {
+                pauseLocal("background")
+            }
         }
-        ownership.foreground(value && permitted())
+        ownership.foreground(((value || keepVoiceAlive) && foregroundAllowed) && permitted())
+        updateOngoingNotification(currentState, currentMessage, currentExpression)
     }
     fun setAutomaticCapture(value: Boolean): Boolean {
         val busy = startingCapture || audioRecorder?.isRecording() == true || pendingUtterance != null ||
@@ -268,6 +281,7 @@ open class NexoKioskService : Service() {
         resumeOnHello = true
         ensureConnection()
         if (webSocketClient?.outdoorSession != null) requestResume()
+        updateOngoingNotification(currentState, currentMessage, currentExpression)
     }
     private fun requestResume() {
         resumeOnHello = false
@@ -289,6 +303,7 @@ open class NexoKioskService : Service() {
         resumeOnHello = false; resumeOnRelease = false
         closeRecordingSheet("STOP")
         pauseLocal("STOP")
+        updateOngoingNotification(currentState, currentMessage, currentExpression)
         stopSelf()
     }
     /** Closes the actual output/send gates before any asynchronous cleanup. */
@@ -1016,7 +1031,7 @@ open class NexoKioskService : Service() {
         }
     }
     private fun startForegroundNotification() {
-        val channelId = "nexo_kiosk_service"
+        val channelId = NOTIFICATION_CHANNEL_ID
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(NotificationChannel(channelId, "Nexo Appliance Service", NotificationManager.IMPORTANCE_LOW))
         val notification = NotificationCompat.Builder(this, channelId).setContentTitle("Nexo Appliance")
@@ -1024,11 +1039,101 @@ open class NexoKioskService : Service() {
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)).build()
-        try { startForeground(1001, notification) }
+        try { startForeground(NOTIFICATION_ID, notification) }
         catch (_: SecurityException) { foregroundAllowed = false; persistOff(); publish(NexoState.ERROR, "Izin layanan mikrofon diperlukan") }
         catch (_: IllegalStateException) { foregroundAllowed = false; persistOff(); publish(NexoState.ERROR, "Buka aplikasi untuk memakai mikrofon") }
     }
+
+    private fun updateOngoingNotification(state: NexoState, message: String?, expression: String?) {
+        if (!foregroundAllowed || destroyed) return
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        if (!voiceEnabled) {
+            val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+                .setContentTitle("Nexo Appliance")
+                .setContentText("Kontrol audio Nexo • lihat layar untuk status mikrofon")
+                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+                .setOngoing(false)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build()
+            try { manager.notify(NOTIFICATION_ID, notification) } catch (_: Exception) {}
+            return
+        }
+
+        val mascotRes = when {
+            expression == "sleeping" || expression == "tidur" -> R.drawable.mascot_sleeping
+            state == NexoState.SPEAKING -> R.drawable.mascot_keren
+            state == NexoState.THINKING -> R.drawable.mascot_bingung
+            state == NexoState.ERROR -> R.drawable.mascot_menangis
+            else -> R.drawable.mascot_senang
+        }
+
+        val stateLabel = when (state) {
+            NexoState.SPEAKING -> "Menjawab"
+            NexoState.THINKING -> "Memahami"
+            NexoState.LISTENING -> "Menyimak"
+            NexoState.ERROR -> "Kendala"
+            else -> "Standby"
+        }
+
+        val stateColor = when (state) {
+            NexoState.SPEAKING -> 0xFF10B981.toInt()
+            NexoState.THINKING -> 0xFFF59E0B.toInt()
+            NexoState.LISTENING -> 0xFF00E5FF.toInt()
+            NexoState.ERROR -> 0xFFEF4444.toInt()
+            else -> 0xFF00E5FF.toInt()
+        }
+
+        val statusText = when {
+            state == NexoState.SPEAKING -> "Nexo sedang menjawab..."
+            state == NexoState.THINKING -> "Memahami ucapan..."
+            state == NexoState.LISTENING -> if (!uiForeground) "Standby mendengarkan di latar belakang..." else "Standby mendengarkan suara Anda..."
+            else -> message?.takeIf { it.isNotBlank() } ?: "Standby mendengarkan suara Anda..."
+        }
+
+        val openAppIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val openAppPending = PendingIntent.getActivity(
+            this, 101, openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val stopIntent = Intent(this, NexoKioskService::class.java).apply { action = ACTION_STOP_VOICE }
+        val stopPending = PendingIntent.getService(
+            this, 102, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val views = RemoteViews(packageName, R.layout.notification_nexo_ongoing).apply {
+            setImageViewResource(R.id.ivNotificationAvatar, mascotRes)
+            setTextViewText(R.id.tvNotificationTitle, "Nexo Appliance")
+            setTextViewText(R.id.tvNotificationState, stateLabel)
+            setTextColor(R.id.tvNotificationState, stateColor)
+            setTextViewText(R.id.tvNotificationStatus, statusText)
+            setOnClickPendingIntent(R.id.btnNotificationStop, stopPending)
+            setOnClickPendingIntent(R.id.notificationRoot, openAppPending)
+        }
+
+        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle("Nexo Appliance")
+            .setContentText(statusText)
+            .setCustomContentView(views)
+            .setContentIntent(openAppPending)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
+
+        try { manager.notify(NOTIFICATION_ID, notification) } catch (_: Exception) {}
+    }
+
     override fun onDestroy() {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        try { manager?.cancel(NOTIFICATION_ID) } catch (_: Exception) {}
         keepVoiceAlive = false; autoRestartAt = 0L
         closeRecordingSheet("service_destroy")
         destroyed = true; ++generation; persistOff()
