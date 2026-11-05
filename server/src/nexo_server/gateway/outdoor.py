@@ -227,7 +227,9 @@ class OutdoorSession:
             raise OutdoorViolation("stale_connection")
         if self.store.connections.get(self.device) is not self:
             raise OutdoorViolation("stale_connection")
-        if payload.get("type") == "conversation_resume":
+        if payload.get("type") in ("conversation_resume", "user_interrupted", "barge_in", "interrupt"):
+            if payload.get("type") in ("user_interrupted", "barge_in", "interrupt"):
+                await self.session.interrupt_speech()
             if self.owner is not None:
                 raise OutdoorViolation("owner_required")
             await self._drain()

@@ -233,3 +233,18 @@ async def test_bridge_query_cancellation_clears_active_count():
         with pytest.raises(asyncio.CancelledError):
             await bridge.query("hello")
     assert bridge.query_active == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target", ["nexo-device_02", "nexo-hp_kedua", "nexo-tablet_secondary"])
+async def test_bridge_allows_isolated_device_sessions(target):
+    bridge = HermesBridge()
+    proc = AsyncMock()
+    proc.returncode = 0
+    proc.communicate.return_value = (b"Device reply", b"")
+    with patch("asyncio.create_subprocess_exec", return_value=proc) as spawn:
+        reply = await bridge.query("halo", session_name=target)
+        assert reply == "Device reply"
+    args = spawn.call_args.args
+    assert args[args.index("-c") + 1] == target
+    assert "--create-if-missing" in args

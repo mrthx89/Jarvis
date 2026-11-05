@@ -303,6 +303,17 @@ open class NexoKioskService : Service() {
         publish(NexoState.IDLE, "Menunggu izin lanjut dari server • mikrofon belum aktif", sleepExpression)
         if (webSocketClient?.sendOutdoorControl("conversation_resume", request) != true) fail("Permintaan lanjut gagal")
     }
+    fun interruptSpeaking(): Boolean {
+        if (!isVoiceEnabled || !playbackPending) return false
+        playbackPending = false
+        earconManager.stop()
+        audioPlayer.stop()
+        webSocketClient?.sendOutdoorControl("user_interrupted", uuid())
+        turnComplete = true
+        playbackDrainedAt = now()
+        maybeNextTurn()
+        return true
+    }
     fun stopVoice() {
         keepVoiceAlive = false; autoRestartAt = 0L
         resumeOnHello = false; resumeOnRelease = false

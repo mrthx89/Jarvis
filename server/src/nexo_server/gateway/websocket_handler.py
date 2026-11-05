@@ -134,6 +134,34 @@ class ApplianceSession:
         if self.hub:
             self.hub.register_session(self)
 
+    def _resolve_hermes_session(self) -> str:
+        dev = self.authenticated_device_id
+        # Standard appliance/owner/tablet devices connect to the canonical primary nexo session
+        if not dev or dev in ("tablet", "tablet_01", "owner", "nexo_appliance_9f72a8160cf886ca"):
+            return "nexo"
+        # Secondary/additional appliances get isolated sessions: nexo-<clean_id>
+        if dev.startswith("nexo_appliance_"):
+            clean = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in dev)
+            clean = clean.removeprefix("nexo_appliance_")[:32]
+            return f"nexo-{clean}" if clean else "nexo"
+        if dev.startswith("nexo-"):
+            clean = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in dev)
+            return clean[:36]
+        return "nexo"
+
+    async def interrupt_speech(self):
+        """Handle barge-in / interruption from user to stop speaking immediately."""
+        self._check_pipeline_current()
+        tasks = list(self._output_tasks)
+        for t in tasks:
+            if not t.done() and t is not asyncio.current_task():
+                t.cancel()
+        self._playback_until = 0.0
+        if self._tts_started:
+            await self.send_json_message(TTSEnd())
+            self._tts_started = False
+        await self.send_state(NexoState.IDLE, expression="netral")
+
     def _arm_gap_timeout(self):
         if self._gap_handle:
             self._gap_handle.cancel()
@@ -529,6 +557,9 @@ class ApplianceSession:
         elif msg_type == "voice_end":
             await self._finish_recording()
 
+        elif msg_type in ("user_interrupted", "barge_in", "interrupt"):
+            await self.interrupt_speech()
+
         elif msg_type == "ping":
             ts = payload.get("timestamp", int(time.time() * 1000))
             if type(ts) is not int or not 0 <= ts <= 2**63 - 1:
@@ -828,7 +859,12 @@ class ApplianceSession:
 
             async def clean_sentences():
                 self._check_pipeline_current()
-                async with aclosing(self._provider_stream(self.hermes.query_stream(transcription), "hermes_failed")) as source:
+                session_target = self._resolve_hermes_session()
+                try:
+                    stream_gen = self.hermes.query_stream(transcription, session_name=session_target)
+                except TypeError:
+                    stream_gen = self.hermes.query_stream(transcription)
+                async with aclosing(self._provider_stream(stream_gen, "hermes_failed")) as source:
                     async for sentence in source:
                         self._check_pipeline_current()
                         tag_expr, clean_sentence = parse_and_strip_emotional_tags(sentence.strip())
@@ -898,7 +934,12 @@ class ApplianceSession:
                     })
         else:
             self._check_pipeline_current()
-            agent_reply = await self._provider_result(self.hermes.query(transcription), "hermes_failed")
+            session_target = self._resolve_hermes_session()
+            try:
+                hermes_call = self.hermes.query(transcription, session_name=session_target)
+            except TypeError:
+                hermes_call = self.hermes.query(transcription)
+            agent_reply = await self._provider_result(hermes_call, "hermes_failed")
             self._check_pipeline_current()
             tag_expr, clean_reply = parse_and_strip_emotional_tags(agent_reply)
             speech_expr = tag_expr.value if tag_expr else contextual_expression(transcription, clean_reply).value

@@ -317,6 +317,9 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         toggleVoice.setOnClickListener {
             resetActivity()
             val service = kioskService ?: return@setOnClickListener
+            if (lastState == NexoState.SPEAKING && service.interruptSpeaking()) {
+                return@setOnClickListener
+            }
             if (service.isVoiceEnabled || service.hasRecoveryCapture) service.stopVoice() else service.startVoice()
         }
         captureControls = findViewById(R.id.captureControls)

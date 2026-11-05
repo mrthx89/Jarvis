@@ -59,12 +59,16 @@ class HermesBridge:
         return self._session_id
 
     async def query(self, prompt: str, session_name: Optional[str] = None) -> str:
-        """Send prompt only to Nexo, preferring its pinned ID over name lookup."""
+        """Send prompt to Nexo, supporting the canonical ID or an isolated device session."""
+        active_session = self._session_id or "nexo"
         if session_name is not None:
             target = session_name.strip() if isinstance(session_name, str) else None
-            if target != "nexo" and (self._session_id is None or target != self._session_id):
+            if target == "nexo" or (self._session_id is not None and target == self._session_id):
+                active_session = self._session_id or "nexo"
+            elif target and target.startswith("nexo-") and len(target) <= 64:
+                active_session = target
+            else:
                 raise ValueError("Session routing is locked to nexo")
-        active_session = self._session_id or "nexo"
         self.query_active += 1
         try:
             reply = await self._query(prompt, active_session)
@@ -81,11 +85,15 @@ class HermesBridge:
         self, prompt: str, session_name: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         """Stream sentence chunks from Hermes Agent with session continuity."""
+        active_session = self._session_id or "nexo"
         if session_name is not None:
             target = session_name.strip() if isinstance(session_name, str) else None
-            if target != "nexo" and (self._session_id is None or target != self._session_id):
+            if target == "nexo" or (self._session_id is not None and target == self._session_id):
+                active_session = self._session_id or "nexo"
+            elif target and target.startswith("nexo-") and len(target) <= 64:
+                active_session = target
+            else:
                 raise ValueError("Session routing is locked to nexo")
-        active_session = self._session_id or "nexo"
         self.query_active += 1
         accumulated_chunks = []
         try:
