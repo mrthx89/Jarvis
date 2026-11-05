@@ -959,6 +959,10 @@ open class NexoKioskService : Service() {
                 val expression = OutdoorProtocol.string(json, "expression")
                 if (expression == "sleeping" || expression == "tidur") sleepExpression = expression
                 else if (expression != null) sleepExpression = null
+                val sentence = OutdoorProtocol.string(json, "content") ?: OutdoorProtocol.string(json, "sentence")
+                if (!sentence.isNullOrBlank()) {
+                    serviceCallback?.onTranscriptionReceived("assistant", sentence, false)
+                }
                 when (OutdoorProtocol.string(json, "state")) {
                     "THINKING" -> publish(NexoState.THINKING, "Memahami • mikrofon dijeda", expression)
                     "SPEAKING" -> publish(NexoState.SPEAKING, "Menjawab • mikrofon dijeda", expression)

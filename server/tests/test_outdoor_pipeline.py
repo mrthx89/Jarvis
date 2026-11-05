@@ -407,3 +407,49 @@ async def test_faster_whisper_stt_preserves_halo_nexo_and_filters_prompt_echo():
 
     stt._model = FakeModel([SimpleNamespace(text="Halo Nexo.", no_speech_prob=0.88)])
     assert await stt.transcribe(pcm) == ""
+
+
+@pytest.mark.asyncio
+async def test_outdoor_streaming_emits_early_transcription_for_subtitles():
+    from nexo_server.pipeline.stt import BaseSTT
+
+    s, ws = await connect()
+    assert s.outdoor is not None
+
+    class MockSTT(BaseSTT):
+        async def transcribe(self, pcm_audio: bytes, language: str = "id") -> str:
+            return "Apa kabar?"
+
+    s.stt = MockSTT()
+
+    async def stream_reply(prompt: str, session_name: str | None = None):
+        yield "Kabar baik sekali."
+
+    async def fake_tts(text: str, voice: str = "id-ID-ArdiNeural"):
+        yield b"\x01\x00" * 40
+
+    s.hermes.query_stream = stream_reply  # type: ignore[assignment]
+    s.tts.synthesize_stream = fake_tts  # type: ignore[assignment]
+    try:
+        await control(s, "conversation_resume")
+        token = s.outdoor._output_generation.set(s.outdoor.generation)
+        try:
+            assert await s._run_pipeline(b"\x01\x02" * 8000) is None
+        finally:
+            s.outdoor._output_generation.reset(token)
+
+        # Verify assistant transcriptions: first streaming partial, then final
+        assistant_transcripts = [
+            f for f in ws.frames
+            if isinstance(f, dict) and f.get("type") == "transcription" and f.get("role") == "assistant"
+        ]
+        assert len(assistant_transcripts) >= 2
+        # Early streaming subtitle
+        assert assistant_transcripts[0]["is_final"] is False
+        assert assistant_transcripts[0]["text"] == "Kabar baik sekali."
+        # Final subtitle
+        assert assistant_transcripts[-1]["is_final"] is True
+        assert assistant_transcripts[-1]["text"] == "Kabar baik sekali."
+    finally:
+        await s.close()
+

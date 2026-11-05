@@ -129,7 +129,10 @@ class HermesAnswerReader:
                             return mid
                         clean_content = strip_emotional_tags(content).strip()
                         clean_text = strip_emotional_tags(text).strip()
-                        if clean_content and clean_content == clean_text:
+                        if clean_content and (
+                            clean_content == clean_text
+                            or " ".join(clean_content.split()) == " ".join(clean_text.split())
+                        ):
                             return mid
                 before = rows[-1][0]
 

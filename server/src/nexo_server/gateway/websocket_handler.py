@@ -910,6 +910,15 @@ class ApplianceSession:
                             self._tts_started = True
 
                         self._check_pipeline_current()
+                        partial_reply = " ".join(collected_sentences).strip()
+                        if self.outdoor and partial_reply:
+                            await self.send_json_message(
+                                TranscriptionMessage(
+                                    role="assistant",
+                                    text=partial_reply,
+                                    is_final=False,
+                                )
+                            )
                         if self.hub:
                             self.hub.publish_event({
                                 "type": "cognitive",
