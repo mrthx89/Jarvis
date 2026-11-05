@@ -10,10 +10,13 @@ from collections import Counter
 from contextvars import ContextVar
 import hashlib
 import json
+import logging
 from typing import Any
 import struct
 import time
 import uuid
+
+logger = logging.getLogger(__name__)
 
 from ..pipeline.enrollment_quality import assess_pcm, normalize_embedding, prepare_profile
 from ..pipeline.speaker import DEFAULT_THRESHOLD, FRONTEND_ID, MODEL_SHA256
@@ -487,7 +490,12 @@ class OutdoorSession:
                     and len(enrollment["order"]) < 4)
 
     async def _extract_sample(self, entry, pcm, enrollment, deadline):
-        if assess_pcm(pcm) is not None:
+        quality_code = assess_pcm(pcm)
+        if quality_code is not None:
+            logger.warning(
+                "Enrollment assess_pcm REJECTED: code=%s (len=%d bytes, duration=%.2fs)",
+                quality_code, len(pcm), len(pcm) / 32000.0
+            )
             return "quality_insufficient"
         if not self._enrollment_current(enrollment):
             return "model_provenance"

@@ -41,6 +41,7 @@ import id.my.yhdev.nexo.ui.VisualizerView
 class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
 
     private lateinit var visualizerView: VisualizerView
+    private lateinit var liveWaveformView: id.my.yhdev.nexo.ui.LiveWaveformView
     private lateinit var tvStatus: TextView
     private lateinit var tvSubtitle: TextView
     private lateinit var toggleVoice: Button
@@ -85,6 +86,9 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             }
             if (::toggleVoice.isInitialized) {
                 toggleVoice.animate().translationX(dx).translationY(dy).setDuration(2200).start()
+            }
+            if (::liveWaveformView.isInitialized) {
+                liveWaveformView.animate().translationX(dx).translationY(dy).setDuration(2200).start()
             }
             if (::voiceMood.isInitialized) {
                 voiceMood.animate().translationX(dx).translationY(dy).setDuration(2200).start()
@@ -305,6 +309,7 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         voiceMood = findViewById(R.id.voiceMood)
         visualizerView.setVoiceEnabled(false, animateReaction = false)
         toggleVoice = findViewById(R.id.toggleVoice)
+        liveWaveformView = findViewById(R.id.liveWaveformView)
         toggleVoice.setOnClickListener {
             resetActivity()
             val service = kioskService ?: return@setOnClickListener
@@ -547,6 +552,10 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
             consoleCard.visibility = if (enabled) View.VISIBLE else View.GONE
             toggleVoice.isEnabled = true
             toggleVoice.setText(if (enabled) R.string.voice_stop else R.string.voice_start)
+            if (::liveWaveformView.isInitialized) {
+                liveWaveformView.setActive(enabled)
+                liveWaveformView.visibility = if (enabled) View.VISIBLE else View.GONE
+            }
             renderStatus()
         }
     }
@@ -620,12 +629,20 @@ class MainActivity : AppCompatActivity(), NexoKioskService.ServiceCallback {
         val recoveryCapture = kioskService?.hasRecoveryCapture == true
         toggleVoice.setText(if (voiceEnabled || recoveryCapture) R.string.voice_stop else R.string.voice_start)
         toggleVoice.isEnabled = voiceEnabled || recoveryCapture || kioskService?.canResumeVoice == true
+        if (::liveWaveformView.isInitialized) {
+            liveWaveformView.setActive(voiceEnabled)
+            liveWaveformView.visibility = if (voiceEnabled && !isSleeping) View.VISIBLE else View.GONE
+            liveWaveformView.setWaveColor(ledColor)
+        }
         if (recoveryCapture || message?.contains("batas 20 detik") == true) tvSubtitle.text = message
     }
 
     override fun onTelemetryReceived(amplitude: Float, bands: List<Float>?) {
         runOnUiThread {
             visualizerView.setAmplitude(amplitude)
+            if (::liveWaveformView.isInitialized) {
+                liveWaveformView.updateAmplitude(amplitude)
+            }
         }
     }
 

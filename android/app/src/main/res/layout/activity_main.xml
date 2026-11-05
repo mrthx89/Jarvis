@@ -264,7 +264,7 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- Primary Thumb-Zone Voice Action -->
+    <!-- Primary Thumb-Zone Voice Action (Gemini Live Style) -->
     <Button
         android:id="@+id/toggleVoice"
         style="@style/Widget.AppCompat.Button.Borderless"
@@ -291,5 +291,17 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Living Status Waveform (Gemini Live Wave Animated Bars) -->
+    <id.my.yhdev.nexo.ui.LiveWaveformView
+        android:id="@+id/liveWaveformView"
+        android:layout_width="32dp"
+        android:layout_height="24dp"
+        android:layout_marginEnd="16dp"
+        android:visibility="gone"
+        android:importantForAccessibility="no"
+        app:layout_constraintBottom_toBottomOf="@id/toggleVoice"
+        app:layout_constraintTop_toTopOf="@id/toggleVoice"
+        app:layout_constraintEnd_toEndOf="@id/toggleVoice" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

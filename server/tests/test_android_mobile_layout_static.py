@@ -158,6 +158,7 @@ def test_three_zone_simple_mobile_layout_and_contextual_controls():
     start_utterance = by_id(root, 'startUtterance')
     finish_utterance = by_id(root, 'finishUtterance')
     toggle_voice = by_id(root, 'toggleVoice')
+    live_waveform = by_id(root, 'liveWaveformView')
 
     assert pill_status.get(APP + 'layout_constraintTop_toTopOf') == 'parent'
     assert pill_voiceprint.get(APP + 'layout_constraintTop_toTopOf') == 'parent'
@@ -167,6 +168,8 @@ def test_three_zone_simple_mobile_layout_and_contextual_controls():
     assert start_utterance.get(A + 'visibility') == 'gone'
     assert finish_utterance.get(A + 'visibility') == 'gone'
     assert toggle_voice.get(APP + 'layout_constraintBottom_toBottomOf') == 'parent'
+    assert live_waveform is not None
+    assert live_waveform.get(A + 'visibility') == 'gone'
 
     activity = (MAIN / 'java/id/my/yhdev/nexo/MainActivity.kt').read_text()
     assert 'captureMode.visibility = View.GONE' in activity
