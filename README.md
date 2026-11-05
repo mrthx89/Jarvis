@@ -196,7 +196,7 @@ artifact/sreenshoot/  Screenshot UI yang dikirim pengembang
 - [Build Android dan signing](docs/BUILDING.md)
 - [Autentikasi perangkat](docs/DEVICE_AUTH.md) · [Model keamanan](docs/SECURITY_MODEL.md)
 - [Ekspresi dan perintah maskot](docs/MASCOT_EXPRESSIONS.md) · [Sumber artwork](docs/MASCOT_ASSETS.md)
-- [Perilaku UI dan pemeriksaan perangkat](docs/MOBILE_UI_VERIFICATION.md)
+- [Pengenalan Suara &amp; Biometrik CAM++](docs/SPEAKER_MODEL.md)
 - [Sesi dan model Hermes](docs/APPLIANCE_SESSION.md)
 - [Arsitektur](docs/ARCHITECTURE.md) · [Protokol WebSocket](docs/PROTOCOL.md)
 - [Hardware dan kiosk](docs/HARDWARE_SETUP.md) · [Firebase Remote Config](docs/REMOTE_CONFIG_SETUP.md)

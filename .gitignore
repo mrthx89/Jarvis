@@ -78,3 +78,10 @@ keystore.properties
 # Merge artifacts
 *.orig
 [Gg]raphify-out/
+
+# Internal dev handoffs, temporary plans, and test scratchpads
+*HANDOFF*.md
+*VERIFICATION*.md
+*PLAN*.md
+*REPAIR*.md
+*SCRATCH*.md
