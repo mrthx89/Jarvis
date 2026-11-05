@@ -14,36 +14,49 @@
   Yanto Hariyono · YH Dev
 </p>
 
-Nexo (sebelumnya Nexo) menghadirkan interaksi suara melalui tablet atau layar pintar berbasis Android: berbicara, melihat respons maskot, dan mendengarkan jawaban tanpa mengetik. Tidak perlu PC konvensional di meja; komputasi penalaran dan pemrosesan suara tetap berjalan pada server terpisah. Monitor biasa memerlukan perangkat komputasi pendamping.
+Nexo menghadirkan interaksi suara *hands-free* bergaya modern melalui smartphone, tablet, atau layar pintar berbasis Android: berbicara secara alami, melihat ekspresi maskot 3D yang hidup, dan mendengarkan jawaban asisten tanpa perlu mengetik. Komputasi penalaran dan pemrosesan suara berjalan pada server gateway terpisah yang terhubung ke **Hermes Agent**, sementara deteksi aktivitas suara (*Voice Activity Detection*) dieksekusi langsung di perangkat Android menggunakan model neural network **Silero VAD (ONNX)**.
 
 ## Tampilan aplikasi
 
 <table>
   <tr>
-    <td align="center"><strong>Mikrofon ON</strong></td>
-    <td align="center"><strong>Mikrofon OFF</strong></td>
+    <td align="center"><strong>Mode Aktif (Menjawab &amp; Live Wave)</strong></td>
+    <td align="center"><strong>Mode Paused (Mikrofon OFF)</strong></td>
   </tr>
   <tr>
-    <td align="center"><img src="artifact/sreenshoot/WhatsApp%20Image%202026-11-01%20at%2016.46.33.jpeg" width="280" alt="Nexo menyimak dengan panel Cognitive Stream dan ikon clipboard" /></td>
-    <td align="center"><img src="artifact/sreenshoot/WhatsApp%20Image%202026-11-01%20at%2016.46.34.jpeg" width="280" alt="Nexo menangis saat mikrofon mati dan panel percakapan tersembunyi" /></td>
+    <td align="center"><img src="artifact/sreenshoot/WhatsApp%20Image%202026-11-01%20at%2016.46.33.jpeg" width="280" alt="Nexo menjawab dengan status kapsul tengah, panel Percakapan, dan gelombang suara Live Waveform" /></td>
+    <td align="center"><img src="artifact/sreenshoot/WhatsApp%20Image%202026-11-01%20at%2016.46.34.jpeg" width="280" alt="Nexo menangis saat mikrofon dijeda dengan tombol lingkaran mikrofon minimalis" /></td>
   </tr>
   <tr>
-    <td align="center">Status menyimak, respons teks, dan salin jawaban.</td>
-    <td align="center">Kontrol Mulai mikrofon, ekspresi menangis, tanpa panel bawah.</td>
+    <td align="center">Kapsul status tengah <em>Menjawab</em>, panel <em>Percakapan</em> + tombol salin, serta tombol bulat dengan animasi <em>Live Waveform</em>.</td>
+    <td align="center">Status <em>Paused</em>, ekspresi menangis saat mikrofon mati, dan tombol lingkaran kompak 56dp ala Gemini Live.</td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Notifikasi Media (Background Standby)</strong></td>
+    <td align="center"><strong>Dynamic Island / Mini Capsule</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="artifact/sreenshoot/WhatsApp%20Image%202026-11-05%20at%2015.42.18.jpeg" width="280" alt="Kartu notifikasi MediaSession Nexo Appliance saat menyimak di latar belakang" /></td>
+    <td align="center"><img src="artifact/sreenshoot/WhatsApp%20Image%202026-11-05%20at%2015.42.19.jpeg" width="280" alt="Integrasi Dynamic Island / Mini Capsule Nexo di status bar layar utama Android" /></td>
+  </tr>
+  <tr>
+    <td align="center">Kartu kontrol <code>MediaSession</code> native di urutan atas notifikasi saat Nexo menyimak di latar belakang.</td>
+    <td align="center">Integrasi kapsul <em>Dynamic Island</em> di sekitar kamera depan lengkap dengan equalizer &amp; ikon maskot saat aplikasi di-minimize.</td>
   </tr>
 </table>
 
-Screenshot dikirim oleh pengembang; ilustrasi UI ini bukan bukti setiap revisi source telah diuji pada perangkat.
+Screenshot dikirim oleh pengembang dari perangkat nyata; ilustrasi UI ini bukan pengganti pengujian regresi pada setiap revisi source.
 
 ## Pengalaman utama
 
-- **Native Kotlin, bukan WebView.** Tampilan portrait berlatar hitam dengan maskot, kedipan, gerakan tatapan, dan transisi ekspresi.
-- **Kontrol mikrofon yang eksplisit.** Mulai/Berhenti mengendalikan audio dan koneksi melalui service. Instalasi baru dimulai dalam keadaan OFF; indikator kesiapan tetap terpisah dari animasi wajah.
-- **16 ekspresi maskot.** Reaksi ON/OFF, ekspresi percakapan berbasis aturan konteks, dan perintah singkat untuk mengubah wajah.
-- **Antarmuka yang tenang.** Ucapan senang saat ON hilang setelah 15 detik. Panel COGNITIVE STREAM tersembunyi ketika OFF agar wajah mendapat lebih banyak ruang.
-- **Jawaban dapat disalin.** Ikon clipboard di kanan header menyalin jawaban final asisten secara lengkap, bukan hanya baris yang terlihat.
-- **Konfigurasi perangkat.** Bottom sheet native untuk kredensial, endpoint WSS dari Firebase Remote Config, dan autentikasi per perangkat.
-- **Terminal & Local Session Bridge.** Utilitas CLI `scripts/nexo` untuk interaksi kognitif langsung dari terminal developer.
+- **Tombol Lingkaran Gemini Live & Live Waveform.** Kontrol suara 1-sentuhan berbentuk lingkaran kompak (`56dp`) di area jempol (*thumb-zone*). Saat aktif, ikon mikrofon berganti menjadi 4 bar gelombang suara (*Live Waveform*) yang bergerak organik mengikuti amplitudo suara dan warna status.
+- **Kapsul Status Minimalis Simetris.** Indikator status ramping (`32dp`) dengan efek *dark glass* di tengah atas layar (`Menghubungkan…`, `Siaga`, `Menyimak`, `Memproses…`, `Menjawab`, `Paused`).
+- **Deteksi Bicara Otomatis (On-Device Silero VAD).** Menggunakan `onnxruntime-android` dengan model neural network Silero VAD v6.2.3 langsung di perangkat untuk mendeteksi awal dan akhir ucapan manusia secara *hands-free* tanpa tombol manual.
+- **Background Listening & Dynamic Island.** Tetap aktif menyimak meskipun aplikasi di-minimize atau layar dikunci. Terintegrasi dengan `android.media.session.MediaSession` dan `Notification.MediaStyle` sehingga tampil sebagai kartu media utama serta memicu kapsul *Dynamic Island / Mini Capsule* pada Android modern (ColorOS / Realme UI).
+- **Native Kotlin & Maskot 3D Hidup.** Tampilan portrait berlatar hitam OLED dengan 16 ekspresi maskot, *living eye glow*, kedipan organik, gerakan tatapan (*saccades*), dan proteksi *burn-in* (*pixel-shifting*).
+- **Panel Percakapan & Salin Jawaban.** Panel kaca lengkung (*console readout*) menampilkan transkripsi serta jawaban asisten secara langsung, dilengkapi tombol *clipboard* untuk menyalin jawaban terakhir secara utuh.
+- **Proteksi Anti-Replay Compaction.** Modul `AnswerMirror` di server memvalidasi kesegaran *timestamp* pesan SQLite sehingga proses *context compaction* Hermes tidak memicu pembacaan ulang riwayat percakapan lama.
+- **Keamanan Perangkat & Sesi.** Bottom sheet native untuk pengaturan token bearer per perangkat (tersimpan terenkripsi di Android Keystore), dukungan endpoint WSS dinamis via Firebase Remote Config, serta utilitas CLI `scripts/nexo` untuk jembatan sesi terminal lokal.
 
 ## Beri Nexo ekspresi
 
