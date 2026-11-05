@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sqlite3
 import tempfile
+import time
 
 from .mascot import strip_emotional_tags
 
@@ -133,6 +134,11 @@ class HermesAnswerReader:
                 before = rows[-1][0]
 
     def read_new(self) -> list[dict]:
+        # Reject rewritten messages from context compaction: their timestamps
+        # are old but their IDs are new, which tricks the mirror into replaying
+        # the entire conversation history aloud.  A 120-second grace window is
+        # generous enough for any real pipeline latency.
+        freshness_floor = time.time() - 120
         with closing(_connect(self.db_path)) as db:
             rows = db.execute(
                 "SELECT id, CASE WHEN role = 'assistant' "
@@ -141,10 +147,11 @@ class HermesAnswerReader:
                 "AND COALESCE(display_kind, '') = '' "
                 "AND COALESCE(tool_calls, '') IN ('', '[]') "
                 "AND length(content) BETWEEN 1 AND 32000 "
+                "AND CAST(timestamp AS REAL) >= ? "
                 "THEN content ELSE NULL END "
                 "FROM messages WHERE id > ? "
                 "AND session_id = ? ORDER BY id LIMIT 100",
-                (self._cursor, self.session_id),
+                (freshness_floor, self._cursor, self.session_id),
             ).fetchall()
         if rows:
             self._cursor = rows[-1][0]

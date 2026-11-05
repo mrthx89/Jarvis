@@ -23,7 +23,8 @@ def db_path(tmp_path):
                 id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT,
                 role TEXT, content TEXT, finish_reason TEXT,
                 tool_calls TEXT, active INTEGER DEFAULT 1,
-                compacted INTEGER DEFAULT 0, display_kind TEXT
+                compacted INTEGER DEFAULT 0, display_kind TEXT,
+                timestamp REAL
             );
         """)
     return path
@@ -65,12 +66,15 @@ def test_persisted_id_survives_rename_and_new_nexo_session(db_path, tmp_path):
 
 
 def message(path, text="answer", sid="canonical", role="assistant", finish="stop",
-            tools=None, active=1, compacted=0):
+            tools=None, active=1, compacted=0, timestamp=None):
+    if timestamp is None:
+        import time
+        timestamp = time.time()
     with sqlite3.connect(path) as db:
         return db.execute(
             "INSERT INTO messages (session_id, content, role, finish_reason, "
-            "tool_calls, active, compacted) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (sid, text, role, finish, tools, active, compacted)).lastrowid
+            "tool_calls, active, compacted, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (sid, text, role, finish, tools, active, compacted, timestamp)).lastrowid
 
 
 @pytest.mark.parametrize("changes", [
@@ -213,3 +217,30 @@ def test_existing_binding_fails_closed_without_relink(db_path, tmp_path, change)
     with pytest.raises(ValueError):
         resolve_pinned_session(db_path, state, requested)
     assert state.read_bytes() == before
+
+
+def test_reader_rejects_compaction_rewritten_messages(db_path):
+    """Messages rewritten by context compaction have new IDs but old timestamps.
+
+    The mirror must never replay these as speech — they would cause Nexo to
+    read aloud the entire conversation history.
+    """
+    import time
+    from nexo_server.session_store import HermesAnswerReader
+
+    reader = HermesAnswerReader(db_path, "canonical")
+    reader.initialize()
+
+    # Simulate compaction: new IDs but timestamps from hours ago
+    old_ts = time.time() - 7200  # 2 hours ago
+    message(db_path, text="Sama-sama, Pak Yanto!", timestamp=old_ts)
+    message(db_path, text="Saya di sini.", timestamp=old_ts + 10)
+    message(db_path, text="Halo!", timestamp=old_ts + 20)
+
+    # None of these should be returned — they are stale rewrites
+    assert reader.read_new() == []
+
+    # But a genuinely fresh message should still come through
+    fresh_id = message(db_path, text="Jawaban baru")
+    result = reader.read_new()
+    assert result == [{"id": fresh_id, "text": "Jawaban baru"}]
