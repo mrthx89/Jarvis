@@ -180,3 +180,33 @@ def test_mascot_sleep_wake_dual_compatibility():
     import nexo_server.mascot as n_mascot
     assert j_mascot.is_sleep_command("Nexo tidur") == n_mascot.is_sleep_command("Nexo tidur") == True
     assert j_mascot.is_wake_command("Nexo bangun") == n_mascot.is_wake_command("Nexo bangun") == True
+
+
+def test_smart_briefing_and_pantun_commands():
+    from nexo_server.mascot import parse_smart_briefing_command, MascotExpression
+
+    # Pantun
+    pantun_result = parse_smart_briefing_command("pantun hari ini", is_sleeping=False)
+    assert pantun_result is not None
+    text, expr = pantun_result
+    assert "Aroma kopi" in text
+    assert "berkarya dengan hati" in text
+    assert expr == MascotExpression.SENANG
+
+    # Briefing
+    briefing_result = parse_smart_briefing_command("briefing hari ini", is_sleeping=False)
+    assert briefing_result is not None
+    text, expr = briefing_result
+    assert "WIB" in text
+    assert "Nexo Dedicated Appliance" in text
+    assert expr == MascotExpression.SANGAT_SENANG
+
+    # Sleeping wake response
+    wake_result = parse_smart_briefing_command("bangun nexo", is_sleeping=True)
+    assert wake_result is not None
+    text, expr = wake_result
+    assert text == "Halo, saya sudah bangun! Ada yang bisa dibantu?"
+    assert expr == MascotExpression.SENANG
+
+    # Normal queries do not trigger canned responses
+    assert parse_smart_briefing_command("jalankan unit test pytest", is_sleeping=False) is None

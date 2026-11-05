@@ -128,6 +128,104 @@ def is_wake_command(text: str) -> bool:
         return True
     return False
 
+
+_BRIEFING_COMMANDS = {
+    "briefing",
+    "briefing hari ini",
+    "morning briefing",
+    "briefing pagi",
+    "nexo briefing",
+    "jadwal hari ini",
+    "agenda hari ini",
+}
+
+_PANTUN_COMMANDS = {
+    "pantun",
+    "pantun nexo",
+    "pantun hari ini",
+    "pantun pagi",
+    "bacakan pantun",
+    "minta pantun",
+}
+
+_GREETING_COMMANDS = {
+    "halo nexo",
+    "hai nexo",
+    "halo jarvis",
+    "hai jarvis",
+    "selamat pagi",
+    "selamat pagi nexo",
+    "selamat siang",
+    "selamat siang nexo",
+    "selamat sore",
+    "selamat sore nexo",
+    "selamat malam",
+    "selamat malam nexo",
+}
+
+
+def parse_smart_briefing_command(text: str, is_sleeping: bool = False) -> Optional[tuple[str, MascotExpression]]:
+    """Return a contextual smart greeting, daily briefing, or wake response."""
+    if not text:
+        return None
+    clean = " ".join(text.casefold().strip().split())
+    clean_body = clean
+    match = _COMMAND.fullmatch(clean)
+    if match:
+        clean_body = match["body"].strip()
+
+    if is_sleeping:
+        if clean in _WAKE_COMMANDS or clean_body in _WAKE_COMMANDS:
+            return ("Halo, saya sudah bangun! Ada yang bisa dibantu?", MascotExpression.SENANG)
+        return None
+
+    if clean in _PANTUN_COMMANDS or clean_body in _PANTUN_COMMANDS:
+        return (
+            "Aroma kopi harum memikat, diseduh hangat di atas meja. "
+            "Awali hari dengan semangat, berkarya dengan hati dalam bekerja! "
+            "Ada tugas yang ingin kita selesaikan hari ini, Pak Yanto?",
+            MascotExpression.SENANG,
+        )
+
+    if clean in _BRIEFING_COMMANDS or clean_body in _BRIEFING_COMMANDS:
+        from datetime import datetime, timezone, timedelta
+        wib = timezone(timedelta(hours=7))
+        now_wib = datetime.now(wib)
+        days = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+        months = [
+            "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+            "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+        ]
+        day_str = days[now_wib.weekday()]
+        date_str = f"{now_wib.day} {months[now_wib.month - 1]} {now_wib.year}"
+        time_str = now_wib.strftime("%H:%M")
+        return (
+            f"Selamat pagi Pak Yanto! Hari ini {day_str}, {date_str}, pukul {time_str} WIB. "
+            "Sistem Nexo Dedicated Appliance beroperasi prima dan terhubung ke Hermes Agent. "
+            "Mari awali hari dengan penuh semangat dan berkarya dengan hati @ 2026! Apa agenda kita hari ini?",
+            MascotExpression.SANGAT_SENANG,
+        )
+
+    if clean in _GREETING_COMMANDS or clean_body in _GREETING_COMMANDS:
+        from datetime import datetime, timezone, timedelta
+        wib = timezone(timedelta(hours=7))
+        now_wib = datetime.now(wib)
+        hour = now_wib.hour
+        if 4 <= hour < 11:
+            greet = "Selamat pagi Pak Yanto! Semangat berkarya dengan hati hari ini. Ada yang bisa Nexo bantu?"
+        elif 11 <= hour < 15:
+            greet = "Selamat siang Pak Yanto! Tetap semangat berkarya. Ada yang perlu Nexo siapkan untuk pekerjaan Anda?"
+        elif 15 <= hour < 18:
+            greet = "Selamat sore Pak Yanto! Bagaimana progres karya hari ini? Nexo siap membantu."
+        else:
+            greet = "Selamat malam Pak Yanto! Semoga hari ini produktif dan berkah. Ada yang bisa Nexo bantu sebelum istirahat?"
+        return (greet, MascotExpression.SENANG)
+
+    if clean in ("bangun", "bangun nexo", "bangun jarvis", "wake up") or clean_body in ("bangun", "bangun nexo", "bangun jarvis", "wake up"):
+        return ("Saya sudah aktif dan siap menyimak, Pak Yanto! Ada yang bisa dibantu?", MascotExpression.SENANG)
+
+    return None
+
 EMOTIONAL_TAG_PATTERN = re.compile(r"\[expr:\s*([a-zA-Z0-9_\s-]+?)\s*\]", re.IGNORECASE)
 EMOJI_PATTERN = re.compile(r"[\U00010000-\U0010FFFF\u2600-\u27BF\u2300-\u23FF]", flags=re.UNICODE)
 

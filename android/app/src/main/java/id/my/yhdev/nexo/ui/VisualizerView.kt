@@ -120,6 +120,12 @@ class VisualizerView @JvmOverloads constructor(
     private var targetShiftX = 0f
     private var targetShiftY = 0f
 
+    // Interactive Tactile Touch & Spring Squash Physics
+    private var touchSquashX = 1.0f
+    private var touchSquashY = 1.0f
+    private var touchVelocity = 0f
+    private var isTouching = false
+
     init {
         // Pre-warm bitmap cache in view layout
         post {
@@ -565,12 +571,26 @@ class VisualizerView @JvmOverloads constructor(
         // Calculate Final Geometry with Pixel-Shifting Offset
         val viewW = width.toFloat()
         val viewH = height.toFloat()
+
+        // Interactive Spring Bounce settling
+        if (!isTouching) {
+            val springForce = (1.0f - touchSquashY) * 28f
+            touchVelocity += (springForce - touchVelocity * 6.5f) * dt
+            touchSquashY += touchVelocity * dt
+            touchSquashX = 1.0f + (1.0f - touchSquashY) * 0.72f
+            if (kotlin.math.abs(touchSquashY - 1.0f) < 0.003f && kotlin.math.abs(touchVelocity) < 0.03f) {
+                touchSquashY = 1.0f
+                touchSquashX = 1.0f
+                touchVelocity = 0f
+            }
+        }
+
         val cx = viewW / 2f + gazeCurrentX + currentShiftX + angryJitterX + scareTremorX
         val cy = viewH / 2f + gazeCurrentY + breathFloatY + speechBounceY + currentShiftY + laughBounceY + cryTremorY
 
         val mascotSize = minOf(viewW, viewH) * 0.82f
-        val finalScaleX = breathScale * squashStretchX * speechScale * listenScale * (1.0f + heartPulse)
-        val finalScaleY = breathScale * squashStretchY * speechScale * listenScale * blinkSquashY * (1.0f + heartPulse)
+        val finalScaleX = breathScale * squashStretchX * speechScale * listenScale * (1.0f + heartPulse) * touchSquashX
+        val finalScaleY = breathScale * squashStretchY * speechScale * listenScale * blinkSquashY * (1.0f + heartPulse) * touchSquashY
         val effectiveTilt = tiltCurrentDeg + laughSway
 
         // Draw 3D Perspective Floor Shadow under character
@@ -801,19 +821,55 @@ class VisualizerView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_DOWN) {
-            performClick()
-            idleStartTime = SystemClock.uptimeMillis() // Wake up from ambient sleep
-            if (!voiceEnabled || SystemClock.uptimeMillis() < voiceReactionUntil) return true
-            // Playful tactile spring squash & random happy expression
-            stateExpression = listOf(
-                MascotExpression.JAHIL,
-                MascotExpression.SENANG,
-                MascotExpression.KEREN,
-                MascotExpression.SANGAT_SENANG
-            ).random()
-            updateExpression(SystemClock.uptimeMillis())
-            return true
+        val cx = width / 2f
+        val cy = height / 2f
+        val dx = (event.x - cx).coerceIn(-120f, 120f)
+        val dy = (event.y - cy).coerceIn(-120f, 120f)
+
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                isTouching = true
+                performClick()
+                idleStartTime = SystemClock.uptimeMillis() // Wake up from ambient sleep
+                gazeTargetX = dx * 0.16f
+                gazeTargetY = dy * 0.16f
+                tiltTargetDeg = (dx / (cx.coerceAtLeast(1f))) * 4.5f
+                touchSquashX = 1.09f
+                touchSquashY = 0.91f
+                touchVelocity = 0f
+                postInvalidateOnAnimation()
+                if (!voiceEnabled || SystemClock.uptimeMillis() < voiceReactionUntil) return true
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (isTouching) {
+                    gazeTargetX = dx * 0.20f
+                    gazeTargetY = dy * 0.20f
+                    tiltTargetDeg = (dx / (cx.coerceAtLeast(1f))) * 6.0f
+                    postInvalidateOnAnimation()
+                    return true
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                isTouching = false
+                touchVelocity = 14f // Spring recoil burst
+                gazeTargetX = 0f
+                gazeTargetY = 0f
+                tiltTargetDeg = 0f
+                nextGlanceTime = SystemClock.uptimeMillis() + 3500L
+                if (voiceEnabled && SystemClock.uptimeMillis() >= voiceReactionUntil) {
+                    stateExpression = listOf(
+                        MascotExpression.SENANG,
+                        MascotExpression.MENGEDIP,
+                        MascotExpression.TERTAWA,
+                        MascotExpression.JAHIL,
+                        MascotExpression.KEREN
+                    ).random()
+                    updateExpression(SystemClock.uptimeMillis())
+                }
+                postInvalidateOnAnimation()
+                return true
+            }
         }
         return super.onTouchEvent(event)
     }

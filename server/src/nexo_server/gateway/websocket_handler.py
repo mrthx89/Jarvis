@@ -28,6 +28,7 @@ from ..hermes.agent_bridge import HermesBridge
 from ..mascot import (
     contextual_expression,
     parse_expression_command,
+    parse_smart_briefing_command,
     parse_and_strip_emotional_tags,
     strip_emotional_tags,
     is_sleep_command,
@@ -849,6 +850,13 @@ class ApplianceSession:
                 "Baik, ekspresi wajah sudah diubah.",
                 command_expression.value
             )
+            return
+
+        # Step 5: Smart Contextual Greeting, Briefing, & Pantun
+        smart_reply = parse_smart_briefing_command(transcription, self.is_sleeping)
+        if smart_reply is not None:
+            reply_text, reply_expr = smart_reply
+            await self._speak_canned_reply(reply_text, reply_expr.value)
             return
 
         # Step 3: Speaking / Streaming TTS from Hermes
