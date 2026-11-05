@@ -5,8 +5,8 @@
     <color name="voiceprint_unregistered">#FFB300</color>
     <color name="voiceprint_danger">#FF5252</color>
 
-    <string name="voiceprint_hud_unregistered">Sidik Suara • Umum</string>
-    <string name="voiceprint_hud_registered">Sidik Suara • Pemilik</string>
+    <string name="voiceprint_hud_unregistered">Suara: Bebas</string>
+    <string name="voiceprint_hud_registered">Suara: Pemilik</string>
     <string name="voiceprint_sheet_eyebrow">NEXO // BIOMETRIK SUARA</string>
     <string name="voiceprint_sheet_title">Manajemen Sidik Suara</string>
     <string name="voiceprint_sheet_desc">Rekam sampel untuk membantu Nexo mengenali pembicara. Sampel pendaftaran tidak dikirim sebagai percakapan.</string>

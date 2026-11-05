@@ -20,13 +20,13 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
         android:layout_marginEnd="8dp"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="12dp"
         android:background="@drawable/bg_hud_control"
         android:minWidth="48dp"
         android:minHeight="48dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:elevation="6dp"
+        android:elevation="2dp"
         app:layout_constraintHorizontal_chainStyle="spread_inside"
         app:layout_constraintEnd_toStartOf="@id/pillVoiceprint"
         app:layout_constraintStart_toStartOf="parent"
@@ -34,9 +34,9 @@
 
         <ImageView
             android:id="@+id/ivStatusLed"
-            android:layout_width="10dp"
-            android:layout_height="10dp"
-            android:layout_marginEnd="10dp"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_marginEnd="8dp"
             android:src="@drawable/led_dot"
             android:importantForAccessibility="no" />
 
@@ -46,7 +46,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:fontFamily="sans-serif-medium"
-            android:letterSpacing="0.01"
+            android:letterSpacing="0.02"
+            android:singleLine="true"
+            android:maxLines="1"
+            android:ellipsize="end"
             android:text="@string/status_connecting"
             android:textColor="@color/text_primary"
             android:textSize="12sp"
@@ -62,13 +65,13 @@
         app:layout_constrainedWidth="true"
         android:layout_height="wrap_content"
         android:layout_marginEnd="16dp"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="12dp"
         android:background="@drawable/bg_hud_control"
         android:minWidth="48dp"
         android:minHeight="48dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:elevation="6dp"
+        android:elevation="2dp"
         android:clickable="true"
         android:focusable="true"
         app:layout_constraintEnd_toEndOf="parent"
@@ -77,11 +80,20 @@
 
         <ImageView
             android:id="@+id/ivVoiceprintLed"
-            android:layout_width="10dp"
-            android:layout_height="10dp"
-            android:layout_marginEnd="8dp"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_marginEnd="6dp"
             android:src="@drawable/led_dot"
             android:importantForAccessibility="no" />
+
+        <ImageView
+            android:id="@+id/ivVoiceprintIcon"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:layout_marginEnd="5dp"
+            android:src="@drawable/ic_fingerprint_24"
+            android:importantForAccessibility="no"
+            app:tint="@color/nexo_cyan" />
 
         <TextView
             android:id="@+id/tvVoiceprintStatus"
@@ -89,7 +101,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:fontFamily="sans-serif-medium"
-            android:letterSpacing="0.01"
+            android:letterSpacing="0.02"
+            android:singleLine="true"
+            android:maxLines="1"
+            android:ellipsize="end"
             android:text="@string/voiceprint_hud_unregistered"
             android:textColor="@color/text_primary"
             android:textSize="12sp"
